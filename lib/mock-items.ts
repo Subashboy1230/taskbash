@@ -2,7 +2,7 @@
 // All three sources represented (Granola, Gmail, Slack), varied tags, varied
 // deadline states (overdue, today, tomorrow, this week, none).
 
-import type { Source, Tag, TaskType } from './types'
+import type { Source, Tag, TaskType, TaskBrief } from './types'
 
 export interface MockSubItem {
   id: string
@@ -35,6 +35,9 @@ export interface MockItem {
   transcript_pull?: MockTranscriptBullet[]
   link?: { label: string; url: string }
   completed_at?: string
+
+  // The synthesized brief — the differentiator. Null until generated.
+  brief?: TaskBrief | null
 
   sub_items?: MockSubItem[]
 }

@@ -40,7 +40,7 @@ interface GranolaListResponse {
   cursor: string | null
 }
 
-interface GranolaNoteDetail {
+export interface GranolaNoteDetail {
   id: string
   title: string | null
   owner: { name: string; email: string }
@@ -117,7 +117,7 @@ export async function extractGranolaActionItems(
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-async function fetchNoteDetail(
+export async function fetchNoteDetail(
   apiKey: string,
   noteId: string
 ): Promise<GranolaNoteDetail | null> {

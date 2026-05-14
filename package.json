@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "inngest": "npx inngest-cli@latest dev",
     "test:diff": "tsx scripts/test-diff.ts",
-    "backfill:tags": "tsx scripts/backfill-tags.ts"
+    "backfill:tags": "tsx scripts/backfill-tags.ts",
+    "backfill:briefs": "tsx scripts/backfill-briefs.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

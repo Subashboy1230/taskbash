@@ -33,6 +33,15 @@ export interface SourceRef {
   slack_ts?: string
 }
 
+// The synthesized brief attached to each task — the differentiator.
+// See docs/brief-spec.md and lib/brief.ts.
+export interface TaskBrief {
+  why: string
+  know: string[]
+  done: string
+  next: string
+}
+
 export interface Item {
   id: string
   user_id: string
@@ -54,6 +63,9 @@ export interface Item {
   last_seen_at: string
   age_days: number
   auto_completed_reason: string | null
+  brief: TaskBrief | null
+  brief_generated_at: string | null
+  brief_status: 'pending' | 'generated' | 'failed'
   created_at: string
   updated_at: string
 }

@@ -39,7 +39,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
-import type { Source, Tag } from '@/lib/types'
+import type { Source, Tag, TaskBrief } from '@/lib/types'
 import { completeItem, dismissItem, requestRefresh, uncompleteItem } from './actions'
 
 // ─── Top-level layout ───────────────────────────────────────────────────
@@ -651,6 +651,64 @@ function CompletedRow({ item }: { item: MockItem }) {
   )
 }
 
+// ─── Brief view — the Why/Know/Done/Next structure ──────────────────────
+
+function BriefView({ brief }: { brief: TaskBrief }) {
+  return (
+    <div className="mb-5 space-y-3.5">
+      <BriefSection label="Why" tone="ink">
+        <p className="m-0 text-[14px] leading-relaxed text-ink">{brief.why}</p>
+      </BriefSection>
+
+      {brief.know.length > 0 && (
+        <BriefSection label="Know" tone="ink">
+          <ul className="m-0 list-disc space-y-1.5 pl-4 text-[13px] leading-relaxed text-ink">
+            {brief.know.map((k, i) => (
+              <li key={i}>{k}</li>
+            ))}
+          </ul>
+        </BriefSection>
+      )}
+
+      <BriefSection label="Done" tone="muted">
+        <p className="m-0 text-[13px] leading-relaxed text-ink-muted">{brief.done}</p>
+      </BriefSection>
+
+      <BriefSection label="Next" tone="success">
+        <p className="m-0 text-[14px] font-medium leading-relaxed text-success-fg">
+          {brief.next}
+        </p>
+      </BriefSection>
+    </div>
+  )
+}
+
+function BriefSection({
+  label,
+  tone,
+  children,
+}: {
+  label: string
+  tone: 'ink' | 'muted' | 'success'
+  children: React.ReactNode
+}) {
+  const labelColor =
+    tone === 'success' ? 'text-success-fg' : tone === 'muted' ? 'text-ink-faint' : 'text-ink-faint'
+  return (
+    <div>
+      <p
+        className={cn(
+          'm-0 mb-1 text-[11px] font-medium uppercase tracking-wider',
+          labelColor
+        )}
+      >
+        {label}
+      </p>
+      {children}
+    </div>
+  )
+}
+
 // ─── Detail panel ───────────────────────────────────────────────────────
 
 function DetailPanel({ item, onClose }: { item: MockItem; onClose: () => void }) {
@@ -701,17 +759,21 @@ function DetailPanel({ item, onClose }: { item: MockItem; onClose: () => void })
         {item.due_at && <DeadlineBadge dueIso={item.due_at} />}
       </div>
 
-      {item.description && (
-        <div className="mb-5">
-          <p className="m-0 mb-2 text-[12px] font-medium uppercase tracking-wider text-ink-faint">
-            Description
+      {/* The brief — the differentiator. Why / Know / Done / Next. */}
+      {item.brief ? (
+        <BriefView brief={item.brief} />
+      ) : (
+        <div className="mb-5 rounded-md border border-line/60 bg-surface-muted/50 px-3.5 py-3">
+          <p className="m-0 text-[13px] text-ink-muted">
+            {item.description || 'No brief generated for this task yet.'}
           </p>
-          <p className="m-0 text-[14px] leading-relaxed text-ink whitespace-pre-wrap">
-            {item.description}
+          <p className="m-0 mt-1 text-[12px] text-ink-faint">
+            Brief pending — run the brief generator to synthesize context for this task.
           </p>
         </div>
       )}
 
+      {/* Legacy mock transcript pull — only shows for mock data, real items use the brief */}
       {item.transcript_pull && item.transcript_pull.length > 0 && (
         <div className="mb-5">
           <p className="m-0 mb-2 text-[14px] font-medium text-ink">Transcript pull</p>

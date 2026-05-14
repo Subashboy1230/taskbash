@@ -85,13 +85,15 @@ function toUIItem(item: Item): MockItem {
     status_label: statusLabelFor(item),
     status_label_tone: statusLabelTone(item),
     completed_at: item.completed_at ?? undefined,
-    // detail panel fields — sparse for real items until briefs land
+    // The synthesized brief — null until backfill-briefs.ts runs / extractor generates it
+    brief: item.brief ?? null,
     detail_status:
       item.status === 'completed'
         ? 'Approved'
         : item.urgent
         ? 'Needs your review'
         : 'Review needed',
+    // Fallback description shown only when there's no brief yet
     description: item.parent_context
       ? `Auto-extracted from ${labelFor(item.source as Source)} — ${item.parent_context}.`
       : `Auto-extracted from ${labelFor(item.source as Source)}.`,
