@@ -18,6 +18,7 @@
 import { inngest, EVENTS } from '../client'
 import { supabase } from '@/lib/supabase'
 import { extractGranolaActionItems } from '@/lib/extract/granola'
+import { extractGmailActionItems } from '@/lib/extract/gmail'
 import { diffSingleSource } from '@/lib/diff'
 import { computeSemanticHash } from '@/lib/normalize'
 import type { ExtractedItem, Item, Source } from '@/lib/types'
@@ -26,6 +27,11 @@ const USER_ID = process.env.APP_USER_ID!
 // Granola is now called directly (not via Nango). Presence of an API key
 // is what enables the source — the Nango connection ID is unused.
 const GRANOLA_ENABLED = !!process.env.GRANOLA_API_KEY
+// Gmail goes through Nango — it's enabled once both the provider config key
+// and the connection ID are set.
+const GMAIL_ENABLED =
+  !!process.env.NANGO_GMAIL_PROVIDER_KEY &&
+  !!process.env.APP_NANGO_GMAIL_CONNECTION_ID
 
 export const morningDigest = inngest.createFunction(
   { id: 'morning-digest', name: 'Morning digest — run the diff' },
@@ -108,6 +114,45 @@ export const morningDigest = inngest.createFunction(
           })
         })
         logger.error('granola extraction failed', err)
+      }
+    }
+
+    if (GMAIL_ENABLED) {
+      try {
+        const gmailItems = await step.run('extract-gmail', async () =>
+          extractGmailActionItems({
+            userEmail: 'subash@sigiq.ai', // TODO(week2): load from users.email
+            days: 7,
+          })
+        )
+        // Flatten sub_items into the diff pool, same as Granola.
+        for (const parent of gmailItems) {
+          allFresh.push(parent)
+          freshCount += 1
+          for (const sub of parent.sub_items ?? []) {
+            allFresh.push(sub)
+            freshCount += 1
+          }
+        }
+        sourcesRun.push('gmail')
+        await step.run('log-extract-completed-gmail', async () => {
+          await supabase.from('agent_events').insert({
+            user_id: USER_ID,
+            run_id: run.id,
+            kind: 'extract.completed',
+            payload: { source: 'gmail', count: gmailItems.length },
+          })
+        })
+      } catch (err) {
+        await step.run('log-extract-failed-gmail', async () => {
+          await supabase.from('agent_events').insert({
+            user_id: USER_ID,
+            run_id: run.id,
+            kind: 'extract.failed',
+            payload: { source: 'gmail', error: String(err) },
+          })
+        })
+        logger.error('gmail extraction failed', err)
       }
     }
 
