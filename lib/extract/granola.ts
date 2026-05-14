@@ -20,6 +20,7 @@
 import { anthropic, MODELS } from '../anthropic'
 import type { ExtractedItem } from '../types'
 import { subDays, formatISO } from 'date-fns'
+import { WORK_ONLY_RULE } from './filters'
 
 const GRANOLA_API_BASE = 'https://public-api.granola.ai/v1'
 
@@ -177,10 +178,13 @@ Schema:
   ]
 }
 
+${WORK_ONLY_RULE}
+
 Rules:
 - Only include items the user themselves owns or committed to. Skip items owned by others unless the user explicitly agreed to take them on.
 - Skip vague items like "discuss further" or "follow up" with no concrete action.
 - Skip items that are clearly already done in the meeting itself.
+- Apply the WORK ONLY scope above — drop personal-life items even if the user owns them.
 - If no qualifying items, return { "items": [] }.
 
 How to choose the tag:
