@@ -77,8 +77,8 @@ create table if not exists items (
   -- HOUSEKEEPING
   first_seen_at   timestamptz default now(),
   last_seen_at    timestamptz default now(),
-  age_days        int generated always as
-                    (extract(day from (now() - first_seen_at))::int) stored,
+  -- age_days is computed at query time: extract(day from (now() - first_seen_at))::int
+  -- (was a stored generated column; removed because now() isn't immutable in Postgres)
   auto_completed_reason text,
   created_at      timestamptz default now(),
   updated_at      timestamptz default now()

@@ -23,7 +23,9 @@ import { computeSemanticHash } from '@/lib/normalize'
 import type { ExtractedItem, Item, Source } from '@/lib/types'
 
 const USER_ID = process.env.APP_USER_ID!
-const GRANOLA_CONN = process.env.APP_NANGO_GRANOLA_CONNECTION_ID
+// Granola is now called directly (not via Nango). Presence of an API key
+// is what enables the source — the Nango connection ID is unused.
+const GRANOLA_ENABLED = !!process.env.GRANOLA_API_KEY
 
 export const morningDigest = inngest.createFunction(
   { id: 'morning-digest', name: 'Morning digest — run the diff' },
@@ -65,11 +67,10 @@ export const morningDigest = inngest.createFunction(
     const allFresh: ExtractedItem[] = []
     let freshCount = 0
 
-    if (GRANOLA_CONN) {
+    if (GRANOLA_ENABLED) {
       try {
         const granolaItems = await step.run('extract-granola', async () =>
           extractGranolaActionItems({
-            nangoConnectionId: GRANOLA_CONN,
             userEmail: 'subash@sigiq.ai', // TODO(week2): load from users.email
             days: 7,
           })

@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* ----- Design tokens — slate-teal + cream identity (distinct from Nummo's green-on-peach) ----- */
+@theme {
+  /* Surface — warm cream base, white cards */
+  --color-canvas: #faf7f0;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f0ece2;
+
+  /* Text */
+  --color-ink: #1a2326;
+  --color-ink-muted: #5a6266;
+  --color-ink-faint: #8a9094;
+
+  /* Borders */
+  --color-line: #e2dfd5;
+  --color-line-strong: #c9c4b4;
+
+  /* Primary accent — deep slate-teal (operational, not cute) */
+  --color-accent: #0d5550;
+  --color-accent-soft: #d8ebe7;
+  --color-accent-strong: #084742;
+
+  /* Tag palette (categorical) */
+  --color-tag-reply-bg: #e6f1fb;
+  --color-tag-reply-fg: #0c447c;
+  --color-tag-action-bg: #fef3e2;
+  --color-tag-action-fg: #854f0b;
+  --color-tag-commit-bg: #d8ebe7;
+  --color-tag-commit-fg: #084742;
+  --color-tag-fyi-bg: #ece8dc;
+  --color-tag-fyi-fg: #4a4a44;
+
+  /* Semantic */
+  --color-danger-bg: #fbeef0;
+  --color-danger-fg: #b8364a;
+  --color-danger-border: #f3d6db;
+  --color-success-bg: #d8ebe7;
+  --color-success-fg: #084742;
+
+  /* Calendar strip — muted slate-blue, NOT warm peach */
+  --color-cal-strip: #dde6e8;
+  --color-cal-strip-text: #2a3e44;
+  --color-cal-strip-active: #0d5550;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+}
+
+/* ----- Base ----- */
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
