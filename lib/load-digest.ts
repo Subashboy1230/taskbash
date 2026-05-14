@@ -15,11 +15,14 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   today.setHours(0, 0, 0, 0)
 
   // Open items (the main list)
+  // Sort by deadline: soonest due first (so overdue floats to the top),
+  // items with no deadline come last, newest-seen first within that group.
   const { data: openRows, error: openErr } = await supabase
     .from('items')
     .select('*')
     .eq('user_id', USER_ID)
     .in('status', ['open', 'in_progress'])
+    .order('due_at', { ascending: true, nullsFirst: false })
     .order('first_seen_at', { ascending: false })
     .limit(50)
   if (openErr) throw new Error(`loadDigest openItems failed: ${openErr.message}`)

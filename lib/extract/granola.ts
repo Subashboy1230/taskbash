@@ -173,6 +173,8 @@ Schema:
     {
       "title": "string — the action item, in imperative form ('Send X', 'Review Y')",
       "tag": "action" | "reply" | "commit" | "fyi",
+      "due_at": "ISO 8601 date or datetime, or null",
+      "urgent": true | false,
       "sub_items": [ { "title": "string" }, ... ]
     }
   ]
@@ -185,7 +187,18 @@ Rules:
 - Skip vague items like "discuss further" or "follow up" with no concrete action.
 - Skip items that are clearly already done in the meeting itself.
 - Apply the WORK ONLY scope above — drop personal-life items even if the user owns them.
+- ONLY extract tasks that are explicitly supported by the text. Do not infer, assume, or invent tasks that "should" exist. If the summary is terse and has no clear action items, return an empty list — an empty list is a correct, expected answer.
 - If no qualifying items, return { "items": [] }.
+
+Deadlines (due_at):
+- Set due_at when the text states or clearly implies a deadline ("by Friday", "before the board call", "end of week", "tomorrow", "next Tuesday").
+- Resolve relative dates against the meeting date given in the user message. "Friday" means the first Friday on or after the meeting date.
+- Use ISO 8601. Date-only is fine (2026-05-16); include a time only if one is stated.
+- If no deadline is stated or implied, set due_at to null. Never guess a date.
+
+Urgency (urgent):
+- Set urgent: true only on real time pressure — an explicit "urgent"/"ASAP", a same-day or next-day deadline, or someone visibly waiting or blocked on it.
+- Otherwise urgent: false.
 
 How to choose the tag:
 - "action" — concrete task to DO (research, draft, schedule, decide, build)
@@ -193,7 +206,27 @@ How to choose the tag:
 - "commit" — explicit promise made in the meeting itself ("I'll send the deck by Friday")
 - "fyi" — purely informational, no action required (rare in meeting commitments)
 
-Default to "commit" only when the item is genuinely a meeting promise. Otherwise prefer "action".`
+Default to "commit" only when the item is genuinely a meeting promise. Otherwise prefer "action".
+
+Examples:
+
+Example 1 — meeting date 2026-05-12:
+Summary: "Subash agreed to send Matthew the three pain points doc by end of week. Matthew will loop in his Nummo team afterward."
+Output:
+{ "items": [ { "title": "Send Matthew the three pain points doc", "tag": "commit", "due_at": "2026-05-16", "urgent": false, "sub_items": [] } ] }
+(Matthew's task is dropped — not owned by the user. "End of week" resolves to the Friday after the meeting.)
+
+Example 2 — meeting date 2026-05-12:
+Summary: "Anna is waiting on Subash's sign-off on the Q3 OKRs before tomorrow's leadership sync. She's pinged twice. Team also chatted about offsite venues."
+Output:
+{ "items": [ { "title": "Sign off on the Q3 OKRs for Anna", "tag": "action", "due_at": "2026-05-13", "urgent": true, "sub_items": [] } ] }
+(The offsite chat is dropped — no concrete action the user owns. urgent: true because of the next-day deadline and Anna actively waiting.)
+
+Example 3 — meeting date 2026-05-12:
+Summary: "Quick sync. Mostly status updates, nothing decided. Subash mentioned he should book a dentist appointment soon."
+Output:
+{ "items": [] }
+(Nothing actionable for work. The dentist appointment is personal and dropped under the WORK ONLY scope.)`
 
 interface PromptArgs {
   meetingTitle: string
@@ -205,19 +238,21 @@ interface PromptArgs {
 
 function buildExtractionPrompt(a: PromptArgs): string {
   return `Meeting: ${a.meetingTitle}
-Date: ${a.meetingDate}
+Meeting date: ${a.meetingDate}  (use this to resolve relative deadlines like "Friday" or "tomorrow")
 Attendees: ${a.attendeeEmails.join(', ') || 'unknown'}
 User to scope to: ${a.userEmail}
 
 Summary:
 ${a.sourceText}
 
-Return JSON with action items owned by ${a.userEmail}.`
+Return JSON with action items owned by ${a.userEmail}. Resolve any relative deadlines against the meeting date above.`
 }
 
 type ParsedItem = {
   title: string
   tag?: 'action' | 'reply' | 'commit' | 'fyi'
+  due_at?: string | null
+  urgent?: boolean
   sub_items?: Array<{ title: string }>
 }
 
@@ -250,6 +285,8 @@ function parseExtractionResponse(
       title: raw.title,
       task_type: 'post_call',
       tag,
+      due_at: normalizeDueAt(raw.due_at),
+      urgent: raw.urgent === true,
       sub_items: (raw.sub_items ?? []).map(s => ({
         source: 'granola' as const,
         source_ref: {
@@ -264,6 +301,15 @@ function parseExtractionResponse(
     })
   }
   return out
+}
+
+// Validate the model's due_at string. Returns an ISO string, or null if the
+// model returned nothing usable — never let a bad date through to the DB.
+function normalizeDueAt(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toISOString()
 }
 
 async function safeReadText(res: Response): Promise<string> {

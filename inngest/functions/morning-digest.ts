@@ -141,6 +141,7 @@ export const morningDigest = inngest.createFunction(
               source: fresh.source,
               source_ref: fresh.source_ref,
               urgent: fresh.urgent ?? false,
+              due_at: fresh.due_at ?? null,
               semantic_hash,
             })
             .select('id')
