@@ -42,11 +42,19 @@ export async function dismissItem(itemId: string) {
   revalidatePath('/today')
 }
 
-export async function requestRefresh() {
-  await inngest.send({
-    name: EVENTS.digestRequested,
-    data: { source: 'ui_refresh', requested_at: new Date().toISOString() },
-  })
-  // No revalidate here — the function runs async; user will see fresh items
-  // on next page refresh ~30s later.
+export async function requestRefresh(): Promise<{ ok: boolean; error?: string }> {
+  // A failed Inngest send must NOT crash the /today page. Catch and report.
+  try {
+    await inngest.send({
+      name: EVENTS.digestRequested,
+      data: { source: 'ui_refresh', requested_at: new Date().toISOString() },
+    })
+    return { ok: true }
+  } catch (err) {
+    console.error('requestRefresh failed:', err)
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    }
+  }
 }

@@ -74,9 +74,16 @@ export function TodayView({ digest }: { digest: MockDigestSummary }) {
       })
     })
   }
+  const [refreshError, setRefreshError] = useState<string | null>(null)
+
   function handleRefresh() {
+    setRefreshError(null)
     startRefresh(async () => {
-      await requestRefresh()
+      const result = await requestRefresh()
+      if (!result.ok) {
+        setRefreshError(result.error || 'Refresh failed')
+        return
+      }
       // Wait briefly then revalidate so the user sees motion
       await new Promise(r => setTimeout(r, 600))
       router.refresh()
@@ -139,6 +146,12 @@ export function TodayView({ digest }: { digest: MockDigestSummary }) {
               </button>
             </div>
           </div>
+
+          {refreshError && (
+            <div className="mt-3 rounded-md border border-danger-border bg-danger-bg px-3 py-2 text-[13px] text-danger-fg">
+              Refresh failed: {refreshError}
+            </div>
+          )}
 
           {visibleOpen.length === 0 ? (
             <EmptyState />
