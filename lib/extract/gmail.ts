@@ -21,6 +21,7 @@ import { anthropic, MODELS } from '../anthropic'
 import { nangoProxy } from '../nango'
 import type { ExtractedItem } from '../types'
 import { WORK_ONLY_RULE } from './filters'
+import { extractJsonObject } from './parse'
 
 const GMAIL_API = '/gmail/v1/users/me'
 
@@ -333,8 +334,7 @@ function parseExtractionResponse(
 ): ExtractedItem[] {
   let parsed: { items?: ParsedItem[] }
   try {
-    const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')
-    parsed = JSON.parse(cleaned)
+    parsed = JSON.parse(extractJsonObject(text))
   } catch {
     console.error('[gmail] failed to parse Claude response:', text.slice(0, 200))
     return []

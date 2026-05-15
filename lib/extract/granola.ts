@@ -21,6 +21,7 @@ import { anthropic, MODELS } from '../anthropic'
 import type { ExtractedItem } from '../types'
 import { subDays, formatISO } from 'date-fns'
 import { WORK_ONLY_RULE } from './filters'
+import { extractJsonObject } from './parse'
 
 const GRANOLA_API_BASE = 'https://public-api.granola.ai/v1'
 
@@ -262,9 +263,8 @@ function parseExtractionResponse(
 ): ExtractedItem[] {
   let parsed: { items?: ParsedItem[] }
   try {
-    const cleaned = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')
-    parsed = JSON.parse(cleaned)
-  } catch (err) {
+    parsed = JSON.parse(extractJsonObject(text))
+  } catch {
     console.error('[granola] failed to parse Claude response:', text.slice(0, 200))
     return []
   }
