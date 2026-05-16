@@ -11,7 +11,15 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Mail, Mic, MessageSquare, Check, X, Loader2 } from 'lucide-react'
+import {
+  Mail,
+  Mic,
+  MessageSquare,
+  Calendar as CalendarIcon,
+  Check,
+  X,
+  Loader2,
+} from 'lucide-react'
 import type { Connection, ConnectionProvider } from '@/lib/types'
 import {
   createNangoConnectSession,
@@ -34,6 +42,13 @@ const SOURCES: Source[] = [
     name: 'Gmail',
     description: 'Read recent inbox threads for action items you owe.',
     icon: Mail,
+    authType: 'oauth',
+  },
+  {
+    provider: 'calendar',
+    name: 'Google Calendar',
+    description: 'Generate prep briefs for upcoming meetings (next 36 hours).',
+    icon: CalendarIcon,
     authType: 'oauth',
   },
   {
@@ -324,10 +339,9 @@ async function connectViaNango(provider: ConnectionProvider) {
   // Dynamic import so the @nangohq/frontend SDK doesn't ship in the SSR bundle.
   const NangoFrontend = (await import('@nangohq/frontend')).default
 
-  const { token } = await createNangoConnectSession(provider)
+  const { token, providerKey } = await createNangoConnectSession(provider)
   const nango = new NangoFrontend({ connectSessionToken: token })
 
-  const providerKey = provider === 'gmail' ? 'google-mail' : provider
   const result = (await nango.auth(providerKey)) as {
     connectionId?: string
     connection_id?: string

@@ -19,8 +19,10 @@ import { inngest, EVENTS } from '../client'
 import { supabase } from '@/lib/supabase'
 import { extractGranolaActionItems } from '@/lib/extract/granola'
 import { extractGmailActionItems } from '@/lib/extract/gmail'
+import { extractCalendarPrepItems } from '@/lib/extract/calendar'
 import { diffSingleSource } from '@/lib/diff'
 import { computeSemanticHash } from '@/lib/normalize'
+import { getActiveConnection } from '@/lib/connections'
 import type { ExtractedItem, Item, Source } from '@/lib/types'
 
 const USER_ID = process.env.APP_USER_ID!
@@ -170,6 +172,45 @@ export const morningDigest = inngest.createFunction(
       }
     }
 
+    // Calendar — DB-backed connection (no env-var gate). Always tries; the
+    // extractor itself throws cleanly if not connected.
+    const calendarConn = await step.run('check-calendar-conn', async () => {
+      const c = await getActiveConnection('calendar')
+      return c?.status === 'active' && !!c.nango_connection_id
+    })
+    if (calendarConn) {
+      try {
+        const calendarItems = await step.run('extract-calendar', async () =>
+          extractCalendarPrepItems({
+            userEmail: 'subashraj411@gmail.com',
+          })
+        )
+        for (const item of calendarItems) {
+          allFresh.push(item)
+          freshCount += 1
+        }
+        sourcesRun.push('calendar')
+        await step.run('log-extract-completed-calendar', async () => {
+          await supabase.from('agent_events').insert({
+            user_id: USER_ID,
+            run_id: run.id,
+            kind: 'extract.completed',
+            payload: { source: 'calendar', count: calendarItems.length },
+          })
+        })
+      } catch (err) {
+        await step.run('log-extract-failed-calendar', async () => {
+          await supabase.from('agent_events').insert({
+            user_id: USER_ID,
+            run_id: run.id,
+            kind: 'extract.failed',
+            payload: { source: 'calendar', error: String(err) },
+          })
+        })
+        logger.error('calendar extraction failed', err)
+      }
+    }
+
     // ─── 4. Diff per-source ───────────────────────────────────────────
     // Only diff sources that ran. If Granola was down, don't auto-complete
     // Granola items just because they're missing from a failed extract.
@@ -189,6 +230,16 @@ export const morningDigest = inngest.createFunction(
             fresh.parent_context,
             fresh.title
           )
+          // If the extractor generated an inline brief (Calendar prep items),
+          // persist it with the item so it's immediately visible — no backfill
+          // pass needed.
+          const briefFields = fresh.brief
+            ? {
+                brief: fresh.brief,
+                brief_status: 'generated' as const,
+                brief_generated_at: new Date().toISOString(),
+              }
+            : {}
           const { data, error } = await supabase
             .from('items')
             .insert({
@@ -202,6 +253,7 @@ export const morningDigest = inngest.createFunction(
               urgent: fresh.urgent ?? false,
               due_at: fresh.due_at ?? null,
               semantic_hash,
+              ...briefFields,
             })
             .select('id')
             .single()

@@ -14,14 +14,18 @@ const USER_ID = process.env.APP_USER_ID!
 // Reverse map: Nango provider config key → our internal provider name.
 const PROVIDER_FROM_NANGO_KEY: Record<string, ConnectionProvider> = {
   'google-mail': 'gmail',
+  'google-calendar': 'calendar',
   slack: 'slack',
+  linear: 'linear',
 }
 
 // Maps our internal provider name → the Nango integration's provider config
-// key. Slack and Gmail use Nango OAuth; Granola is API-key (no Nango).
+// key. OAuth sources use Nango; Granola is API-key (no Nango).
 export const NANGO_PROVIDER_KEY: Record<ConnectionProvider, string | null> = {
   gmail: 'google-mail',
+  calendar: 'google-calendar',
   slack: 'slack',
+  linear: 'linear',
   granola: null, // API key auth, not via Nango
 }
 

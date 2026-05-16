@@ -31,7 +31,7 @@ const USER_ID = process.env.APP_USER_ID!
  */
 export async function createNangoConnectSession(
   provider: ConnectionProvider
-): Promise<{ token: string }> {
+): Promise<{ token: string; providerKey: string }> {
   const providerKey = NANGO_PROVIDER_KEY[provider]
   if (!providerKey) {
     throw new Error(`${provider} doesn't use Nango OAuth.`)
@@ -48,7 +48,7 @@ export async function createNangoConnectSession(
   if (!token) {
     throw new Error('Nango createConnectSession did not return a token.')
   }
-  return { token }
+  return { token, providerKey }
 }
 
 /**

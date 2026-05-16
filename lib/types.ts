@@ -22,7 +22,7 @@ export type Status =
 
 export type Priority = 'P0' | 'P1' | 'P2' | 'P3' | null
 
-export type Source = 'granola' | 'gmail' | 'slack' | 'manual'
+export type Source = 'granola' | 'gmail' | 'slack' | 'calendar' | 'linear' | 'manual'
 
 export interface SourceRef {
   granola_meeting_id?: string
@@ -31,6 +31,10 @@ export interface SourceRef {
   gmail_message_id?: string
   slack_channel_id?: string
   slack_ts?: string
+  google_calendar_event_id?: string
+  google_calendar_event_start?: string
+  linear_issue_id?: string
+  linear_issue_identifier?: string
 }
 
 // The synthesized brief attached to each task — the differentiator.
@@ -81,6 +85,10 @@ export interface ExtractedItem {
   urgent?: boolean
   due_at?: string | null
   sub_items?: Array<Omit<ExtractedItem, 'sub_items'>>
+  // Optional inline brief — used by extractors whose value IS the brief
+  // (Calendar prep). Most extractors leave this null; briefs get generated
+  // by scripts/backfill-briefs.ts after extraction.
+  brief?: TaskBrief | null
 }
 
 export interface Run {
@@ -114,4 +122,4 @@ export interface Connection {
 
 // What the user thinks of as a "source". Maps 1:1 to the connections.provider
 // text column.
-export type ConnectionProvider = 'gmail' | 'granola' | 'slack'
+export type ConnectionProvider = 'gmail' | 'granola' | 'slack' | 'calendar' | 'linear'

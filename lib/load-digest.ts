@@ -138,7 +138,9 @@ function labelFor(source: Source): string {
   const map: Record<Source, string> = {
     granola: 'Granola',
     gmail: 'Gmail',
+    calendar: 'Google Calendar',
     slack: 'Slack',
+    linear: 'Linear',
     manual: 'manual entry',
   }
   return map[source] || source

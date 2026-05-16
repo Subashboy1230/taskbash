@@ -646,7 +646,9 @@ function SourceIcon({ source }: { source: Source }) {
   const map: Record<Source, { icon: React.ComponentType<{ size?: number; className?: string }>; tooltip: string }> = {
     granola: { icon: Mic, tooltip: 'Granola' },
     gmail: { icon: Mail, tooltip: 'Gmail' },
+    calendar: { icon: CalendarIcon, tooltip: 'Google Calendar' },
     slack: { icon: Hash, tooltip: 'Slack' },
+    linear: { icon: Hash, tooltip: 'Linear' },
     manual: { icon: Pencil, tooltip: 'Manual' },
   }
   const entry = map[source] || { icon: Pencil, tooltip: source }
