@@ -57,6 +57,20 @@ export const morningDigest = inngest.createFunction(
     })
     logger.info(`opened run ${run.id}`)
 
+    // ─── 1b. Auto-unsnooze ────────────────────────────────────────────
+    // Items whose snooze window has passed come back to 'open' so they
+    // reappear in today's digest. Runs before the items load so unsnoozed
+    // items are part of the current set.
+    await step.run('auto-unsnooze', async () => {
+      const { error } = await supabase
+        .from('items')
+        .update({ status: 'open', snooze_until: null })
+        .eq('user_id', USER_ID)
+        .eq('status', 'snoozed')
+        .lt('snooze_until', new Date().toISOString())
+      if (error) throw error
+    })
+
     // ─── 2. Load current open items ───────────────────────────────────
     const currentItems = (await step.run('load-current-items', async () => {
       const { data, error } = await supabase

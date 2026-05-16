@@ -42,6 +42,22 @@ export async function dismissItem(itemId: string) {
   revalidatePath('/today')
 }
 
+// Snooze an item — hides it from /today for the given number of hours
+// (default 24h). The morning digest auto-unsnoozes items whose snooze
+// window has passed, so they reappear on the next run.
+export async function snoozeItem(itemId: string, hours: number = 24) {
+  const snoozeUntil = new Date(
+    Date.now() + hours * 60 * 60 * 1000
+  ).toISOString()
+  const { error } = await supabase
+    .from('items')
+    .update({ status: 'snoozed', snooze_until: snoozeUntil })
+    .eq('id', itemId)
+    .eq('user_id', USER_ID)
+  if (error) throw new Error(`snoozeItem failed: ${error.message}`)
+  revalidatePath('/today')
+}
+
 export async function requestRefresh(): Promise<{ ok: boolean; error?: string }> {
   // A failed Inngest send must NOT crash the /today page. Catch and report.
   try {

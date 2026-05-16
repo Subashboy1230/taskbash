@@ -40,7 +40,13 @@ import {
 import { cn } from '@/lib/utils'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { Source, Tag, TaskBrief } from '@/lib/types'
-import { completeItem, dismissItem, requestRefresh, uncompleteItem } from './actions'
+import {
+  completeItem,
+  dismissItem,
+  requestRefresh,
+  snoozeItem,
+  uncompleteItem,
+} from './actions'
 
 // ─── Top-level layout ───────────────────────────────────────────────────
 
@@ -67,6 +73,16 @@ export function TodayView({ digest }: { digest: MockDigestSummary }) {
   function handleDismiss(id: string) {
     setHiddenIds(s => new Set(s).add(id))
     dismissItem(id).catch(() => {
+      setHiddenIds(s => {
+        const next = new Set(s)
+        next.delete(id)
+        return next
+      })
+    })
+  }
+  function handleSnooze(id: string) {
+    setHiddenIds(s => new Set(s).add(id))
+    snoozeItem(id).catch(() => {
       setHiddenIds(s => {
         const next = new Set(s)
         next.delete(id)
@@ -165,6 +181,7 @@ export function TodayView({ digest }: { digest: MockDigestSummary }) {
                   onSelect={() => setSelectedItem(item)}
                   onComplete={() => handleComplete(item.id)}
                   onDismiss={() => handleDismiss(item.id)}
+                  onSnooze={() => handleSnooze(item.id)}
                 />
               ))}
             </ul>
@@ -425,12 +442,14 @@ function TaskRow({
   onSelect,
   onComplete,
   onDismiss,
+  onSnooze,
 }: {
   item: MockItem
   isSelected: boolean
   onSelect: () => void
   onComplete: () => void
   onDismiss: () => void
+  onSnooze: () => void
 }) {
   // Visual strikethrough animates before the row gets removed by the parent
   const [completed, setCompleted] = useState(false)
@@ -448,6 +467,11 @@ function TaskRow({
     e.stopPropagation()
     setCompleted(true) // fades the row before it's removed
     setTimeout(() => onDismiss(), 250)
+  }
+  const handleSnoozeClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setCompleted(true) // fade out before removal
+    setTimeout(() => onSnooze(), 250)
   }
 
   return (
@@ -555,7 +579,7 @@ function TaskRow({
               label="Reassign"
               onClick={e => e.stopPropagation()}
             />
-            <ActionButton icon={Clock} label="Snooze" onClick={e => e.stopPropagation()} />
+            <ActionButton icon={Clock} label="Snooze 24h" onClick={handleSnoozeClick} />
             <ActionButton
               icon={Check}
               label="Complete"
