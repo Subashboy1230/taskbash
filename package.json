@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
+    "@nangohq/frontend": "^0.44.0",
     "@nangohq/node": "^0.44.0",
     "@supabase/supabase-js": "^2.45.0",
     "clsx": "^2.1.1",

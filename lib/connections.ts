@@ -6,9 +6,16 @@
 // week, the user_id arg becomes the authenticated user's id.
 
 import { supabase } from './supabase'
+import { nango } from './nango'
 import type { Connection, ConnectionProvider } from './types'
 
 const USER_ID = process.env.APP_USER_ID!
+
+// Reverse map: Nango provider config key → our internal provider name.
+const PROVIDER_FROM_NANGO_KEY: Record<string, ConnectionProvider> = {
+  'google-mail': 'gmail',
+  slack: 'slack',
+}
 
 // Maps our internal provider name → the Nango integration's provider config
 // key. Slack and Gmail use Nango OAuth; Granola is API-key (no Nango).
@@ -98,4 +105,67 @@ export async function listUserConnections(): Promise<Connection[]> {
     .order('created_at', { ascending: true })
   if (error) throw new Error(`listUserConnections failed: ${error.message}`)
   return (data as Connection[]) ?? []
+}
+
+/**
+ * Pull active OAuth connections from Nango and upsert them into our DB.
+ * Run before showing the /connections page so freshly-completed OAuth flows
+ * are picked up even when the frontend SDK's popup→postMessage path glitches.
+ *
+ * Best-effort: any Nango API error is swallowed (we still render whatever's
+ * in our DB). Returns the list of providers that got updated, for debugging.
+ */
+export async function syncOAuthConnectionsFromNango(): Promise<{
+  updated: ConnectionProvider[]
+  error?: string
+}> {
+  if (!USER_ID) throw new Error('APP_USER_ID is not set')
+
+  let raw: unknown
+  try {
+    raw = await nango.listConnections()
+  } catch (err) {
+    return { updated: [], error: err instanceof Error ? err.message : String(err) }
+  }
+
+  // Nango's response shape varies across SDK versions; normalise.
+  const wrapper = raw as { connections?: unknown[]; data?: unknown[] } | unknown[]
+  const list: unknown[] = Array.isArray(wrapper)
+    ? wrapper
+    : wrapper.connections ?? wrapper.data ?? []
+
+  const updated: ConnectionProvider[] = []
+  for (const entry of list) {
+    const c = entry as {
+      provider_config_key?: string
+      providerConfigKey?: string
+      connection_id?: string
+      connectionId?: string
+      end_user?: { id?: string }
+      endUser?: { id?: string }
+    }
+    const nangoKey = c.provider_config_key ?? c.providerConfigKey
+    const nangoConnectionId = c.connection_id ?? c.connectionId
+    const endUserId = c.end_user?.id ?? c.endUser?.id ?? null
+
+    if (!nangoKey || !nangoConnectionId) continue
+    // If the response includes end-user info, filter to ours. Otherwise
+    // accept everything (single-user mode — there's only this user).
+    if (endUserId !== null && endUserId !== USER_ID) continue
+
+    const internalProvider = PROVIDER_FROM_NANGO_KEY[nangoKey]
+    if (!internalProvider) continue
+
+    try {
+      await upsertConnection({
+        provider: internalProvider,
+        nango_connection_id: nangoConnectionId,
+      })
+      updated.push(internalProvider)
+    } catch {
+      // Skip on per-provider failure — best-effort sync.
+    }
+  }
+
+  return { updated }
 }

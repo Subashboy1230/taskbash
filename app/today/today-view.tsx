@@ -12,6 +12,7 @@
 //   8. Mark-as-done strikes through the parent task and fades it
 
 import { useEffect, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Bell,
@@ -34,6 +35,7 @@ import {
   Pencil,
   RefreshCw,
   RotateCcw,
+  Settings,
   UserPlus,
   X,
 } from 'lucide-react'
@@ -247,6 +249,13 @@ function AppHeader({ userInitials }: { userInitials: string }) {
           9+
         </span>
       </button>
+      <Link
+        href="/connections"
+        aria-label="Connections"
+        className="rounded-full p-2 text-success-fg hover:bg-surface-muted"
+      >
+        <Settings size={18} />
+      </Link>
       <div className="flex size-7 items-center justify-center rounded-full border border-success-fg bg-success-bg text-[11px] font-semibold text-success-fg">
         {userInitials}
       </div>
