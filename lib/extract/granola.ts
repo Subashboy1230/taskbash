@@ -18,6 +18,7 @@
 //   4. Return normalized ExtractedItem[]
 
 import { anthropic, MODELS } from '../anthropic'
+import { getActiveConnection } from '../connections'
 import type { ExtractedItem } from '../types'
 import { subDays, formatISO } from 'date-fns'
 import { WORK_ONLY_RULE } from './filters'
@@ -69,10 +70,13 @@ interface ExtractActionItemsArgs {
 export async function extractGranolaActionItems(
   args: ExtractActionItemsArgs
 ): Promise<ExtractedItem[]> {
-  const apiKey = process.env.GRANOLA_API_KEY
-  if (!apiKey) {
-    throw new Error('GRANOLA_API_KEY is not set in .env.local')
+  const conn = await getActiveConnection('granola')
+  if (!conn || !conn.api_key) {
+    throw new Error(
+      'Granola not connected — visit /connections to set it up.'
+    )
   }
+  const apiKey = conn.api_key
 
   const since = formatISO(subDays(new Date(), args.days), { representation: 'date' })
 

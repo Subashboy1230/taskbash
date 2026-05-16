@@ -19,6 +19,7 @@
 
 import { anthropic, MODELS } from '../anthropic'
 import { nangoProxy } from '../nango'
+import { getActiveConnection, NANGO_PROVIDER_KEY } from '../connections'
 import type { ExtractedItem } from '../types'
 import { WORK_ONLY_RULE } from './filters'
 import { extractJsonObject } from './parse'
@@ -78,13 +79,14 @@ interface ExtractActionItemsArgs {
 export async function extractGmailActionItems(
   args: ExtractActionItemsArgs
 ): Promise<ExtractedItem[]> {
-  const providerConfigKey = process.env.NANGO_GMAIL_PROVIDER_KEY
-  const connectionId = process.env.APP_NANGO_GMAIL_CONNECTION_ID
-  if (!providerConfigKey || !connectionId) {
+  const conn = await getActiveConnection('gmail')
+  if (!conn || !conn.nango_connection_id) {
     throw new Error(
-      'Gmail not configured — set NANGO_GMAIL_PROVIDER_KEY and APP_NANGO_GMAIL_CONNECTION_ID in .env.local'
+      'Gmail not connected — visit /connections to set it up.'
     )
   }
+  const providerConfigKey = NANGO_PROVIDER_KEY.gmail!
+  const connectionId = conn.nango_connection_id
 
   // ─── Step 1: list recent inbox threads ─────────────────────────────
   // The query is the easy tuning knob. Dropping promotions/social skips the

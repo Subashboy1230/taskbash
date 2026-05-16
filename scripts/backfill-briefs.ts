@@ -17,13 +17,8 @@ config({ path: resolve(process.cwd(), '.env.local') })
 
 async function main() {
   const USER_ID = process.env.APP_USER_ID
-  const GRANOLA_API_KEY = process.env.GRANOLA_API_KEY
   if (!USER_ID) {
     console.error('APP_USER_ID is not set in .env.local')
-    process.exit(1)
-  }
-  if (!GRANOLA_API_KEY) {
-    console.error('GRANOLA_API_KEY is not set in .env.local')
     process.exit(1)
   }
 
@@ -31,6 +26,17 @@ async function main() {
   const { supabase } = await import('../lib/supabase')
   const { generateBrief } = await import('../lib/brief')
   const { fetchNoteDetail } = await import('../lib/extract/granola')
+  const { getActiveConnection } = await import('../lib/connections')
+
+  // Granola API key now comes from the DB connections table (no env var).
+  const granolaConn = await getActiveConnection('granola')
+  if (!granolaConn?.api_key) {
+    console.error(
+      'Granola not connected. Run scripts/seed-connections.ts first, or set it up in /connections.'
+    )
+    process.exit(1)
+  }
+  const GRANOLA_API_KEY = granolaConn.api_key
 
   console.log('Loading Granola items needing briefs for', USER_ID)
   const { data, error } = await supabase

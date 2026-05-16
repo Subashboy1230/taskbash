@@ -102,9 +102,16 @@ export interface Connection {
   id: string
   user_id: string
   provider: string
-  nango_connection_id: string
+  // OAuth providers (Gmail, Slack) use nango_connection_id. API-key providers
+  // (Granola) leave this empty and use api_key instead.
+  nango_connection_id: string | null
+  api_key: string | null
   status: 'active' | 'expired' | 'error'
   scopes: string[] | null
   last_sync_at: string | null
   created_at: string
 }
+
+// What the user thinks of as a "source". Maps 1:1 to the connections.provider
+// text column.
+export type ConnectionProvider = 'gmail' | 'granola' | 'slack'

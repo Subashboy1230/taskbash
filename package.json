@@ -12,7 +12,8 @@
     "test:diff": "tsx scripts/test-diff.ts",
     "test:gmail": "tsx scripts/test-gmail.ts",
     "backfill:tags": "tsx scripts/backfill-tags.ts",
-    "backfill:briefs": "tsx scripts/backfill-briefs.ts"
+    "backfill:briefs": "tsx scripts/backfill-briefs.ts",
+    "seed:connections": "tsx scripts/seed-connections.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

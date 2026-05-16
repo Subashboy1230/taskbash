@@ -10,13 +10,10 @@ import { resolve } from 'node:path'
 config({ path: resolve(process.cwd(), '.env.local') })
 
 async function main() {
-  // Check the env vars the Gmail path needs.
-  const required = [
-    'NANGO_SECRET_KEY',
-    'NANGO_GMAIL_PROVIDER_KEY',
-    'APP_NANGO_GMAIL_CONNECTION_ID',
-    'ANTHROPIC_API_KEY',
-  ]
+  // Check env vars. Gmail credentials now live in the DB (connections table)
+  // instead of env vars — only NANGO_SECRET_KEY and ANTHROPIC_API_KEY are needed
+  // at the process level.
+  const required = ['NANGO_SECRET_KEY', 'APP_USER_ID', 'ANTHROPIC_API_KEY']
   const missing = required.filter(k => !process.env[k])
   if (missing.length > 0) {
     console.error('Missing env vars in .env.local:', missing.join(', '))
