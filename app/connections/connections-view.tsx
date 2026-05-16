@@ -16,6 +16,7 @@ import {
   Mic,
   MessageSquare,
   Calendar as CalendarIcon,
+  ListChecks,
   Check,
   X,
   Loader2,
@@ -57,6 +58,13 @@ const SOURCES: Source[] = [
     description: 'Pull post-call commitments from your meeting notes.',
     icon: Mic,
     authType: 'apikey',
+  },
+  {
+    provider: 'linear',
+    name: 'Linear',
+    description: 'Surface open issues assigned to you, sorted by recency.',
+    icon: ListChecks,
+    authType: 'oauth',
   },
   {
     provider: 'slack',

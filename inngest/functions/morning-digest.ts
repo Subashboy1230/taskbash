@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase'
 import { extractGranolaActionItems } from '@/lib/extract/granola'
 import { extractGmailActionItems } from '@/lib/extract/gmail'
 import { extractCalendarPrepItems } from '@/lib/extract/calendar'
+import { extractLinearActionItems } from '@/lib/extract/linear'
 import { diffSingleSource } from '@/lib/diff'
 import { computeSemanticHash } from '@/lib/normalize'
 import { getActiveConnection } from '@/lib/connections'
@@ -208,6 +209,44 @@ export const morningDigest = inngest.createFunction(
           })
         })
         logger.error('calendar extraction failed', err)
+      }
+    }
+
+    // Linear — same DB-backed gate pattern as Calendar.
+    const linearConn = await step.run('check-linear-conn', async () => {
+      const c = await getActiveConnection('linear')
+      return c?.status === 'active' && !!c.nango_connection_id
+    })
+    if (linearConn) {
+      try {
+        const linearItems = await step.run('extract-linear', async () =>
+          extractLinearActionItems({
+            userEmail: 'subashraj411@gmail.com',
+          })
+        )
+        for (const item of linearItems) {
+          allFresh.push(item)
+          freshCount += 1
+        }
+        sourcesRun.push('linear')
+        await step.run('log-extract-completed-linear', async () => {
+          await supabase.from('agent_events').insert({
+            user_id: USER_ID,
+            run_id: run.id,
+            kind: 'extract.completed',
+            payload: { source: 'linear', count: linearItems.length },
+          })
+        })
+      } catch (err) {
+        await step.run('log-extract-failed-linear', async () => {
+          await supabase.from('agent_events').insert({
+            user_id: USER_ID,
+            run_id: run.id,
+            kind: 'extract.failed',
+            payload: { source: 'linear', error: String(err) },
+          })
+        })
+        logger.error('linear extraction failed', err)
       }
     }
 
