@@ -81,6 +81,19 @@ export async function recordGranolaApiKey(apiKey: string): Promise<void> {
 }
 
 /**
+ * Store a Linear Personal API key. Linear keys start with `lin_api_`.
+ */
+export async function recordLinearApiKey(apiKey: string): Promise<void> {
+  const trimmed = apiKey.trim()
+  if (!trimmed) throw new Error('API key is empty.')
+  if (!trimmed.startsWith('lin_api_')) {
+    throw new Error('That doesn\'t look like a Linear Personal API key (should start with "lin_api_").')
+  }
+  await upsertConnection({ provider: 'linear', api_key: trimmed })
+  revalidatePath('/connections')
+}
+
+/**
  * Mark a connection as expired so the extractor skips it. The Connect flow
  * can reactivate it later.
  */

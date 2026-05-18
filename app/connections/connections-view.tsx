@@ -26,6 +26,7 @@ import {
   createNangoConnectSession,
   recordNangoConnection,
   recordGranolaApiKey,
+  recordLinearApiKey,
   disconnectProvider,
 } from './actions'
 
@@ -64,7 +65,7 @@ const SOURCES: Source[] = [
     name: 'Linear',
     description: 'Surface open issues assigned to you, sorted by recency.',
     icon: ListChecks,
-    authType: 'oauth',
+    authType: 'apikey',
   },
   {
     provider: 'slack',
@@ -225,11 +226,12 @@ function ConnectionAction({
     )
   }
 
-  // Granola — API key form, inline.
+  // Granola / Linear — API key form, inline.
   if (source.authType === 'apikey') {
     if (showApiKeyForm) {
       return (
-        <GranolaApiKeyForm
+        <ApiKeyForm
+          provider={source.provider as 'granola' | 'linear'}
           onCancel={() => {
             setShowApiKeyForm(false)
             setError(null)
@@ -277,11 +279,35 @@ function ConnectionAction({
   )
 }
 
-function GranolaApiKeyForm({
+// Per-provider config for the API-key form: prefix, where to find the key,
+// and which server action persists it.
+const API_KEY_CONFIG: Record<
+  'granola' | 'linear',
+  {
+    placeholder: string
+    hint: string
+    save: (apiKey: string) => Promise<void>
+  }
+> = {
+  granola: {
+    placeholder: 'grn_...',
+    hint: 'Granola → Settings → Workspaces → API → Generate API Key. Requires Granola Enterprise.',
+    save: recordGranolaApiKey,
+  },
+  linear: {
+    placeholder: 'lin_api_...',
+    hint: 'Linear → Settings → Security & access → Personal API keys → New API key.',
+    save: recordLinearApiKey,
+  },
+}
+
+function ApiKeyForm({
+  provider,
   onCancel,
   onError,
   error,
 }: {
+  provider: 'granola' | 'linear'
   onCancel: () => void
   onError: (msg: string | null) => void
   error: string | null
@@ -289,6 +315,7 @@ function GranolaApiKeyForm({
   const router = useRouter()
   const [apiKey, setApiKey] = useState('')
   const [busy, startBusy] = useTransition()
+  const cfg = API_KEY_CONFIG[provider]
   return (
     <form
       onSubmit={e => {
@@ -296,7 +323,7 @@ function GranolaApiKeyForm({
         startBusy(async () => {
           onError(null)
           try {
-            await recordGranolaApiKey(apiKey)
+            await cfg.save(apiKey)
             router.refresh()
           } catch (err) {
             onError(err instanceof Error ? err.message : 'Save failed')
@@ -309,7 +336,7 @@ function GranolaApiKeyForm({
         type="password"
         value={apiKey}
         onChange={e => setApiKey(e.target.value)}
-        placeholder="grn_..."
+        placeholder={cfg.placeholder}
         autoFocus
         className="w-64 rounded-md border border-line bg-surface px-2 py-1 text-[12px] text-ink placeholder:text-ink-faint focus:border-success-fg focus:outline-none"
       />
@@ -331,10 +358,7 @@ function GranolaApiKeyForm({
         </button>
       </div>
       {error && <span className="text-[11px] text-danger-fg">{error}</span>}
-      <p className="text-[11px] text-ink-faint">
-        Granola → Settings → Workspaces → API → Generate API Key. Requires
-        Granola Enterprise.
-      </p>
+      <p className="text-[11px] text-ink-faint">{cfg.hint}</p>
     </form>
   )
 }

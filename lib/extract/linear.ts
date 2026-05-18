@@ -1,25 +1,21 @@
 // Linear extractor — surface open issues assigned to the user.
 //
-// Linear uses GraphQL; one POST to /graphql returns every assigned issue.
-// We filter to "open" states (backlog / unstarted / started / triage) and
-// turn each into an action-tagged review task.
-//
-// Scope: up to MAX_ISSUES most-recently-updated assigned + open issues.
-// Closed (completed/cancelled) issues are skipped — they auto-clear from
-// the digest via the diff logic the next morning anyway.
+// Auth: Personal API key (NOT OAuth). Linear OAuth apps require workspace
+// admin; Personal API keys don't — any user can mint one from their account
+// settings. Trade-off: the key is tied to a single user (the one who minted
+// it). In multi-tenant mode each user pastes their own.
 //
 // One-time setup:
-//   1. https://linear.app/settings/api/applications → New OAuth application
-//      - Redirect URI: https://api.nango.dev/oauth/callback
-//      - Scope: read (or "Read" toggle on)
-//   2. Note the Client ID and Client Secret.
-//   3. Create a "Linear" integration in Nango with those credentials,
-//      scope: read.
-//   4. User connects via /connections.
+//   1. linear.app → Settings → Security & access → Personal API keys → New.
+//   2. Paste the lin_api_... key into /connections.
+//
+// Flow: POST /graphql with Authorization: <api_key> → viewer.assignedIssues
+// → filter to open states → map to ExtractedItem.
 
-import { nangoProxy } from '../nango'
-import { getActiveConnection, NANGO_PROVIDER_KEY } from '../connections'
+import { getActiveConnection } from '../connections'
 import type { ExtractedItem } from '../types'
+
+const LINEAR_GRAPHQL_URL = 'https://api.linear.app/graphql'
 
 const MAX_ISSUES = 25
 // Linear state.type values that count as "still actionable" for the digest.
@@ -60,11 +56,9 @@ export async function extractLinearActionItems(
   args: ExtractArgs // eslint-disable-line @typescript-eslint/no-unused-vars
 ): Promise<ExtractedItem[]> {
   const conn = await getActiveConnection('linear')
-  if (!conn || !conn.nango_connection_id) {
-    throw new Error('Linear not connected — visit /connections to set it up.')
+  if (!conn || !conn.api_key) {
+    throw new Error('Linear not connected — visit /connections to paste a Personal API key.')
   }
-  const providerConfigKey = NANGO_PROVIDER_KEY.linear!
-  const connectionId = conn.nango_connection_id
 
   const query = `
     query DigestIssues {
@@ -87,13 +81,21 @@ export async function extractLinearActionItems(
     }
   `.trim()
 
-  const response = await nangoProxy<AssignedIssuesResponse>({
-    providerConfigKey,
-    connectionId,
+  // Linear's Authorization header takes the raw key (no "Bearer " prefix
+  // for Personal API keys; that prefix is only for OAuth access tokens).
+  const res = await fetch(LINEAR_GRAPHQL_URL, {
     method: 'POST',
-    endpoint: '/graphql',
-    data: { query },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: conn.api_key,
+    },
+    body: JSON.stringify({ query }),
   })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Linear API ${res.status}: ${body.slice(0, 200)}`)
+  }
+  const response = (await res.json()) as AssignedIssuesResponse
 
   if (response.errors && response.errors.length > 0) {
     const messages = response.errors.map(e => e.message ?? 'unknown').join('; ')

@@ -16,17 +16,17 @@ const PROVIDER_FROM_NANGO_KEY: Record<string, ConnectionProvider> = {
   'google-mail': 'gmail',
   'google-calendar': 'calendar',
   slack: 'slack',
-  linear: 'linear',
 }
 
 // Maps our internal provider name → the Nango integration's provider config
-// key. OAuth sources use Nango; Granola is API-key (no Nango).
+// key. OAuth sources use Nango; Granola + Linear are API-key (no Nango —
+// Linear OAuth requires workspace admin so we use Personal API keys instead).
 export const NANGO_PROVIDER_KEY: Record<ConnectionProvider, string | null> = {
   gmail: 'google-mail',
   calendar: 'google-calendar',
   slack: 'slack',
-  linear: 'linear',
-  granola: null, // API key auth, not via Nango
+  linear: null, // Personal API key auth
+  granola: null, // API key auth
 }
 
 /**

@@ -212,10 +212,10 @@ export const morningDigest = inngest.createFunction(
       }
     }
 
-    // Linear — same DB-backed gate pattern as Calendar.
+    // Linear — gate on api_key (Personal API key auth, not Nango OAuth).
     const linearConn = await step.run('check-linear-conn', async () => {
       const c = await getActiveConnection('linear')
-      return c?.status === 'active' && !!c.nango_connection_id
+      return c?.status === 'active' && !!c.api_key
     })
     if (linearConn) {
       try {
