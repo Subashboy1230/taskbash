@@ -234,12 +234,14 @@ function AppHeader({ userInitials }: { userInitials: string }) {
         <span className="font-medium">K</span>
         <span className="text-ink-faint">to search</span>
       </button>
-      <button
-        aria-label="AI assistant"
+      <Link
+        href="/teach"
+        aria-label="Mass auto-teach"
+        title="Mass auto-teach"
         className="rounded-full p-2 text-success-fg hover:bg-surface-muted"
       >
         <Brain size={18} />
-      </button>
+      </Link>
       <button
         aria-label="Notifications"
         className="relative rounded-full p-2 text-success-fg hover:bg-surface-muted"
