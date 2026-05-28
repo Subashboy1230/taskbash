@@ -14,6 +14,7 @@
     "test:sources": "tsx scripts/test-sources.ts",
     "digest": "tsx scripts/trigger-digest.ts",
     "analyze:soul": "tsx scripts/analyze-soul.ts",
+    "backfill:followups": "tsx scripts/backfill-followups.ts",
     "backfill:tags": "tsx scripts/backfill-tags.ts",
     "backfill:briefs": "tsx scripts/backfill-briefs.ts",
     "seed:connections": "tsx scripts/seed-connections.ts"

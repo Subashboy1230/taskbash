@@ -12,6 +12,7 @@
 //   8. Mark-as-done strikes through the parent task and fades it
 
 import { useEffect, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Calendar as CalendarIcon,
@@ -36,6 +37,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AppHeader } from '@/app/_components/app-header'
+import { StatusPill, type StatusPillKind } from '@/app/_components/status-pill'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { ProposedAction, Source, Tag, TaskBrief } from '@/lib/types'
 import {
@@ -108,8 +110,7 @@ export function TodayView({
         setRefreshError(result.error || 'Refresh failed')
         return
       }
-      // Wait briefly then revalidate so the user sees motion
-      await new Promise(r => setTimeout(r, 600))
+      // Server already revalidated /today; trigger a client re-fetch.
       router.refresh()
     })
   }
@@ -209,7 +210,13 @@ export function TodayView({
                 <span className="rounded-full bg-surface-muted px-1.5 py-0.5 text-[11px] font-medium text-ink-muted normal-case tracking-normal">
                   {digest.completed_today_count}
                 </span>
-                <span className="ml-1 text-[11px] underline">View All</span>
+                <Link
+                  href="/handled"
+                  onClick={e => e.stopPropagation()}
+                  className="ml-1 text-[11px] underline hover:text-ink"
+                >
+                  View All
+                </Link>
               </span>
               {showCompleted ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
@@ -553,11 +560,38 @@ function TaskRow({
     <li
       onClick={onSelect}
       className={cn(
-        'group relative cursor-pointer px-2 py-4 transition-colors',
+        'group relative cursor-pointer pl-12 pr-2 py-4 transition-colors',
         isSelected ? 'bg-success-bg/30' : 'hover:bg-surface-muted/50',
         completed && 'opacity-50'
       )}
     >
+      {/* Hover-triage micro-buttons on the LEFT — speed approval. Hidden
+          until the row is hovered/selected, then fade in over the row's
+          left gutter. Mirrors Nummo's row-level X/✓ pattern. */}
+      <div
+        className={cn(
+          'absolute left-1.5 top-3.5 flex flex-col gap-1 transition-opacity',
+          isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+        )}
+      >
+        <button
+          type="button"
+          aria-label="Dismiss"
+          onClick={handleDismissClick}
+          className="flex size-6 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-danger-fg hover:text-danger-fg"
+        >
+          <X size={12} />
+        </button>
+        <button
+          type="button"
+          aria-label="Complete"
+          onClick={handleCompleteClick}
+          className="flex size-6 items-center justify-center rounded-md border border-success-fg/40 bg-success-bg text-success-fg hover:bg-success-fg hover:text-white"
+        >
+          <Check size={12} />
+        </button>
+      </div>
+
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -646,20 +680,21 @@ function TaskRow({
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-1.5">
-          {item.status_label && (
-            <span
-              className={cn(
-                'text-[12px]',
-                item.status_label_tone === 'success' && 'text-success-fg',
-                item.status_label_tone === 'danger' && 'text-danger-fg',
-                item.status_label_tone === 'warning' && 'text-tag-action-fg',
-                item.status_label_tone === 'info' && 'text-ink-muted',
-                !item.status_label_tone && 'text-ink-muted'
-              )}
-            >
-              {item.status_label}
-            </span>
-          )}
+          {/* Status pill — uses the consistent vocabulary. The fast X/✓
+              triage is on the left now; we keep Snooze on the right as
+              the only "longer" action that doesn't have a left twin. */}
+          {(() => {
+            // Pill priority: an actual drafted artifact is the strongest
+            // signal — "Draft ready" (green). Otherwise fall back to
+            // urgency-only "Awaiting approval" (orange) so the row earns
+            // attention even without a draft.
+            const kind: StatusPillKind | null = item.proposed_action
+              ? 'draft'
+              : item.urgent
+              ? 'awaiting'
+              : null
+            return kind ? <StatusPill kind={kind} /> : null
+          })()}
           <div
             className={cn(
               'flex gap-1 transition-opacity',
@@ -667,19 +702,7 @@ function TaskRow({
               isSelected && 'opacity-100'
             )}
           >
-            <ActionButton icon={X} label="Dismiss" onClick={handleDismissClick} />
-            <ActionButton
-              icon={UserPlus}
-              label="Reassign"
-              onClick={e => e.stopPropagation()}
-            />
             <ActionButton icon={Clock} label="Snooze 24h" onClick={handleSnoozeClick} />
-            <ActionButton
-              icon={Check}
-              label="Complete"
-              variant="primary"
-              onClick={handleCompleteClick}
-            />
           </div>
         </div>
       </div>

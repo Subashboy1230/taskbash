@@ -19,6 +19,7 @@
 
 import { anthropic, MODELS } from '../anthropic'
 import { getActiveConnection } from '../connections'
+import { draftFollowup } from '../draft/followup'
 import type { ExtractedItem } from '../types'
 import { subDays, formatISO } from 'date-fns'
 import { WORK_ONLY_RULE } from './filters'
@@ -165,7 +166,59 @@ async function extractItemsFromNote(
     .map(b => b.text)
     .join('\n')
 
-  return parseExtractionResponse(text, note)
+  const items = parseExtractionResponse(text, note)
+
+  // Capture the meeting summary as Context Trail source_excerpt and
+  // optionally pre-draft a follow-up for items where we can confidently
+  // pick a recipient (i.e., a specific attendee). Caps drafting at 2
+  // per meeting to keep Claude cost bounded.
+  const meetingTitle =
+    note.title || note.calendar_event?.event_title || 'Untitled meeting'
+  const excerpt = buildSourceExcerpt({
+    title: meetingTitle,
+    date: note.created_at,
+    summary: sourceText,
+  })
+  let draftsDone = 0
+  for (const item of items) {
+    item.source_excerpt = excerpt
+    if (draftsDone >= 2) continue
+    if (item.tag !== 'commit' && item.tag !== 'reply' && item.tag !== 'action') continue
+    try {
+      const action = await draftFollowup({
+        actionTitle: item.title,
+        meetingTitle,
+        meetingDate: note.created_at,
+        meetingContext: sourceText,
+        attendees: note.attendees ?? [],
+        userEmail,
+      })
+      if (action) {
+        item.proposed_action = action
+        draftsDone++
+      }
+    } catch (err) {
+      console.error(`[granola] draftFollowup failed for "${item.title}":`, err)
+    }
+  }
+
+  return items
+}
+
+/**
+ * Compact form of the meeting note for the Context Trail tab.
+ */
+function buildSourceExcerpt(args: {
+  title: string
+  date?: string
+  summary: string
+}): string {
+  const truncated = args.summary.slice(0, 2500)
+  const ellipsis = args.summary.length > 2500 ? '\n…' : ''
+  const dateLine = args.date
+    ? `Date: ${new Date(args.date).toLocaleDateString('en-US', { dateStyle: 'medium' })}\n`
+    : ''
+  return `Meeting: ${args.title}\n${dateLine}\n${truncated}${ellipsis}`
 }
 
 const SYSTEM_PROMPT = `You extract action items owned by a specific user from meeting summaries.

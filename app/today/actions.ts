@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { supabase } from '@/lib/supabase'
 import { resolveUserId } from '@/lib/supabase-server'
+import { runDigestForUser } from '@/lib/digest/run'
 import { inngest, EVENTS } from '@/inngest/client'
 
 /**
@@ -193,14 +194,37 @@ export async function executeProposedAction(
   return { ok: true, openUrl }
 }
 
-export async function requestRefresh(): Promise<{ ok: boolean; error?: string }> {
-  // A failed Inngest send must NOT crash the /today page. Catch and report.
+/**
+ * Re-run every source extractor synchronously, run the diff, persist
+ * new/carryover/completed transitions, then revalidate /today so the UI
+ * shows fresh state. Used by the refresh button on /today.
+ *
+ * Takes ~30–60s end-to-end (each source makes a Claude call per item).
+ * The caller should show a loading state for that duration.
+ *
+ * Notes vs. the Inngest cron path (inngest/functions/morning-digest.ts):
+ *   - No runs / agent_events log writes (kept tight for round-trip)
+ *   - No step.run() durability — a partial failure just retries on next click
+ */
+export async function requestRefresh(): Promise<
+  | { ok: true; summary: { new: number; carryover: number; completed: number; sources: string[] } }
+  | { ok: false; error: string }
+> {
   try {
-    await inngest.send({
-      name: EVENTS.digestRequested,
-      data: { source: 'ui_refresh', requested_at: new Date().toISOString() },
-    })
-    return { ok: true }
+    const userId = await resolveUserId()
+    // TODO(week5): load userEmail from the public.users row.
+    const userEmail = 'subash@sigiq.ai'
+    const summary = await runDigestForUser({ userId, userEmail })
+    revalidatePath('/today')
+    return {
+      ok: true,
+      summary: {
+        new: summary.new,
+        carryover: summary.carryover,
+        completed: summary.completed,
+        sources: summary.sources_run,
+      },
+    }
   } catch (err) {
     console.error('requestRefresh failed:', err)
     return {

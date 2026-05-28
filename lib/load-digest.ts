@@ -14,13 +14,16 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   today.setHours(0, 0, 0, 0)
 
   // Open items (the main list)
-  // Sort by deadline: soonest due first (so overdue floats to the top),
-  // items with no deadline come last, newest-seen first within that group.
+  // Sort: items with a drafted artifact first (the agent did work, the user
+  // just needs to approve — those should never get lost). Then by deadline
+  // (soonest due first; overdue floats to the top). Items with no deadline
+  // come last, newest-seen first within that group.
   const { data: openRows, error: openErr } = await supabase
     .from('items')
     .select('*')
     .eq('user_id', USER_ID)
     .in('status', ['open', 'in_progress'])
+    .order('proposed_action', { ascending: false, nullsFirst: false })
     .order('due_at', { ascending: true, nullsFirst: false })
     .order('first_seen_at', { ascending: false })
     .limit(50)
