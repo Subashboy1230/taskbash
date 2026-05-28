@@ -27,6 +27,7 @@ import {
   Layers,
   Loader2,
   RefreshCw,
+  Trash2,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -41,6 +42,7 @@ import {
   deleteSubtask,
   dismissItem,
   executeProposedAction,
+  markItemSlop,
   requestRefresh,
   setItemPriority,
   snoozeItem,
@@ -855,6 +857,14 @@ function TaskRow({
               isSelected && 'opacity-100'
             )}
           >
+            <SlopMenu
+              itemId={item.id}
+              onMarked={() => {
+                // Fade the row then let the parent revalidate it away.
+                setCompleted(true)
+                setTimeout(() => onDismiss(), 250)
+              }}
+            />
             <SnoozeMenu onSnooze={hours => onSnoozeWithHours(hours)} />
           </div>
         </div>
@@ -963,6 +973,89 @@ function SnoozeMenu({ onSnooze }: { onSnooze: (hours: number) => void }) {
             >
               <span>{o.label}</span>
               <span className="text-[11px] text-ink-faint">{o.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Slop menu ──────────────────────────────────────────────────────────
+// "This shouldn't be here." Captures a training signal (item snapshot +
+// the user's category) into the item_feedback table and dismisses the row
+// so it leaves the list. Future extraction prompt iterations can replay
+// against the slop corpus to verify they would have correctly skipped it.
+
+type SlopReason = 'irrelevant' | 'spam' | 'low_signal' | 'misread_title' | 'other'
+
+const SLOP_OPTIONS: Array<{ key: SlopReason; label: string; hint: string }> = [
+  { key: 'irrelevant', label: 'Irrelevant', hint: "Don't extract this kind of thing" },
+  { key: 'spam', label: 'Spam / noise', hint: 'Marketing, automated, junk' },
+  { key: 'low_signal', label: 'Low signal', hint: "Real, but doesn't need my attention" },
+  { key: 'misread_title', label: 'Misread', hint: 'Title or details are wrong' },
+  { key: 'other', label: 'Other', hint: 'Just wrong' },
+]
+
+function SlopMenu({
+  itemId,
+  onMarked,
+}: {
+  itemId: string
+  onMarked: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      if (!(e.target as HTMLElement).closest('[data-slop-menu]')) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  function pick(reason: SlopReason, e: React.MouseEvent) {
+    e.stopPropagation()
+    setBusy(true)
+    setOpen(false)
+    markItemSlop(itemId, reason)
+      .then(() => onMarked())
+      .catch(() => setBusy(false))
+  }
+
+  return (
+    <div className="relative" data-slop-menu onClick={e => e.stopPropagation()}>
+      <button
+        type="button"
+        aria-label="Mark as slop (wrong / irrelevant)"
+        disabled={busy}
+        onClick={e => {
+          e.stopPropagation()
+          setOpen(o => !o)
+        }}
+        className="flex size-6 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-danger-fg hover:text-danger-fg disabled:opacity-40"
+        title="This shouldn't be here — help the agent learn"
+      >
+        <Trash2 size={12} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-md border border-line bg-surface py-1 shadow-md">
+          <p className="m-0 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+            Why is this slop?
+          </p>
+          {SLOP_OPTIONS.map(o => (
+            <button
+              key={o.key}
+              type="button"
+              onClick={e => pick(o.key, e)}
+              className="block w-full px-3 py-1.5 text-left hover:bg-surface-muted"
+            >
+              <p className="m-0 text-[12px] font-medium text-ink">{o.label}</p>
+              <p className="m-0 text-[11px] text-ink-faint">{o.hint}</p>
             </button>
           ))}
         </div>

@@ -12,6 +12,63 @@ import { inngest, EVENTS } from '@/inngest/client'
 import type { Priority } from '@/lib/types'
 
 /**
+ * Mark an item as "slop" — wrong / irrelevant / shouldn't have been
+ * extracted at all. Three things happen:
+ *
+ *   1. Capture a snapshot of the item AS IT IS NOW into item_feedback.
+ *      The snapshot is the training signal: "you extracted this exact
+ *      thing, the user said this category of wrong, learn from it."
+ *   2. Set status='dismissed' so the row leaves the user's list.
+ *   3. /today is revalidated so the UI updates.
+ *
+ * Reason is one of 'irrelevant' | 'spam' | 'low_signal' | 'misread_title'
+ * | 'other'. The caller can also pass a free-text note.
+ */
+export async function markItemSlop(
+  itemId: string,
+  reason: 'irrelevant' | 'spam' | 'low_signal' | 'misread_title' | 'other',
+  note?: string
+) {
+  const userId = await resolveUserId()
+
+  // 1. Snapshot the item so the feedback row stays anchored to what
+  //    the user actually saw, even if extraction later changes it.
+  const { data: item, error: readErr } = await supabase
+    .from('items')
+    .select('*')
+    .eq('id', itemId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (readErr) throw new Error(`markItemSlop read failed: ${readErr.message}`)
+  if (!item) throw new Error('Item not found.')
+
+  // 2. Insert feedback row.
+  const { error: feedbackErr } = await supabase.from('item_feedback').insert({
+    item_id: itemId,
+    user_id: userId,
+    kind: 'slop',
+    reason,
+    note: note ?? null,
+    item_snapshot: item,
+  })
+  if (feedbackErr) {
+    throw new Error(`markItemSlop feedback insert failed: ${feedbackErr.message}`)
+  }
+
+  // 3. Dismiss the item so it leaves the open list.
+  const { error: dismissErr } = await supabase
+    .from('items')
+    .update({ status: 'dismissed' })
+    .eq('id', itemId)
+    .eq('user_id', userId)
+  if (dismissErr) {
+    throw new Error(`markItemSlop dismiss failed: ${dismissErr.message}`)
+  }
+
+  revalidatePath('/today')
+}
+
+/**
  * Set or clear an item's priority (P0 / P1 / P2 / P3 / null). The /today
  * page sorts by priority first, so P0s float to the top.
  */
