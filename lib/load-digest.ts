@@ -41,6 +41,43 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   const openItems = (openRows || []) as Item[]
   const completedItems = (completedRows || []) as Item[]
 
+  // Load subtasks for every parent in either list. One query, then bucket
+  // them onto the right parent by parent_id. We include completed subtasks so
+  // the UI can show "2/5 done" as progress.
+  const parentIds = [
+    ...openItems.map(i => i.id),
+    ...completedItems.map(i => i.id),
+  ]
+  const subtasksByParent = new Map<
+    string,
+    Array<{ id: string; title: string; completed: boolean }>
+  >()
+  if (parentIds.length > 0) {
+    const { data: subRows, error: subErr } = await supabase
+      .from('items')
+      .select('id, title, status, parent_id, first_seen_at')
+      .eq('user_id', USER_ID)
+      .in('parent_id', parentIds)
+      .neq('status', 'dismissed')
+      .order('first_seen_at', { ascending: true })
+    if (subErr) throw new Error(`loadDigest subtasks failed: ${subErr.message}`)
+    for (const row of subRows || []) {
+      const r = row as {
+        id: string
+        title: string
+        status: string
+        parent_id: string
+      }
+      const list = subtasksByParent.get(r.parent_id) ?? []
+      list.push({
+        id: r.id,
+        title: r.title,
+        completed: r.status === 'completed',
+      })
+      subtasksByParent.set(r.parent_id, list)
+    }
+  }
+
   // Counts — computed from the open + completed lists
   const newToday = openItems.filter(i => new Date(i.first_seen_at) >= today).length
   const carryover = openItems.length - newToday
@@ -63,14 +100,17 @@ export async function loadDigest(): Promise<MockDigestSummary> {
       cleared_overnight: completedItems.length,
       overdue,
     },
-    open_items: openItems.map(toUIItem),
-    completed_today: completedItems.map(toUIItem),
+    open_items: openItems.map(item => toUIItem(item, subtasksByParent.get(item.id))),
+    completed_today: completedItems.map(item => toUIItem(item, subtasksByParent.get(item.id))),
   }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
-function toUIItem(item: Item): MockItem {
+function toUIItem(
+  item: Item,
+  subtasks?: Array<{ id: string; title: string; completed: boolean }>
+): MockItem {
   const ageDays = computeAgeDays(item.first_seen_at)
   return {
     id: item.id,
@@ -100,6 +140,7 @@ function toUIItem(item: Item): MockItem {
     description: item.parent_context
       ? `Auto-extracted from ${labelFor(item.source as Source)} — ${item.parent_context}.`
       : `Auto-extracted from ${labelFor(item.source as Source)}.`,
+    sub_items: subtasks ?? [],
   }
 }
 

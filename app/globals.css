@@ -1,47 +1,53 @@
 @import "tailwindcss";
 
-/* ----- Design tokens — slate-teal + cream identity (distinct from Nummo's green-on-peach) ----- */
+/* ----- Design tokens — Nummo-inspired: forest green on cream, peach calendar ----- */
 @theme {
-  /* Surface — warm cream base, white cards */
-  --color-canvas: #faf7f0;
+  /* Surface — soft cream base */
+  --color-canvas: #f4f1ea;
   --color-surface: #ffffff;
-  --color-surface-muted: #f0ece2;
+  --color-surface-muted: #ece8de;
 
   /* Text */
-  --color-ink: #1a2326;
-  --color-ink-muted: #5a6266;
-  --color-ink-faint: #8a9094;
+  --color-ink: #14211f;
+  --color-ink-muted: #5a6562;
+  --color-ink-faint: #8b948f;
 
   /* Borders */
-  --color-line: #e2dfd5;
-  --color-line-strong: #c9c4b4;
+  --color-line: #e3dfd2;
+  --color-line-strong: #cdc8b7;
 
-  /* Primary accent — deep slate-teal (operational, not cute) */
-  --color-accent: #0d5550;
-  --color-accent-soft: #d8ebe7;
-  --color-accent-strong: #084742;
+  /* Primary accent — deep forest green */
+  --color-accent: #14523d;
+  --color-accent-soft: #d8ebe1;
+  --color-accent-strong: #0e3d2c;
 
-  /* Tag palette (categorical) */
+  /* Tag palette (categorical) — desaturated to fit cream/green system */
   --color-tag-reply-bg: #e6f1fb;
   --color-tag-reply-fg: #0c447c;
-  --color-tag-action-bg: #fef3e2;
-  --color-tag-action-fg: #854f0b;
-  --color-tag-commit-bg: #d8ebe7;
-  --color-tag-commit-fg: #084742;
-  --color-tag-fyi-bg: #ece8dc;
-  --color-tag-fyi-fg: #4a4a44;
+  --color-tag-action-bg: #fbe9d9;
+  --color-tag-action-fg: #8e4a14;
+  --color-tag-commit-bg: #d8ebe1;
+  --color-tag-commit-fg: #14523d;
+  --color-tag-fyi-bg: #ece8de;
+  --color-tag-fyi-fg: #5a6562;
 
   /* Semantic */
   --color-danger-bg: #fbeef0;
   --color-danger-fg: #b8364a;
   --color-danger-border: #f3d6db;
-  --color-success-bg: #d8ebe7;
-  --color-success-fg: #084742;
+  --color-success-bg: #d8ebe1;
+  --color-success-fg: #14523d;
 
-  /* Calendar strip — muted slate-blue, NOT warm peach */
-  --color-cal-strip: #dde6e8;
-  --color-cal-strip-text: #2a3e44;
-  --color-cal-strip-active: #0d5550;
+  /* Calendar strip — warm peach gradient (Nummo signature) */
+  --color-cal-strip-from: #ffd6a8;
+  --color-cal-strip-to: #ffe8cf;
+  --color-cal-strip-text: #5c3a18;
+  --color-cal-strip-text-faint: #8c6a48;
+  --color-cal-strip-active: #14523d;
+
+  /* Avatar — solid magenta circle */
+  --color-avatar-bg: #b0185a;
+  --color-avatar-fg: #ffffff;
 
   /* Typography */
   --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;

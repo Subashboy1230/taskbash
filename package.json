@@ -11,6 +11,8 @@
     "inngest": "npx inngest-cli@latest dev",
     "test:diff": "tsx scripts/test-diff.ts",
     "test:gmail": "tsx scripts/test-gmail.ts",
+    "test:sources": "tsx scripts/test-sources.ts",
+    "digest": "tsx scripts/trigger-digest.ts",
     "backfill:tags": "tsx scripts/backfill-tags.ts",
     "backfill:briefs": "tsx scripts/backfill-briefs.ts",
     "seed:connections": "tsx scripts/seed-connections.ts"

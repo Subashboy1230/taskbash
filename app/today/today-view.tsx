@@ -43,10 +43,13 @@ import { cn } from '@/lib/utils'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { Source, Tag, TaskBrief } from '@/lib/types'
 import {
+  addSubtask,
   completeItem,
+  deleteSubtask,
   dismissItem,
   requestRefresh,
   snoozeItem,
+  toggleSubtaskComplete,
   uncompleteItem,
 } from './actions'
 
@@ -136,14 +139,15 @@ export function TodayView({ digest }: { digest: MockDigestSummary }) {
             {digest.greeting}
           </h1>
 
-          <CalendarStrip dateIso={digest.date_iso} />
+          <CalendarStrip
+            dateIso={digest.date_iso}
+            itemsWithDueDates={digest.open_items}
+          />
 
-          <StatsRow counts={digest.counts} />
-
-          <div className="mt-6 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="mt-8 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
               <NummoLogo />
-              <span className="text-[15px] text-ink">{digest.active_tasks_label}</span>
+              <span className="text-[15px] text-ink">Prioritizing</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-success-bg px-2.5 py-1 text-xs font-medium text-success-fg">
@@ -174,7 +178,7 @@ export function TodayView({ digest }: { digest: MockDigestSummary }) {
           {visibleOpen.length === 0 ? (
             <EmptyState />
           ) : (
-            <ul className="mt-3 list-none p-0 m-0 space-y-2">
+            <ul className="mt-4 list-none p-0 m-0 divide-y divide-line/70">
               {visibleOpen.map(item => (
                 <TaskRow
                   key={item.id}
@@ -214,7 +218,11 @@ export function TodayView({ digest }: { digest: MockDigestSummary }) {
         </main>
 
         {selectedItem && (
-          <DetailPanel item={selectedItem} onClose={() => setSelectedItem(null)} />
+          <DetailPanel
+            item={selectedItem}
+            onClose={() => setSelectedItem(null)}
+            onComplete={() => handleComplete(selectedItem.id)}
+          />
         )}
       </div>
     </div>
@@ -256,8 +264,14 @@ function AppHeader({ userInitials }: { userInitials: string }) {
       >
         <Settings size={18} />
       </Link>
-      <div className="flex size-7 items-center justify-center rounded-full border border-success-fg bg-success-bg text-[11px] font-semibold text-success-fg">
-        {userInitials}
+      <div
+        className="flex size-8 items-center justify-center rounded-full text-[12px] font-semibold uppercase"
+        style={{
+          backgroundColor: 'var(--color-avatar-bg)',
+          color: 'var(--color-avatar-fg)',
+        }}
+      >
+        {userInitials.charAt(0)}
       </div>
     </header>
   )
@@ -265,12 +279,27 @@ function AppHeader({ userInitials }: { userInitials: string }) {
 
 // ─── Calendar strip ─────────────────────────────────────────────────────
 
-function CalendarStrip({ dateIso }: { dateIso: string }) {
+function CalendarStrip({
+  dateIso,
+  itemsWithDueDates,
+}: {
+  dateIso: string
+  itemsWithDueDates: { due_at?: string | null }[]
+}) {
   const [year, month, day] = dateIso.split('-').map(Number)
   const date = new Date(year, month - 1, day)
   const dayOfWeek = date.getDay()
   const sundayOfWeek = new Date(date)
   sundayOfWeek.setDate(date.getDate() - dayOfWeek)
+
+  // Build a Set of "YYYY-MM-DD" for days in the current week that have items
+  // with a due date — used to render the small dot under the date number.
+  const daysWithItems = new Set(
+    itemsWithDueDates
+      .map(i => (i.due_at ? new Date(i.due_at) : null))
+      .filter((d): d is Date => !!d && !isNaN(d.getTime()))
+      .map(d => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`)
+  )
 
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(sundayOfWeek)
@@ -279,27 +308,34 @@ function CalendarStrip({ dateIso }: { dateIso: string }) {
       letter: ['S', 'M', 'T', 'W', 'T', 'F', 'S'][i],
       number: d.getDate(),
       isToday: d.toDateString() === date.toDateString(),
+      hasItems: daysWithItems.has(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`),
     }
   })
 
-  const monthName = date.toLocaleDateString('en-US', {
+  const longDate = date.toLocaleDateString('en-US', {
     month: 'long',
-    year: 'numeric',
     day: 'numeric',
+    year: 'numeric',
   })
 
   return (
-    <div className="rounded-2xl bg-cal-strip px-6 py-4">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-medium text-cal-strip-text">{monthName}</span>
+    <div
+      className="rounded-2xl px-6 py-5"
+      style={{
+        background:
+          'linear-gradient(135deg, var(--color-cal-strip-from) 0%, var(--color-cal-strip-to) 100%)',
+      }}
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-sm font-medium text-cal-strip-text">{longDate}</span>
         <div className="flex items-center gap-1.5">
           <button
-            aria-label="Calendar"
-            className="rounded-full bg-white/60 p-1.5 text-cal-strip-text hover:bg-white/80"
+            aria-label="Open calendar"
+            className="rounded-full bg-white/70 p-1.5 text-cal-strip-text hover:bg-white/90"
           >
             <CalendarIcon size={14} />
           </button>
-          <div className="flex items-center gap-1 rounded-full bg-white/60 pl-2 pr-1 text-cal-strip-text">
+          <div className="flex items-center gap-1 rounded-full bg-white/70 pl-2 pr-1 text-cal-strip-text">
             <button aria-label="Previous" className="p-1 hover:opacity-70">
               <ChevronLeft size={14} />
             </button>
@@ -312,14 +348,14 @@ function CalendarStrip({ dateIso }: { dateIso: string }) {
       </div>
       <div className="grid grid-cols-7 gap-2 text-center">
         {days.map((d, i) => (
-          <div key={i} className="text-xs font-medium text-cal-strip-text/70">
+          <div key={i} className="text-xs font-medium text-cal-strip-text-faint">
             {d.letter}
           </div>
         ))}
         {days.map((d, i) => (
-          <div key={`n-${i}`} className="flex justify-center pt-1">
+          <div key={`n-${i}`} className="flex flex-col items-center pt-1.5">
             {d.isToday ? (
-              <div className="flex size-9 items-center justify-center rounded-full bg-cal-strip-active text-sm font-medium text-white">
+              <div className="flex size-9 items-center justify-center rounded-full bg-cal-strip-active text-sm font-semibold text-white">
                 {d.number}
               </div>
             ) : (
@@ -327,6 +363,11 @@ function CalendarStrip({ dateIso }: { dateIso: string }) {
                 {d.number}
               </div>
             )}
+            <div className="mt-1 h-1 w-1">
+              {d.hasItems && (
+                <div className="size-1 rounded-full bg-cal-strip-active" />
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -462,11 +503,25 @@ function TaskRow({
 }) {
   // Visual strikethrough animates before the row gets removed by the parent
   const [completed, setCompleted] = useState(false)
+  // Optimistic local state for subtask completion. We seed from server data
+  // and update immediately on click; the server call runs in the background
+  // and reverts on error.
   const [subDone, setSubDone] = useState<Record<string, boolean>>(() =>
     Object.fromEntries((item.sub_items ?? []).map(s => [s.id, !!s.completed]))
   )
 
-  const toggleSub = (id: string) => setSubDone(prev => ({ ...prev, [id]: !prev[id] }))
+  const toggleSub = (id: string) => {
+    const next = !subDone[id]
+    setSubDone(prev => ({ ...prev, [id]: next }))
+    toggleSubtaskComplete(id, next).catch(() => {
+      // revert on failure
+      setSubDone(prev => ({ ...prev, [id]: !next }))
+    })
+  }
+
+  const subItems = item.sub_items ?? []
+  const subTotal = subItems.length
+  const subCompleted = subItems.filter(s => subDone[s.id]).length
   const handleCompleteClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     setCompleted(true)
@@ -487,50 +542,49 @@ function TaskRow({
     <li
       onClick={onSelect}
       className={cn(
-        'group relative cursor-pointer rounded-lg border border-line/60 bg-surface px-4 py-3.5 transition-all',
-        item.tag &&
-          [
-            'before:absolute before:left-0 before:top-3 before:bottom-3 before:w-[3px] before:rounded-r',
-            TAG_BORDER[item.tag],
-          ].join(' '),
-        isSelected
-          ? 'border-success-fg/40 bg-success-bg/20 shadow-sm'
-          : 'hover:border-line-strong hover:shadow-sm',
+        'group relative cursor-pointer px-2 py-4 transition-colors',
+        isSelected ? 'bg-success-bg/30' : 'hover:bg-surface-muted/50',
         completed && 'opacity-50'
       )}
     >
       <div className="flex items-start gap-3">
-        <SourceIcon source={item.source} />
-
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={cn(
-                'text-[15px] font-medium leading-snug text-ink',
+                'text-[15px] font-semibold leading-snug text-ink',
                 completed && 'line-through text-ink-faint'
               )}
             >
               {item.title}
             </span>
-            {item.tag && <TagPill tag={item.tag} />}
+            {subTotal > 0 && (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                  subCompleted === subTotal
+                    ? 'bg-success-bg text-success-fg'
+                    : 'bg-surface-muted text-ink-muted'
+                )}
+                title={`${subCompleted} of ${subTotal} subtasks done`}
+              >
+                {subCompleted}/{subTotal}
+              </span>
+            )}
             {item.due_at && <DeadlineBadge dueIso={item.due_at} />}
           </div>
 
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[12px] text-ink-faint m-0">
-            {item.parent_context && <span>{item.parent_context}</span>}
-            {item.parent_context && item.age_days > 0 && <span>·</span>}
-            {item.age_days > 0 && <span>{item.age_days}d old</span>}
-            {item.count_label && (
-              <>
-                <span>·</span>
-                <span>{item.count_label}</span>
-              </>
-            )}
+          <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
+            {item.brief?.why ||
+              item.description ||
+              item.parent_context ||
+              `From ${item.source}`}
           </p>
 
-          {item.sub_items && item.sub_items.length > 0 && (
-            <ul className="mt-2 list-none p-0 m-0 space-y-1">
-              {item.sub_items.map(sub => {
+          {subTotal > 0 && (
+            <ul className="mt-2.5 list-none p-0 m-0 space-y-1">
+              {/* Show up to 2 subtasks inline; the rest live in the detail panel. */}
+              {subItems.slice(0, 2).map(sub => {
                 const isDone = !!subDone[sub.id]
                 return (
                   <li
@@ -538,13 +592,21 @@ function TaskRow({
                     className="flex items-center gap-2 text-[13px]"
                     onClick={e => e.stopPropagation()}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isDone}
-                      onChange={() => toggleSub(sub.id)}
-                      className="size-3.5 cursor-pointer rounded border-line"
-                      aria-label={sub.title}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => toggleSub(sub.id)}
+                      aria-label={
+                        isDone ? `Mark "${sub.title}" not done` : `Mark "${sub.title}" done`
+                      }
+                      className={cn(
+                        'flex size-4 shrink-0 items-center justify-center rounded border transition-colors',
+                        isDone
+                          ? 'border-success-fg bg-success-fg text-white'
+                          : 'border-line-strong bg-surface hover:border-success-fg'
+                      )}
+                    >
+                      {isDone && <Check size={10} />}
+                    </button>
                     <span
                       className={cn(
                         'text-ink transition-colors',
@@ -556,6 +618,18 @@ function TaskRow({
                   </li>
                 )
               })}
+              {subTotal > 2 && (
+                <li
+                  className="ml-6 text-[12px] text-ink-faint hover:text-ink-muted"
+                  onClick={e => {
+                    e.stopPropagation()
+                    onSelect()
+                  }}
+                  role="button"
+                >
+                  + {subTotal - 2} more
+                </li>
+              )}
             </ul>
           )}
         </div>
@@ -667,19 +741,19 @@ function SourceIcon({ source }: { source: Source }) {
 
 function CompletedRow({ item }: { item: MockItem }) {
   return (
-    <li className="flex items-center justify-between border-b border-line/40 py-3">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <SourceIcon source={item.source} />
-        <div>
-          <p className="m-0 text-[14px] text-ink leading-snug line-through opacity-70">
-            {item.title}
-          </p>
-          {item.count_label && (
-            <p className="mt-0.5 text-[12px] text-ink-faint m-0">{item.count_label}</p>
-          )}
-        </div>
+    <li className="flex items-start justify-between gap-4 border-b border-line/50 py-4 px-2">
+      <div className="min-w-0 flex-1">
+        <p className="m-0 text-[15px] font-semibold leading-snug text-ink">
+          {item.title}
+        </p>
+        <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
+          {item.brief?.why ||
+            item.description ||
+            item.parent_context ||
+            `From ${item.source}`}
+        </p>
       </div>
-      <span className="rounded-full bg-success-bg px-2.5 py-0.5 text-[12px] font-medium text-success-fg">
+      <span className="shrink-0 rounded-full bg-success-bg px-2.5 py-0.5 text-[12px] font-medium text-success-fg">
         Approved
       </span>
     </li>
@@ -746,7 +820,15 @@ function BriefSection({
 
 // ─── Detail panel ───────────────────────────────────────────────────────
 
-function DetailPanel({ item, onClose }: { item: MockItem; onClose: () => void }) {
+function DetailPanel({
+  item,
+  onClose,
+  onComplete,
+}: {
+  item: MockItem
+  onClose: () => void
+  onComplete: () => void
+}) {
   return (
     <aside className="sticky top-0 max-h-screen w-[480px] shrink-0 overflow-y-auto border-l border-line bg-surface px-6 py-6">
       <div className="mb-4 flex items-center justify-between">
@@ -778,7 +860,7 @@ function DetailPanel({ item, onClose }: { item: MockItem; onClose: () => void })
         <h2 className="m-0 text-[18px] font-medium leading-snug text-ink">{item.title}</h2>
       </div>
 
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center gap-2">
         {item.detail_status && (
           <span
             className={cn(
@@ -794,7 +876,11 @@ function DetailPanel({ item, onClose }: { item: MockItem; onClose: () => void })
         {item.due_at && <DeadlineBadge dueIso={item.due_at} />}
       </div>
 
-      {/* The brief — the differentiator. Why / Know / Done / Next. */}
+      {/* Subtasks — the headline interaction. Stored as child items in the
+          DB; toggle persists; add input creates a new manual item. */}
+      <SubtasksSection parentId={item.id} initial={item.sub_items ?? []} />
+
+      {/* The brief — synthesized context for the task. Why / Know / Done / Next. */}
       {item.brief ? (
         <BriefView brief={item.brief} />
       ) : (
@@ -808,7 +894,6 @@ function DetailPanel({ item, onClose }: { item: MockItem; onClose: () => void })
         </div>
       )}
 
-      {/* Legacy mock transcript pull — only shows for mock data, real items use the brief */}
       {item.transcript_pull && item.transcript_pull.length > 0 && (
         <div className="mb-5">
           <p className="m-0 mb-2 text-[14px] font-medium text-ink">Transcript pull</p>
@@ -834,27 +919,171 @@ function DetailPanel({ item, onClose }: { item: MockItem; onClose: () => void })
       )}
 
       <div className="mt-6 flex gap-2">
-        <button className="flex-1 rounded-md border border-line bg-surface px-4 py-2 text-[14px] font-medium text-ink hover:bg-surface-muted">
-          Reject Task
+        <button
+          onClick={onClose}
+          className="flex-1 rounded-md border border-line bg-surface px-4 py-2 text-[14px] font-medium text-ink hover:bg-surface-muted"
+        >
+          Close
         </button>
-        <button className="flex-1 rounded-md bg-success-fg px-4 py-2 text-[14px] font-medium text-white hover:opacity-90">
+        <button
+          onClick={() => {
+            onComplete()
+            onClose()
+          }}
+          className="flex-1 rounded-md bg-success-fg px-4 py-2 text-[14px] font-medium text-white hover:opacity-90"
+        >
           <Check size={14} className="-mt-0.5 mr-1 inline" />
           Mark as Done
         </button>
       </div>
-
-      <div className="mt-4 flex items-center justify-center gap-4 text-[13px] text-ink-muted">
-        <button className="flex items-center gap-1.5 hover:text-ink">
-          <Clock size={13} />
-          Remind me later
-        </button>
-        <span className="text-ink-faint">·</span>
-        <button className="flex items-center gap-1.5 hover:text-ink">
-          <RotateCcw size={13} />
-          Reassign
-        </button>
-      </div>
     </aside>
+  )
+}
+
+// ─── Subtasks ───────────────────────────────────────────────────────────
+// Children of the parent item. Each subtask is its own item row in the DB
+// (source='manual', parent_id set). Toggle and delete persist through the
+// server actions; add inserts a new row.
+
+function SubtasksSection({
+  parentId,
+  initial,
+}: {
+  parentId: string
+  initial: { id: string; title: string; completed?: boolean }[]
+}) {
+  const router = useRouter()
+  // Local optimistic copy of the subtask list. Server actions revalidate
+  // /today on success which refreshes initial via the parent, but for
+  // immediate snappy feedback we mutate locally first.
+  const [subs, setSubs] = useState(initial)
+  const [draft, setDraft] = useState('')
+  const [busy, startTransition] = useTransition()
+
+  // Re-sync when the parent passes a fresh list (after revalidate). This
+  // handles the case where the user added a subtask, the page revalidated,
+  // and the server-source list is now different from what we optimistically
+  // showed (e.g. it gained a permanent id).
+  useEffect(() => {
+    setSubs(initial)
+  }, [initial])
+
+  const completed = subs.filter(s => s.completed).length
+
+  function handleToggle(id: string) {
+    const next = !subs.find(s => s.id === id)?.completed
+    setSubs(prev => prev.map(s => (s.id === id ? { ...s, completed: next } : s)))
+    toggleSubtaskComplete(id, next).catch(() => {
+      // revert on error
+      setSubs(prev => prev.map(s => (s.id === id ? { ...s, completed: !next } : s)))
+    })
+  }
+
+  function handleDelete(id: string) {
+    setSubs(prev => prev.filter(s => s.id !== id))
+    deleteSubtask(id).catch(() => router.refresh())
+  }
+
+  function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    const title = draft.trim()
+    if (!title) return
+    // Optimistic insert with a temp id — replaced when the server returns
+    // the real row via revalidatePath.
+    const tempId = `temp-${Date.now()}`
+    setSubs(prev => [...prev, { id: tempId, title, completed: false }])
+    setDraft('')
+    startTransition(async () => {
+      try {
+        await addSubtask(parentId, title)
+        // revalidatePath in the action will refresh `initial` via the parent,
+        // and our useEffect above syncs setSubs.
+      } catch {
+        // Roll back the temp row on failure
+        setSubs(prev => prev.filter(s => s.id !== tempId))
+      }
+    })
+  }
+
+  return (
+    <div className="mb-5 rounded-lg border border-line/60 bg-canvas/40 px-3.5 py-3">
+      <div className="mb-2.5 flex items-center justify-between">
+        <h3 className="m-0 text-[13px] font-semibold uppercase tracking-wider text-ink-muted">
+          Subtasks
+        </h3>
+        <span className="text-[12px] text-ink-faint tabular-nums">
+          {completed} of {subs.length} done
+        </span>
+      </div>
+
+      {subs.length === 0 && (
+        <p className="m-0 mb-2 text-[13px] text-ink-faint">
+          Break this down into smaller steps.
+        </p>
+      )}
+
+      <ul className="m-0 list-none p-0 space-y-1.5">
+        {subs.map(sub => (
+          <li
+            key={sub.id}
+            className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-surface-muted/60"
+          >
+            <button
+              type="button"
+              onClick={() => handleToggle(sub.id)}
+              aria-label={
+                sub.completed ? `Mark "${sub.title}" not done` : `Mark "${sub.title}" done`
+              }
+              className={cn(
+                'flex size-4 shrink-0 items-center justify-center rounded border transition-colors',
+                sub.completed
+                  ? 'border-success-fg bg-success-fg text-white'
+                  : 'border-line-strong bg-surface hover:border-success-fg'
+              )}
+            >
+              {sub.completed && <Check size={11} />}
+            </button>
+            <span
+              className={cn(
+                'flex-1 text-[14px] text-ink transition-colors',
+                sub.completed && 'line-through text-ink-faint'
+              )}
+            >
+              {sub.title}
+            </span>
+            <button
+              type="button"
+              onClick={() => handleDelete(sub.id)}
+              aria-label={`Delete "${sub.title}"`}
+              className="rounded p-0.5 text-ink-faint opacity-0 transition-opacity hover:text-danger-fg group-hover:opacity-100"
+            >
+              <X size={13} />
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <form onSubmit={handleAdd} className="mt-2 flex items-center gap-2 px-1">
+        <span className="text-[14px] text-ink-faint">+</span>
+        <input
+          type="text"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          placeholder="Add a subtask"
+          disabled={busy}
+          className="flex-1 border-0 bg-transparent text-[14px] text-ink placeholder:text-ink-faint focus:outline-none disabled:opacity-50"
+        />
+        {draft && (
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-md bg-success-fg px-2.5 py-0.5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+          >
+            Add
+          </button>
+        )}
+      </form>
+    </div>
   )
 }
 
