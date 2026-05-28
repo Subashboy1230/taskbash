@@ -34,7 +34,7 @@ import { AppHeader } from '@/app/_components/app-header'
 import { BrandLogo } from '@/app/_components/brand-logo'
 import { StatusPill, type StatusPillKind } from '@/app/_components/status-pill'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
-import type { ProposedAction, Source, Tag, TaskBrief } from '@/lib/types'
+import type { Priority, ProposedAction, Source, Tag, TaskBrief } from '@/lib/types'
 import {
   addSubtask,
   completeItem,
@@ -42,6 +42,7 @@ import {
   dismissItem,
   executeProposedAction,
   requestRefresh,
+  setItemPriority,
   snoozeItem,
   toggleSubtaskComplete,
   uncompleteItem,
@@ -693,6 +694,7 @@ function TaskRow({
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
+            <PriorityChip itemId={item.id} value={item.priority ?? null} />
             <span
               className={cn(
                 'text-[15px] font-semibold leading-snug text-ink',
@@ -845,6 +847,121 @@ function TagPill({ tag }: { tag: NonNullable<Tag> }) {
     >
       {tag}
     </span>
+  )
+}
+
+// ─── Priority chip ──────────────────────────────────────────────────────
+// Clickable badge showing the item's current priority. Click opens a small
+// menu with P0/P1/P2/P3/Clear. Updates persist via setItemPriority server
+// action; revert on error.
+//
+// Visual: filled colored pill (P0 red, P1 orange, P2 blue, P3 gray) when
+// set; a faint dashed placeholder when unset (still clickable to set one).
+
+const PRIORITY_STYLE: Record<'P0' | 'P1' | 'P2' | 'P3', string> = {
+  P0: 'bg-danger-fg text-white border-danger-fg',
+  P1: 'bg-tag-action-fg text-white border-tag-action-fg',
+  P2: 'bg-tag-reply-fg text-white border-tag-reply-fg',
+  P3: 'bg-surface-muted text-ink-muted border-line-strong',
+}
+
+const PRIORITY_OPTIONS: ('P0' | 'P1' | 'P2' | 'P3')[] = ['P0', 'P1', 'P2', 'P3']
+
+function PriorityChip({
+  itemId,
+  value,
+}: {
+  itemId: string
+  value: Priority
+}) {
+  const [current, setCurrent] = useState<Priority>(value)
+  const [open, setOpen] = useState(false)
+
+  // Re-sync when the parent passes new value (after revalidate).
+  useEffect(() => {
+    setCurrent(value)
+  }, [value])
+
+  // Click-away to close the menu.
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      if (!(e.target as HTMLElement).closest('[data-priority-chip]')) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  function setTo(p: Priority, e: React.MouseEvent) {
+    e.stopPropagation()
+    const prev = current
+    setCurrent(p)
+    setOpen(false)
+    setItemPriority(itemId, p).catch(() => setCurrent(prev))
+  }
+
+  return (
+    <div className="relative" data-priority-chip onClick={e => e.stopPropagation()}>
+      {current ? (
+        <button
+          type="button"
+          onClick={e => {
+            e.stopPropagation()
+            setOpen(o => !o)
+          }}
+          className={cn(
+            'inline-flex items-center justify-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold tabular-nums uppercase tracking-wider transition-opacity hover:opacity-80',
+            PRIORITY_STYLE[current as 'P0' | 'P1' | 'P2' | 'P3']
+          )}
+          title={`Priority ${current} — click to change`}
+        >
+          {current}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={e => {
+            e.stopPropagation()
+            setOpen(o => !o)
+          }}
+          aria-label="Set priority"
+          className="inline-flex items-center justify-center rounded-md border border-dashed border-line px-1.5 py-0.5 text-[10px] font-medium text-ink-faint opacity-0 transition-opacity hover:border-line-strong hover:text-ink group-hover:opacity-100"
+          title="Set priority"
+        >
+          P–
+        </button>
+      )}
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 flex gap-1 rounded-md border border-line bg-surface p-1 shadow-md">
+          {PRIORITY_OPTIONS.map(p => (
+            <button
+              key={p}
+              type="button"
+              onClick={e => setTo(p, e)}
+              className={cn(
+                'inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums uppercase tracking-wider transition-opacity hover:opacity-80',
+                PRIORITY_STYLE[p],
+                current === p && 'ring-2 ring-ink ring-offset-1 ring-offset-surface'
+              )}
+            >
+              {p}
+            </button>
+          ))}
+          {current && (
+            <button
+              type="button"
+              onClick={e => setTo(null, e)}
+              className="inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-medium text-ink-faint hover:text-ink"
+              title="Clear priority"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1112,31 +1229,46 @@ function DraftCard({
 }) {
   const [body, setBody] = useState(action.body)
   const [busy, startSend] = useTransition()
+  const [busyMode, setBusyMode] = useState<'send' | 'open' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
-  function handleSend() {
+  // Two action modes:
+  //   - sendDirect: true  → call Gmail API users.messages.send (one click)
+  //                          falls back to opening compose if the scope is
+  //                          missing or the API returns 403.
+  //   - sendDirect: false → skip the API entirely; open compose URL only.
+  function handleAction(sendDirect: boolean) {
     setError(null)
+    setNotice(null)
+    setBusyMode(sendDirect ? 'send' : 'open')
     startSend(async () => {
       try {
-        const result = await executeProposedAction(itemId)
+        const result = await executeProposedAction(itemId, { sendDirect })
         if (!result.ok) {
           setError(result.error)
+          setBusyMode(null)
           return
         }
-        if (result.openUrl) {
-          // Open Gmail compose in a new tab — the user clicks Send there.
+        if (result.sent) {
+          // Direct API send succeeded.
+          setNotice('Sent via Gmail.')
+        } else {
+          // Fallback path — open compose URL in a new tab.
           window.open(result.openUrl, '_blank', 'noopener,noreferrer')
+          setNotice(
+            sendDirect
+              ? 'Opened in Gmail (gmail.send scope not granted yet).'
+              : 'Opened in Gmail.'
+          )
         }
         onSent()
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Send failed')
+        setBusyMode(null)
       }
     })
   }
-
-  const isCompose =
-    action.kind === 'gmail_compose' || action.kind === 'gmail_send'
-  const sendLabel = action.kind === 'gmail_compose' ? 'Open in Gmail' : 'Send'
 
   return (
     <div className="mb-5 rounded-lg border border-line/60 bg-surface">
@@ -1151,20 +1283,18 @@ function DraftCard({
         </div>
       </div>
 
-      {isCompose && (
-        <div className="border-b border-line/60 px-3.5 py-2.5 text-[12px] text-ink-muted">
-          <div className="flex items-baseline gap-2">
-            <span className="w-14 shrink-0 text-ink-faint">Subject:</span>
-            <span className="text-ink">{(action as { subject: string }).subject}</span>
-          </div>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="w-14 shrink-0 text-ink-faint">To:</span>
-            <span className="text-ink">
-              {(action as { to: string[] }).to.join(', ')}
-            </span>
-          </div>
+      <div className="border-b border-line/60 px-3.5 py-2.5 text-[12px] text-ink-muted">
+        <div className="flex items-baseline gap-2">
+          <span className="w-14 shrink-0 text-ink-faint">Subject:</span>
+          <span className="text-ink">{(action as { subject: string }).subject}</span>
         </div>
-      )}
+        <div className="mt-1 flex items-baseline gap-2">
+          <span className="w-14 shrink-0 text-ink-faint">To:</span>
+          <span className="text-ink">
+            {(action as { to: string[] }).to.join(', ')}
+          </span>
+        </div>
+      </div>
 
       <textarea
         value={body}
@@ -1178,18 +1308,36 @@ function DraftCard({
         {error && (
           <span className="mr-auto text-[12px] text-danger-fg">{error}</span>
         )}
+        {notice && !error && (
+          <span className="mr-auto text-[12px] text-success-fg">{notice}</span>
+        )}
         <button
           type="button"
           disabled={busy}
-          onClick={handleSend}
-          className="inline-flex items-center gap-1.5 rounded-md bg-success-fg px-3 py-1.5 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          onClick={() => handleAction(false)}
+          className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-surface-muted disabled:opacity-50"
+          title="Open in Gmail compose to review before sending"
         >
-          {busy ? (
+          {busy && busyMode === 'open' ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <ExternalLink size={12} />
+          )}
+          Open in Gmail
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => handleAction(true)}
+          className="inline-flex items-center gap-1.5 rounded-md bg-success-fg px-3 py-1.5 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          title="Send via Gmail API immediately"
+        >
+          {busy && busyMode === 'send' ? (
             <Loader2 size={12} className="animate-spin" />
           ) : (
             <Check size={12} />
           )}
-          {sendLabel}
+          Send now
         </button>
       </div>
     </div>

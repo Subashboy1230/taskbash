@@ -9,6 +9,21 @@ import { supabase } from '@/lib/supabase'
 import { resolveUserId } from '@/lib/supabase-server'
 import { runDigestForUser } from '@/lib/digest/run'
 import { inngest, EVENTS } from '@/inngest/client'
+import type { Priority } from '@/lib/types'
+
+/**
+ * Set or clear an item's priority (P0 / P1 / P2 / P3 / null). The /today
+ * page sorts by priority first, so P0s float to the top.
+ */
+export async function setItemPriority(itemId: string, priority: Priority) {
+  const { error } = await supabase
+    .from('items')
+    .update({ priority })
+    .eq('id', itemId)
+    .eq('user_id', await resolveUserId())
+  if (error) throw new Error(`setItemPriority failed: ${error.message}`)
+  revalidatePath('/today')
+}
 
 /**
  * Add a manual subtask to a parent item. Stored as an `items` row with
@@ -141,13 +156,19 @@ export async function snoozeItem(itemId: string, hours: number = 24) {
  * user can retry from the UI.
  */
 export async function executeProposedAction(
-  itemId: string
-): Promise<{ ok: true; openUrl?: string } | { ok: false; error: string }> {
+  itemId: string,
+  opts: { sendDirect?: boolean } = {}
+): Promise<
+  | { ok: true; sent: true; messageId: string }
+  | { ok: true; sent: false; openUrl: string }
+  | { ok: false; error: string }
+> {
+  const userId = await resolveUserId()
   const { data, error } = await supabase
     .from('items')
     .select('id, proposed_action, status')
     .eq('id', itemId)
-    .eq('user_id', await resolveUserId())
+    .eq('user_id', userId)
     .maybeSingle()
   if (error) return { ok: false, error: error.message }
   if (!data?.proposed_action) {
@@ -155,29 +176,54 @@ export async function executeProposedAction(
   }
 
   const action = data.proposed_action as {
-    kind: string
+    kind: 'gmail_compose' | 'gmail_send'
     to: string[]
     cc?: string[]
     subject: string
     body: string
+    in_reply_to_message_id?: string
+    thread_id?: string
   }
 
-  let openUrl: string | undefined
-  if (action.kind === 'gmail_compose') {
-    // Build a Gmail compose URL with the draft pre-filled. The user
-    // reviews in Gmail and clicks Send themselves — no extra OAuth scope
-    // needed for v1.
-    const params = new URLSearchParams({
-      view: 'cm',
-      fs: '1',
-      to: action.to.join(','),
-      su: action.subject,
-      body: action.body,
-    })
-    if (action.cc?.length) params.set('cc', action.cc.join(','))
-    openUrl = `https://mail.google.com/mail/?${params.toString()}`
+  // Try to send directly via Gmail API. Requires the connected Gmail
+  // integration to include the gmail.send scope (otherwise we get 403
+  // and fall back to the compose URL).
+  if (opts.sendDirect !== false) {
+    const { sendGmailReply } = await import('@/lib/gmail/send')
+    const sendResult = await sendGmailReply(action)
+    if (sendResult.ok) {
+      // Sent! Mark the item completed.
+      const { error: updateErr } = await supabase
+        .from('items')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', itemId)
+        .eq('user_id', userId)
+      if (updateErr) return { ok: false, error: updateErr.message }
+      revalidatePath('/today')
+      return { ok: true, sent: true, messageId: sendResult.messageId }
+    }
+    // If we can't fall back (e.g. no Gmail connection at all), surface the
+    // error so the user knows what to fix.
+    if (!sendResult.canFallback) {
+      return { ok: false, error: sendResult.error }
+    }
+    // Else: fall through to the compose URL flow.
   }
-  // Future: kind === 'gmail_send' calls Gmail API users.messages.send directly.
+
+  // Fallback: build a Gmail compose URL pre-filled with the draft. The
+  // user reviews in Gmail and clicks Send themselves.
+  const params = new URLSearchParams({
+    view: 'cm',
+    fs: '1',
+    to: action.to.join(','),
+    su: action.subject,
+    body: action.body,
+  })
+  if (action.cc?.length) params.set('cc', action.cc.join(','))
+  const openUrl = `https://mail.google.com/mail/?${params.toString()}`
 
   // Mark the item completed — the user is committing by approving.
   const { error: updateErr } = await supabase
@@ -187,11 +233,11 @@ export async function executeProposedAction(
       completed_at: new Date().toISOString(),
     })
     .eq('id', itemId)
-    .eq('user_id', await resolveUserId())
+    .eq('user_id', userId)
   if (updateErr) return { ok: false, error: updateErr.message }
 
   revalidatePath('/today')
-  return { ok: true, openUrl }
+  return { ok: true, sent: false, openUrl }
 }
 
 /**

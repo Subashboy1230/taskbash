@@ -14,15 +14,17 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   today.setHours(0, 0, 0, 0)
 
   // Open items (the main list)
-  // Sort: items with a drafted artifact first (the agent did work, the user
-  // just needs to approve — those should never get lost). Then by deadline
-  // (soonest due first; overdue floats to the top). Items with no deadline
-  // come last, newest-seen first within that group.
+  // Sort priority order:
+  //   1. priority (P0 → P1 → P2 → P3, then unassigned) — user-curated importance
+  //   2. proposed_action present (the agent did work; never bury a draft)
+  //   3. due_at (soonest first; overdue floats up)
+  //   4. first_seen_at (newest within a group)
   const { data: openRows, error: openErr } = await supabase
     .from('items')
     .select('*')
     .eq('user_id', USER_ID)
     .in('status', ['open', 'in_progress'])
+    .order('priority', { ascending: true, nullsFirst: false })
     .order('proposed_action', { ascending: false, nullsFirst: false })
     .order('due_at', { ascending: true, nullsFirst: false })
     .order('first_seen_at', { ascending: false })
@@ -122,6 +124,7 @@ function toUIItem(
     parent_context: item.parent_context,
     status: item.status === 'in_progress' ? 'in_progress' : item.status === 'completed' ? 'completed' : 'open',
     source: item.source as Source,
+    priority: item.priority,
     urgent: !!item.urgent,
     age_days: ageDays,
     due_at: item.due_at,

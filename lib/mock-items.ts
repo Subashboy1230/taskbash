@@ -2,7 +2,7 @@
 // All three sources represented (Granola, Gmail, Slack), varied tags, varied
 // deadline states (overdue, today, tomorrow, this week, none).
 
-import type { ProposedAction, Source, Tag, TaskType, TaskBrief } from './types'
+import type { Priority, ProposedAction, Source, Tag, TaskType, TaskBrief } from './types'
 
 export interface MockSubItem {
   id: string
@@ -22,6 +22,7 @@ export interface MockItem {
   parent_context: string | null
   status: 'open' | 'in_progress' | 'completed'
   source: Source
+  priority?: Priority
   urgent: boolean
   age_days: number
   due_at?: string | null            // ISO timestamp; formatDeadline() turns it into a label
