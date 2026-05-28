@@ -124,9 +124,9 @@ export function TodayView({
       })
     })
   }
-  function handleSnooze(id: string) {
+  function handleSnooze(id: string, hours: number = 24) {
     setHiddenIds(s => new Set(s).add(id))
-    snoozeItem(id).catch(() => {
+    snoozeItem(id, hours).catch(() => {
       setHiddenIds(s => {
         const next = new Set(s)
         next.delete(id)
@@ -156,8 +156,14 @@ export function TodayView({
   // crowding the page.
   const isPrep = (i: MockItem) =>
     i.task_type === 'context_prep' || /^prep:/i.test(i.title)
-  const visibleOpen = allVisible.filter(i => !isPrep(i))
-  const visiblePrep = allVisible.filter(isPrep)
+  // Client-side sort by effective priority so AUTO-assigned defaults
+  // float to the top alongside user-set ones (DB sort can't see auto
+  // defaults). Stable within priority bucket: preserves the DB-side
+  // proposed_action / due_at / first_seen order.
+  const sortByPriority = (a: MockItem, b: MockItem) =>
+    PRIORITY_RANK[effectivePriority(a)] - PRIORITY_RANK[effectivePriority(b)]
+  const visibleOpen = allVisible.filter(i => !isPrep(i)).sort(sortByPriority)
+  const visiblePrep = allVisible.filter(isPrep).sort(sortByPriority)
 
   // Which sources actually appear in this digest — drives the chip row so
   // we don't show "Linear" as a filter option when there's no Linear data.
@@ -219,7 +225,13 @@ export function TodayView({
 
           <CalendarStrip
             dateIso={digest.date_iso}
-            itemsWithDueDates={digest.open_items}
+            items={digest.open_items}
+            onSelectItem={item => {
+              // If the item is a prep brief, switch to the Prep tab so the
+              // user sees the row highlighted in the right place too.
+              setTab(isPrep(item) ? 'prep' : 'open')
+              setSelectedItem(item)
+            }}
           />
 
           {/* Tabs: Open / Cleared */}
@@ -326,7 +338,7 @@ export function TodayView({
                             onSelect={() => setSelectedItem(item)}
                             onComplete={() => handleComplete(item.id)}
                             onDismiss={() => handleDismiss(item.id)}
-                            onSnooze={() => handleSnooze(item.id)}
+                            onSnooze={hours => handleSnooze(item.id, hours)}
                           />
                         ))}
                       </ul>
@@ -359,10 +371,12 @@ export function TodayView({
 
 function CalendarStrip({
   dateIso,
-  itemsWithDueDates,
+  items,
+  onSelectItem,
 }: {
   dateIso: string
-  itemsWithDueDates: { due_at?: string | null; title?: string }[]
+  items: MockItem[]
+  onSelectItem?: (item: MockItem) => void
 }) {
   // The page's "today" anchor — never changes. Used to highlight today's
   // number even when the user is viewing a different week.
@@ -379,15 +393,16 @@ function CalendarStrip({
   const sundayOfViewedWeek = new Date(sundayOfThisWeek)
   sundayOfViewedWeek.setDate(sundayOfThisWeek.getDate() + weekOffset * 7)
 
-  // Group items by day-key with a sample of titles for the tooltip.
-  const itemsByDay = new Map<string, string[]>()
-  for (const item of itemsWithDueDates) {
+  // Group items by day-key. Store the full items so the popover can
+  // render clickable titles that open the detail panel.
+  const itemsByDay = new Map<string, MockItem[]>()
+  for (const item of items) {
     if (!item.due_at) continue
     const d = new Date(item.due_at)
     if (isNaN(d.getTime())) continue
     const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
     const list = itemsByDay.get(key) ?? []
-    if (item.title) list.push(item.title)
+    list.push(item)
     itemsByDay.set(key, list)
   }
 
@@ -401,7 +416,7 @@ function CalendarStrip({
       number: d.getDate(),
       isToday: d.toDateString() === todayDate.toDateString(),
       hasItems: dayItems.length > 0,
-      itemTitles: dayItems,
+      dayItems,
     }
   })
 
@@ -483,24 +498,34 @@ function CalendarStrip({
             <div className="mt-1 h-1 w-1">
               {d.hasItems && <div className="size-1 rounded-full bg-cal-strip-active" />}
             </div>
-            {/* Real hover popover (replaces native `title` tooltip) — shows
-                up to 4 item titles + "+N more". */}
+            {/* Hover popover — clickable item titles open the detail panel.
+                pointer-events-auto so the inner buttons receive clicks; the
+                whole popover sits over the next row so we make it absolute. */}
             {d.hasItems && (
               <div
-                className="pointer-events-none absolute top-full left-1/2 z-20 mt-1 w-56 -translate-x-1/2 rounded-md border border-line/70 bg-surface px-3 py-2 text-left text-[12px] leading-snug text-ink shadow-lg opacity-0 transition-opacity group-hover/day:opacity-100"
+                className="absolute top-full left-1/2 z-20 mt-1 w-64 -translate-x-1/2 rounded-md border border-line/70 bg-surface px-2 py-2 text-left text-[12px] leading-snug text-ink shadow-lg opacity-0 transition-opacity group-hover/day:opacity-100 pointer-events-none group-hover/day:pointer-events-auto"
                 role="tooltip"
               >
-                <p className="m-0 mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
-                  {d.itemTitles.length} item{d.itemTitles.length === 1 ? '' : 's'} due
+                <p className="m-0 mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+                  {d.dayItems.length} item{d.dayItems.length === 1 ? '' : 's'} due — click to open
                 </p>
                 <ul className="m-0 list-none space-y-0.5 p-0">
-                  {d.itemTitles.slice(0, 4).map((t, j) => (
-                    <li key={j} className="truncate text-ink">
-                      · {t}
+                  {d.dayItems.slice(0, 6).map(it => (
+                    <li key={it.id}>
+                      <button
+                        type="button"
+                        onClick={() => onSelectItem?.(it)}
+                        className="block w-full truncate rounded px-1.5 py-1 text-left text-ink hover:bg-surface-muted"
+                        title={it.title}
+                      >
+                        · {it.title}
+                      </button>
                     </li>
                   ))}
-                  {d.itemTitles.length > 4 && (
-                    <li className="text-ink-faint">+{d.itemTitles.length - 4} more</li>
+                  {d.dayItems.length > 6 && (
+                    <li className="px-1.5 text-ink-faint">
+                      +{d.dayItems.length - 6} more
+                    </li>
                   )}
                 </ul>
               </div>
@@ -640,7 +665,8 @@ function TaskRow({
   onSelect: () => void
   onComplete: () => void
   onDismiss: () => void
-  onSnooze: () => void
+  // Hours-aware so the SnoozeMenu can request different durations.
+  onSnooze: (hours: number) => void
 }) {
   // Visual strikethrough animates before the row gets removed by the parent
   const [completed, setCompleted] = useState(false)
@@ -673,10 +699,9 @@ function TaskRow({
     setCompleted(true) // fades the row before it's removed
     setTimeout(() => onDismiss(), 250)
   }
-  const handleSnoozeClick = (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const onSnoozeWithHours = (hours: number) => {
     setCompleted(true) // fade out before removal
-    setTimeout(() => onSnooze(), 250)
+    setTimeout(() => onSnooze(hours), 250)
   }
 
   return (
@@ -718,7 +743,11 @@ function TaskRow({
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <PriorityChip itemId={item.id} value={item.priority ?? null} />
+            <PriorityChip
+              itemId={item.id}
+              explicit={item.priority ?? null}
+              resolved={effectivePriority(item)}
+            />
             <span
               className={cn(
                 'text-[15px] font-semibold leading-snug text-ink',
@@ -826,7 +855,7 @@ function TaskRow({
               isSelected && 'opacity-100'
             )}
           >
-            <ActionButton icon={Clock} label="Snooze 24h" onClick={handleSnoozeClick} />
+            <SnoozeMenu onSnooze={hours => onSnoozeWithHours(hours)} />
           </div>
         </div>
       </div>
@@ -861,6 +890,87 @@ function ActionButton({
   )
 }
 
+// ─── Snooze menu ────────────────────────────────────────────────────────
+// Always-clickable Clock icon with a dropdown of common snooze durations.
+// Calls onSnooze(hours) which the parent persists via snoozeItem().
+
+function SnoozeMenu({ onSnooze }: { onSnooze: (hours: number) => void }) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      if (!(e.target as HTMLElement).closest('[data-snooze-menu]')) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  // Hours-until-tomorrow-9am, computed at click time so it's correct
+  // regardless of when the user opens the menu.
+  function hoursUntilTomorrow9am(): number {
+    const now = new Date()
+    const tomorrow = new Date(now)
+    tomorrow.setDate(now.getDate() + 1)
+    tomorrow.setHours(9, 0, 0, 0)
+    return Math.max(1, Math.round((tomorrow.getTime() - now.getTime()) / (1000 * 60 * 60)))
+  }
+  function hoursUntilNextMonday9am(): number {
+    const now = new Date()
+    const next = new Date(now)
+    const daysUntilMonday = (8 - now.getDay()) % 7 || 7
+    next.setDate(now.getDate() + daysUntilMonday)
+    next.setHours(9, 0, 0, 0)
+    return Math.max(1, Math.round((next.getTime() - now.getTime()) / (1000 * 60 * 60)))
+  }
+
+  const options: Array<{ label: string; hours: () => number; hint: string }> = [
+    { label: 'In 1 hour', hours: () => 1, hint: 'Back in an hour' },
+    { label: 'In 4 hours', hours: () => 4, hint: 'Later today' },
+    { label: 'Until tomorrow', hours: hoursUntilTomorrow9am, hint: 'Tomorrow at 9am' },
+    { label: 'Until next week', hours: hoursUntilNextMonday9am, hint: 'Monday at 9am' },
+  ]
+
+  function pick(h: number, e: React.MouseEvent) {
+    e.stopPropagation()
+    setOpen(false)
+    onSnooze(h)
+  }
+
+  return (
+    <div className="relative" data-snooze-menu onClick={e => e.stopPropagation()}>
+      <button
+        type="button"
+        aria-label="Snooze"
+        onClick={e => {
+          e.stopPropagation()
+          setOpen(o => !o)
+        }}
+        className="flex size-6 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-line-strong hover:text-ink"
+        title="Snooze for later"
+      >
+        <Clock size={12} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 w-44 rounded-md border border-line bg-surface py-1 shadow-md">
+          {options.map(o => (
+            <button
+              key={o.label}
+              type="button"
+              onClick={e => pick(o.hours(), e)}
+              className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-[12px] text-ink hover:bg-surface-muted"
+            >
+              <span>{o.label}</span>
+              <span className="text-[11px] text-ink-faint">{o.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TagPill({ tag }: { tag: NonNullable<Tag> }) {
   return (
     <span
@@ -882,29 +992,87 @@ function TagPill({ tag }: { tag: NonNullable<Tag> }) {
 // Visual: filled colored pill (P0 red, P1 orange, P2 blue, P3 gray) when
 // set; a faint dashed placeholder when unset (still clickable to set one).
 
-const PRIORITY_STYLE: Record<'P0' | 'P1' | 'P2' | 'P3', string> = {
+type PrioritySet = 'P0' | 'P1' | 'P2' | 'P3'
+
+const PRIORITY_STYLE: Record<PrioritySet, string> = {
   P0: 'bg-danger-fg text-white border-danger-fg',
   P1: 'bg-tag-action-fg text-white border-tag-action-fg',
   P2: 'bg-tag-reply-fg text-white border-tag-reply-fg',
   P3: 'bg-surface-muted text-ink-muted border-line-strong',
 }
 
-const PRIORITY_OPTIONS: ('P0' | 'P1' | 'P2' | 'P3')[] = ['P0', 'P1', 'P2', 'P3']
+// Faded variant for AUTO-assigned defaults — lower contrast so the user
+// can tell at a glance which priorities they've explicitly set vs. which
+// ones the agent picked. Hover reveals the full color.
+const PRIORITY_STYLE_AUTO: Record<PrioritySet, string> = {
+  P0: 'bg-danger-bg text-danger-fg border-danger-border',
+  P1: 'bg-tag-action-bg text-tag-action-fg border-tag-action-bg',
+  P2: 'bg-tag-reply-bg text-tag-reply-fg border-tag-reply-bg',
+  P3: 'bg-surface-muted text-ink-muted border-surface-muted',
+}
+
+const PRIORITY_OPTIONS: PrioritySet[] = ['P0', 'P1', 'P2', 'P3']
+
+const PRIORITY_RANK: Record<PrioritySet, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
+
+/**
+ * Compute a sensible default priority for an item that has none set
+ * explicitly. The user can always override; this just keeps the list
+ * pre-ranked the first time they see it so nothing gets buried under
+ * "no priority".
+ *
+ * Rules (first match wins):
+ *  - Overdue OR urgent OR due within 6h → P0
+ *  - Draft ready, OR due within 24h → P1
+ *  - FYI tag → P3
+ *  - Everything else → P2
+ */
+function defaultPriority(item: MockItem): PrioritySet {
+  const now = Date.now()
+  if (item.due_at) {
+    const due = new Date(item.due_at).getTime()
+    if (!isNaN(due)) {
+      const hours = (due - now) / (1000 * 60 * 60)
+      if (hours < 6) return 'P0'
+      if (hours < 24) return 'P1'
+    }
+  }
+  if (item.urgent) return 'P0'
+  if (item.proposed_action) return 'P1'
+  if (item.tag === 'fyi') return 'P3'
+  return 'P2'
+}
+
+/**
+ * The priority the row should sort + display by. Falls back to default
+ * when the user hasn't set one explicitly.
+ */
+function effectivePriority(item: MockItem): PrioritySet {
+  return (item.priority as PrioritySet | null) ?? defaultPriority(item)
+}
 
 function PriorityChip({
   itemId,
-  value,
+  explicit,
+  resolved,
 }: {
   itemId: string
-  value: Priority
+  // The priority the user explicitly set (null if they haven't).
+  explicit: Priority
+  // The priority the row is currently treated as — explicit if set,
+  // otherwise the agent's auto-default. Always visible.
+  resolved: PrioritySet
 }) {
-  const [current, setCurrent] = useState<Priority>(value)
+  const [current, setCurrent] = useState<Priority>(explicit)
   const [open, setOpen] = useState(false)
+  // What we actually render: the user's choice if any, else the default.
+  const displayed: PrioritySet = (current as PrioritySet | null) ?? resolved
+  const isAuto = !current
 
-  // Re-sync when the parent passes new value (after revalidate).
+  // Re-sync when the parent passes a new explicit value (after revalidate).
   useEffect(() => {
-    setCurrent(value)
-  }, [value])
+    setCurrent(explicit)
+  }, [explicit])
 
   // Click-away to close the menu.
   useEffect(() => {
@@ -928,35 +1096,24 @@ function PriorityChip({
 
   return (
     <div className="relative" data-priority-chip onClick={e => e.stopPropagation()}>
-      {current ? (
-        <button
-          type="button"
-          onClick={e => {
-            e.stopPropagation()
-            setOpen(o => !o)
-          }}
-          className={cn(
-            'inline-flex items-center justify-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold tabular-nums uppercase tracking-wider transition-opacity hover:opacity-80',
-            PRIORITY_STYLE[current as 'P0' | 'P1' | 'P2' | 'P3']
-          )}
-          title={`Priority ${current} — click to change`}
-        >
-          {current}
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={e => {
-            e.stopPropagation()
-            setOpen(o => !o)
-          }}
-          aria-label="Set priority"
-          className="inline-flex items-center justify-center rounded-md border border-dashed border-line-strong px-1.5 py-0.5 text-[10px] font-medium text-ink-faint hover:border-ink hover:text-ink"
-          title="Set priority"
-        >
-          P–
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={e => {
+          e.stopPropagation()
+          setOpen(o => !o)
+        }}
+        className={cn(
+          'inline-flex items-center justify-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold tabular-nums uppercase tracking-wider transition-opacity hover:opacity-80',
+          isAuto ? PRIORITY_STYLE_AUTO[displayed] : PRIORITY_STYLE[displayed]
+        )}
+        title={
+          isAuto
+            ? `Auto-set to ${displayed} — click to override`
+            : `Priority ${displayed} — click to change`
+        }
+      >
+        {displayed}
+      </button>
       {open && (
         <div className="absolute left-0 top-full z-30 mt-1 flex gap-1 rounded-md border border-line bg-surface p-1 shadow-md">
           {PRIORITY_OPTIONS.map(p => (
@@ -978,9 +1135,9 @@ function PriorityChip({
               type="button"
               onClick={e => setTo(null, e)}
               className="inline-flex items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-medium text-ink-faint hover:text-ink"
-              title="Clear priority"
+              title="Reset to auto"
             >
-              ×
+              Auto
             </button>
           )}
         </div>
@@ -1865,7 +2022,7 @@ function PrepTab({
   onSelect: (item: MockItem) => void
   onComplete: (id: string) => void
   onDismiss: (id: string) => void
-  onSnooze: (id: string) => void
+  onSnooze: (id: string, hours: number) => void
 }) {
   if (items.length === 0) {
     return (
@@ -1892,7 +2049,7 @@ function PrepTab({
             onSelect={() => onSelect(item)}
             onComplete={() => onComplete(item.id)}
             onDismiss={() => onDismiss(item.id)}
-            onSnooze={() => onSnooze(item.id)}
+            onSnooze={hours => onSnooze(item.id, hours)}
           />
         ))}
       </ul>
