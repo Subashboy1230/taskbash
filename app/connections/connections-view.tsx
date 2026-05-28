@@ -13,18 +13,14 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  Mail,
-  Mic,
-  MessageSquare,
-  Calendar as CalendarIcon,
   ChevronLeft,
-  ListChecks,
   Check,
   X,
   Loader2,
 } from 'lucide-react'
 import type { Connection, ConnectionProvider } from '@/lib/types'
 import { AppHeader } from '@/app/_components/app-header'
+import { BrandLogo } from '@/app/_components/brand-logo'
 import {
   createNangoConnectSession,
   recordNangoConnection,
@@ -33,48 +29,50 @@ import {
   disconnectProvider,
 } from './actions'
 
+type BrandKey = 'gmail' | 'calendar' | 'granola' | 'linear' | 'slack'
+
 interface Source {
   provider: ConnectionProvider | 'slack'
+  brand: BrandKey
   name: string
   description: string
-  icon: typeof Mail
   authType: 'oauth' | 'apikey' | 'unavailable'
 }
 
 const SOURCES: Source[] = [
   {
     provider: 'gmail',
+    brand: 'gmail',
     name: 'Gmail',
     description: 'Read recent inbox threads for action items you owe.',
-    icon: Mail,
     authType: 'oauth',
   },
   {
     provider: 'calendar',
+    brand: 'calendar',
     name: 'Google Calendar',
     description: 'Generate prep briefs for upcoming meetings (next 36 hours).',
-    icon: CalendarIcon,
     authType: 'oauth',
   },
   {
     provider: 'granola',
+    brand: 'granola',
     name: 'Granola',
     description: 'Pull post-call commitments from your meeting notes.',
-    icon: Mic,
     authType: 'apikey',
   },
   {
     provider: 'linear',
+    brand: 'linear',
     name: 'Linear',
     description: 'Surface open issues assigned to you, sorted by recency.',
-    icon: ListChecks,
     authType: 'apikey',
   },
   {
     provider: 'slack',
+    brand: 'slack',
     name: 'Slack',
     description: 'DMs and channels — coming in Week 5 (needs auth feature).',
-    icon: MessageSquare,
     authType: 'unavailable',
   },
 ]
@@ -131,13 +129,12 @@ function ConnectionCard({
   source: Source
   connection: Connection | null
 }) {
-  const Icon = source.icon
   const isActive = connection?.status === 'active'
   return (
-    <div className="rounded-lg border border-line/60 bg-surface p-4">
+    <div className="rounded-lg border border-line/60 bg-surface p-4 transition-shadow hover:shadow-sm">
       <div className="flex items-start gap-3">
-        <div className="flex size-10 items-center justify-center rounded-md bg-surface-muted text-ink-faint">
-          <Icon size={20} />
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-surface-muted/60 ring-1 ring-line/40">
+          <BrandLogo brand={source.brand} size={26} />
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-2">

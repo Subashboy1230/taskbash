@@ -11,11 +11,10 @@
 //   7. Smart deadline display ("Overdue 15h" / "Due in 5h" / "Due tomorrow" / "Due Friday")
 //   8. Mark-as-done strikes through the parent task and fades it
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  Calendar as CalendarIcon,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -24,19 +23,15 @@ import {
   Clock,
   Edit3,
   ExternalLink,
-  Hash,
   History,
+  Layers,
   Loader2,
-  Mail,
-  Mic,
-  Pencil,
   RefreshCw,
-  RotateCcw,
-  UserPlus,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AppHeader } from '@/app/_components/app-header'
+import { BrandLogo } from '@/app/_components/brand-logo'
 import { StatusPill, type StatusPillKind } from '@/app/_components/status-pill'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { ProposedAction, Source, Tag, TaskBrief } from '@/lib/types'
@@ -62,9 +57,36 @@ export function TodayView({
   userEmail?: string
 }) {
   const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
-  const [showCompleted, setShowCompleted] = useState(true)
+  const [tab, setTab] = useState<'open' | 'cleared'>('open')
+  // Filter chips — null = "All". Persist in localStorage so the user's
+  // filter survives a reload.
+  const [sourceFilter, setSourceFilter] = useState<Source | null>(null)
+  const [groupBy, setGroupBy] = useState<'none' | 'source' | 'due'>('none')
   const [isRefreshing, startRefresh] = useTransition()
   const router = useRouter()
+
+  // Hydrate filter + group selections from localStorage on mount, then
+  // persist whenever they change. Wrapped in a no-throw try so SSR is fine.
+  useEffect(() => {
+    try {
+      const savedSource = localStorage.getItem('todoo:sourceFilter')
+      if (savedSource && savedSource !== 'null') setSourceFilter(savedSource as Source)
+      const savedGroup = localStorage.getItem('todoo:groupBy')
+      if (savedGroup === 'source' || savedGroup === 'due' || savedGroup === 'none') {
+        setGroupBy(savedGroup)
+      }
+    } catch {
+      /* localStorage unavailable — fine */
+    }
+  }, [])
+  useEffect(() => {
+    try {
+      localStorage.setItem('todoo:sourceFilter', sourceFilter ?? 'null')
+      localStorage.setItem('todoo:groupBy', groupBy)
+    } catch {
+      /* ignore */
+    }
+  }, [sourceFilter, groupBy])
 
   // Items the user just dismissed/completed — hide them locally before revalidate lands
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
@@ -117,6 +139,23 @@ export function TodayView({
 
   const visibleOpen = digest.open_items.filter(i => !hiddenIds.has(i.id))
 
+  // Which sources actually appear in this digest — drives the chip row so
+  // we don't show "Linear" as a filter option when there's no Linear data.
+  const availableSources = useMemo(() => {
+    const set = new Set<Source>()
+    for (const it of digest.open_items) set.add(it.source)
+    return Array.from(set)
+  }, [digest.open_items])
+
+  // Apply source-filter to the open list. Cleared tab is unfiltered for now
+  // (small enough that it doesn't need it; can revisit if it grows).
+  const filteredOpen = useMemo(
+    () => (sourceFilter ? visibleOpen.filter(i => i.source === sourceFilter) : visibleOpen),
+    [visibleOpen, sourceFilter]
+  )
+
+  const groups = useMemo(() => groupItems(filteredOpen, groupBy), [filteredOpen, groupBy])
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -151,29 +190,37 @@ export function TodayView({
             itemsWithDueDates={digest.open_items}
           />
 
-          <div className="mt-8 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <NummoLogo />
-              <span className="text-[15px] text-ink">Prioritizing</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-success-bg px-2.5 py-1 text-xs font-medium text-success-fg">
-                {visibleOpen.length} tasks
-              </span>
-              <button
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                aria-label="Refresh"
-                className="rounded-full p-1.5 text-ink-faint transition-colors hover:bg-surface-muted hover:text-ink disabled:opacity-40"
-                title="Re-pull latest items from your sources"
+          {/* Tabs: Open / Cleared */}
+          <div className="mt-7 flex items-center justify-between border-b border-line">
+            <div className="flex gap-6">
+              <TabButton
+                active={tab === 'open'}
+                onClick={() => setTab('open')}
+                count={visibleOpen.length}
               >
-                {isRefreshing ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <RefreshCw size={14} />
-                )}
-              </button>
+                Open
+              </TabButton>
+              <TabButton
+                active={tab === 'cleared'}
+                onClick={() => setTab('cleared')}
+                count={digest.completed_today_count}
+              >
+                Cleared today
+              </TabButton>
             </div>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              aria-label="Refresh"
+              className="mb-1.5 rounded-full p-1.5 text-ink-faint transition-colors hover:bg-surface-muted hover:text-ink disabled:opacity-40"
+              title="Re-pull latest items from your sources"
+            >
+              {isRefreshing ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RefreshCw size={14} />
+              )}
+            </button>
           </div>
 
           {refreshError && (
@@ -182,52 +229,60 @@ export function TodayView({
             </div>
           )}
 
-          {visibleOpen.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <ul className="mt-4 list-none p-0 m-0 divide-y divide-line/70">
-              {visibleOpen.map(item => (
-                <TaskRow
-                  key={item.id}
-                  item={item}
-                  isSelected={selectedItem?.id === item.id}
-                  onSelect={() => setSelectedItem(item)}
-                  onComplete={() => handleComplete(item.id)}
-                  onDismiss={() => handleDismiss(item.id)}
-                  onSnooze={() => handleSnooze(item.id)}
-                />
-              ))}
-            </ul>
-          )}
+          {tab === 'open' ? (
+            <>
+              {/* Filter chips + Group by */}
+              <FilterBar
+                availableSources={availableSources}
+                sourceFilter={sourceFilter}
+                onSourceChange={setSourceFilter}
+                groupBy={groupBy}
+                onGroupByChange={setGroupBy}
+              />
 
-          <div className="mt-10">
-            <button
-              onClick={() => setShowCompleted(!showCompleted)}
-              className="flex w-full items-center justify-between border-t border-line py-3 text-xs uppercase tracking-wider text-ink-faint"
-            >
-              <span className="flex items-center gap-2">
-                Completed today
-                <span className="rounded-full bg-surface-muted px-1.5 py-0.5 text-[11px] font-medium text-ink-muted normal-case tracking-normal">
-                  {digest.completed_today_count}
-                </span>
-                <Link
-                  href="/handled"
-                  onClick={e => e.stopPropagation()}
-                  className="ml-1 text-[11px] underline hover:text-ink"
-                >
-                  View All
-                </Link>
-              </span>
-              {showCompleted ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
-            {showCompleted && (
-              <ul className="list-none p-0 m-0">
-                {digest.completed_today.map(item => (
-                  <CompletedRow key={item.id} item={item} />
-                ))}
-              </ul>
-            )}
-          </div>
+              {filteredOpen.length === 0 ? (
+                sourceFilter ? (
+                  <FilterEmpty source={sourceFilter} onClear={() => setSourceFilter(null)} />
+                ) : (
+                  <EmptyState />
+                )
+              ) : (
+                <div className="mt-4 space-y-6">
+                  {groups.map(group => (
+                    <section key={group.key}>
+                      {group.label && (
+                        <h2 className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+                          {group.icon}
+                          {group.label}
+                          <span className="rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px] font-medium text-ink-muted normal-case tracking-normal">
+                            {group.items.length}
+                          </span>
+                        </h2>
+                      )}
+                      <ul className="list-none p-0 m-0 divide-y divide-line/70">
+                        {group.items.map(item => (
+                          <TaskRow
+                            key={item.id}
+                            item={item}
+                            isSelected={selectedItem?.id === item.id}
+                            onSelect={() => setSelectedItem(item)}
+                            onComplete={() => handleComplete(item.id)}
+                            onDismiss={() => handleDismiss(item.id)}
+                            onSnooze={() => handleSnooze(item.id)}
+                          />
+                        ))}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <ClearedTab
+              items={digest.completed_today}
+              totalCount={digest.completed_today_count}
+            />
+          )}
         </main>
 
         {selectedItem && (
@@ -353,37 +408,47 @@ function CalendarStrip({
             {d.letter}
           </div>
         ))}
-        {days.map((d, i) => {
-          // Tooltip text for days that have items — shows up to 3 titles +
-          // a "+N more" hint. Helps the user understand what the dot means.
-          const tooltip = d.hasItems
-            ? `${d.itemTitles.length} item${d.itemTitles.length === 1 ? '' : 's'} due:\n` +
-              d.itemTitles.slice(0, 3).join('\n') +
-              (d.itemTitles.length > 3 ? `\n+${d.itemTitles.length - 3} more` : '')
-            : undefined
-          return (
-            <div
-              key={`n-${i}`}
-              className="flex flex-col items-center pt-1.5"
-              title={tooltip}
-            >
-              {d.isToday ? (
-                <div className="flex size-9 items-center justify-center rounded-full bg-cal-strip-active text-sm font-semibold text-white">
-                  {d.number}
-                </div>
-              ) : (
-                <div className="flex size-9 items-center justify-center text-sm font-medium text-cal-strip-text">
-                  {d.number}
-                </div>
-              )}
-              <div className="mt-1 h-1 w-1">
-                {d.hasItems && (
-                  <div className="size-1 rounded-full bg-cal-strip-active" />
-                )}
+        {days.map((d, i) => (
+          <div
+            key={`n-${i}`}
+            className="group/day relative flex flex-col items-center pt-1.5"
+          >
+            {d.isToday ? (
+              <div className="flex size-9 items-center justify-center rounded-full bg-cal-strip-active text-sm font-semibold text-white">
+                {d.number}
               </div>
+            ) : (
+              <div className="flex size-9 items-center justify-center text-sm font-medium text-cal-strip-text">
+                {d.number}
+              </div>
+            )}
+            <div className="mt-1 h-1 w-1">
+              {d.hasItems && <div className="size-1 rounded-full bg-cal-strip-active" />}
             </div>
-          )
-        })}
+            {/* Real hover popover (replaces native `title` tooltip) — shows
+                up to 4 item titles + "+N more". */}
+            {d.hasItems && (
+              <div
+                className="pointer-events-none absolute top-full left-1/2 z-20 mt-1 w-56 -translate-x-1/2 rounded-md border border-line/70 bg-surface px-3 py-2 text-left text-[12px] leading-snug text-ink shadow-lg opacity-0 transition-opacity group-hover/day:opacity-100"
+                role="tooltip"
+              >
+                <p className="m-0 mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+                  {d.itemTitles.length} item{d.itemTitles.length === 1 ? '' : 's'} due
+                </p>
+                <ul className="m-0 list-none space-y-0.5 p-0">
+                  {d.itemTitles.slice(0, 4).map((t, j) => (
+                    <li key={j} className="truncate text-ink">
+                      · {t}
+                    </li>
+                  ))}
+                  {d.itemTitles.length > 4 && (
+                    <li className="text-ink-faint">+{d.itemTitles.length - 4} more</li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
       <p className="mt-3 text-[11px] text-cal-strip-text-faint flex items-center gap-1.5">
         <span className="size-1.5 rounded-full bg-cal-strip-active inline-block" />
@@ -750,25 +815,26 @@ function TagPill({ tag }: { tag: NonNullable<Tag> }) {
   )
 }
 
-function SourceIcon({ source }: { source: Source }) {
-  const map: Record<Source, { icon: React.ComponentType<{ size?: number; className?: string }>; tooltip: string }> = {
-    granola: { icon: Mic, tooltip: 'Granola' },
-    gmail: { icon: Mail, tooltip: 'Gmail' },
-    calendar: { icon: CalendarIcon, tooltip: 'Google Calendar' },
-    slack: { icon: Hash, tooltip: 'Slack' },
-    linear: { icon: Hash, tooltip: 'Linear' },
-    manual: { icon: Pencil, tooltip: 'Manual' },
-  }
-  const entry = map[source] || { icon: Pencil, tooltip: source }
-  const Icon = entry.icon
+function SourceIcon({ source, size = 18 }: { source: Source; size?: number }) {
+  const tooltip = SOURCE_LABEL[source] ?? source
   return (
     <div
-      title={entry.tooltip}
-      className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-surface-muted text-ink-muted"
+      title={tooltip}
+      className="mt-0.5 flex shrink-0 items-center justify-center"
+      style={{ width: size + 4, height: size + 4 }}
     >
-      <Icon size={14} />
+      <BrandLogo brand={source} size={size} />
     </div>
   )
+}
+
+const SOURCE_LABEL: Record<Source, string> = {
+  granola: 'Granola',
+  gmail: 'Gmail',
+  calendar: 'Google Calendar',
+  slack: 'Slack',
+  linear: 'Linear',
+  manual: 'Manual',
 }
 
 // ─── Completed row ──────────────────────────────────────────────────────
@@ -1302,6 +1368,279 @@ function EmptyState() {
       <p className="m-0 text-[15px] font-medium text-ink">All clear</p>
       <p className="mt-1 text-[13px] text-ink-muted m-0">
         Nothing on your plate right now. The next morning digest runs at 7:00 AM.
+      </p>
+    </div>
+  )
+}
+
+// ─── Tabs ───────────────────────────────────────────────────────────────
+
+function TabButton({
+  active,
+  onClick,
+  count,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  count?: number
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        '-mb-px flex items-center gap-2 border-b-2 px-1 py-2.5 text-[14px] font-medium transition-colors',
+        active
+          ? 'border-ink text-ink'
+          : 'border-transparent text-ink-faint hover:text-ink-muted'
+      )}
+    >
+      {children}
+      {typeof count === 'number' && (
+        <span
+          className={cn(
+            'rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
+            active ? 'bg-success-bg text-success-fg' : 'bg-surface-muted text-ink-faint'
+          )}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  )
+}
+
+// First tab in the row gets no left margin; subsequent tabs get a gap.
+// Done with sibling-margin in the parent flex to keep this component simple.
+
+// ─── Filter bar ─────────────────────────────────────────────────────────
+
+const SOURCE_ORDER: Source[] = ['gmail', 'calendar', 'granola', 'linear', 'slack', 'manual']
+
+function FilterBar({
+  availableSources,
+  sourceFilter,
+  onSourceChange,
+  groupBy,
+  onGroupByChange,
+}: {
+  availableSources: Source[]
+  sourceFilter: Source | null
+  onSourceChange: (s: Source | null) => void
+  groupBy: 'none' | 'source' | 'due'
+  onGroupByChange: (g: 'none' | 'source' | 'due') => void
+}) {
+  const ordered = SOURCE_ORDER.filter(s => availableSources.includes(s))
+  // Hide the bar entirely when there's nothing to filter or group.
+  if (ordered.length === 0) return null
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <FilterChip
+          active={sourceFilter === null}
+          onClick={() => onSourceChange(null)}
+        >
+          All
+        </FilterChip>
+        {ordered.map(s => (
+          <FilterChip
+            key={s}
+            active={sourceFilter === s}
+            onClick={() => onSourceChange(sourceFilter === s ? null : s)}
+          >
+            <BrandLogo brand={s} size={12} />
+            {SOURCE_LABEL[s]}
+          </FilterChip>
+        ))}
+      </div>
+      <div className="flex items-center gap-1.5 text-[12px] text-ink-faint">
+        <Layers size={12} />
+        <span>Group:</span>
+        <GroupToggle value={groupBy} onChange={onGroupByChange} />
+      </div>
+    </div>
+  )
+}
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors',
+        active
+          ? 'border-ink bg-ink text-canvas'
+          : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink'
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+function GroupToggle({
+  value,
+  onChange,
+}: {
+  value: 'none' | 'source' | 'due'
+  onChange: (g: 'none' | 'source' | 'due') => void
+}) {
+  const options: Array<{ key: 'none' | 'source' | 'due'; label: string }> = [
+    { key: 'none', label: 'None' },
+    { key: 'source', label: 'Source' },
+    { key: 'due', label: 'Due' },
+  ]
+  return (
+    <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
+      {options.map(o => (
+        <button
+          key={o.key}
+          onClick={() => onChange(o.key)}
+          className={cn(
+            'rounded px-2 py-0.5 text-[12px] font-medium transition-colors',
+            value === o.key
+              ? 'bg-ink text-canvas'
+              : 'text-ink-muted hover:text-ink'
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ─── Grouping ───────────────────────────────────────────────────────────
+
+interface ItemGroup {
+  key: string
+  label: string | null  // null = no header (used when groupBy = 'none')
+  icon?: React.ReactNode
+  items: MockItem[]
+}
+
+function groupItems(items: MockItem[], groupBy: 'none' | 'source' | 'due'): ItemGroup[] {
+  if (groupBy === 'none') {
+    return [{ key: 'all', label: null, items }]
+  }
+  if (groupBy === 'source') {
+    const buckets = new Map<Source, MockItem[]>()
+    for (const it of items) {
+      const list = buckets.get(it.source) ?? []
+      list.push(it)
+      buckets.set(it.source, list)
+    }
+    return SOURCE_ORDER.filter(s => buckets.has(s)).map(s => ({
+      key: `src-${s}`,
+      label: SOURCE_LABEL[s],
+      icon: <BrandLogo brand={s} size={12} />,
+      items: buckets.get(s) ?? [],
+    }))
+  }
+  // groupBy === 'due'
+  const now = Date.now()
+  const tomorrow = now + 24 * 60 * 60 * 1000
+  const endOfWeek = now + 7 * 24 * 60 * 60 * 1000
+  const overdue: MockItem[] = []
+  const today: MockItem[] = []
+  const thisWeek: MockItem[] = []
+  const later: MockItem[] = []
+  const none: MockItem[] = []
+  for (const it of items) {
+    if (!it.due_at) {
+      none.push(it)
+      continue
+    }
+    const due = new Date(it.due_at).getTime()
+    if (isNaN(due)) {
+      none.push(it)
+      continue
+    }
+    if (due < now) overdue.push(it)
+    else if (due < tomorrow) today.push(it)
+    else if (due < endOfWeek) thisWeek.push(it)
+    else later.push(it)
+  }
+  const out: ItemGroup[] = []
+  if (overdue.length) out.push({ key: 'overdue', label: 'Overdue', items: overdue })
+  if (today.length) out.push({ key: 'today', label: 'Today', items: today })
+  if (thisWeek.length) out.push({ key: 'this-week', label: 'This week', items: thisWeek })
+  if (later.length) out.push({ key: 'later', label: 'Later', items: later })
+  if (none.length) out.push({ key: 'no-due', label: 'No due date', items: none })
+  return out
+}
+
+// ─── Cleared tab ────────────────────────────────────────────────────────
+
+function ClearedTab({
+  items,
+  totalCount,
+}: {
+  items: MockItem[]
+  totalCount: number
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
+        <p className="m-0 text-[15px] font-medium text-ink">Nothing cleared yet today</p>
+        <p className="mt-1 text-[13px] text-ink-faint m-0">
+          Approve or check off items from the Open tab — they&apos;ll land here.
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="mt-4">
+      <ul className="list-none p-0 m-0">
+        {items.map(item => (
+          <CompletedRow key={item.id} item={item} />
+        ))}
+      </ul>
+      {totalCount > items.length && (
+        <div className="mt-3 text-center">
+          <Link
+            href="/handled"
+            className="text-[13px] text-ink-faint underline hover:text-ink"
+          >
+            See everything that&apos;s been handled →
+          </Link>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Filter empty state ─────────────────────────────────────────────────
+
+function FilterEmpty({
+  source,
+  onClear,
+}: {
+  source: Source
+  onClear: () => void
+}) {
+  return (
+    <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
+      <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-md bg-surface-muted">
+        <BrandLogo brand={source} size={20} />
+      </div>
+      <p className="m-0 text-[15px] font-medium text-ink">
+        No {SOURCE_LABEL[source]} items
+      </p>
+      <p className="mt-1 text-[13px] text-ink-faint m-0">
+        Nothing from {SOURCE_LABEL[source]} matched your filter.{' '}
+        <button onClick={onClear} className="underline hover:text-ink">
+          Clear filter
+        </button>
       </p>
     </div>
   )
