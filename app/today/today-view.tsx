@@ -58,7 +58,7 @@ export function TodayView({
   userEmail?: string
 }) {
   const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
-  const [tab, setTab] = useState<'open' | 'cleared'>('open')
+  const [tab, setTab] = useState<'open' | 'prep' | 'cleared'>('open')
   // Filter chips — null = "All". Persist in localStorage so the user's
   // filter survives a reload.
   const [sourceFilter, setSourceFilter] = useState<Source | null>(null)
@@ -149,7 +149,15 @@ export function TodayView({
     })
   }
 
-  const visibleOpen = digest.open_items.filter(i => !hiddenIds.has(i.id))
+  const allVisible = digest.open_items.filter(i => !hiddenIds.has(i.id))
+  // Split prep tasks (Calendar prep briefs — task_type='context_prep' or
+  // titles literally starting with "Prep:") out of the main Open list so
+  // the user can focus on real action items without 10 meeting briefs
+  // crowding the page.
+  const isPrep = (i: MockItem) =>
+    i.task_type === 'context_prep' || /^prep:/i.test(i.title)
+  const visibleOpen = allVisible.filter(i => !isPrep(i))
+  const visiblePrep = allVisible.filter(isPrep)
 
   // Which sources actually appear in this digest — drives the chip row so
   // we don't show "Linear" as a filter option when there's no Linear data.
@@ -225,6 +233,13 @@ export function TodayView({
                 Open
               </TabButton>
               <TabButton
+                active={tab === 'prep'}
+                onClick={() => setTab('prep')}
+                count={visiblePrep.length}
+              >
+                Prep
+              </TabButton>
+              <TabButton
                 active={tab === 'cleared'}
                 onClick={() => setTab('cleared')}
                 count={digest.completed_today_count}
@@ -253,7 +268,16 @@ export function TodayView({
             </div>
           )}
 
-          {tab === 'open' ? (
+          {tab === 'prep' ? (
+            <PrepTab
+              items={visiblePrep}
+              selectedId={selectedItem?.id}
+              onSelect={setSelectedItem}
+              onComplete={handleComplete}
+              onDismiss={handleDismiss}
+              onSnooze={handleSnooze}
+            />
+          ) : tab === 'open' ? (
             <>
               {/* Filter chips + Group by */}
               <FilterBar
@@ -927,7 +951,7 @@ function PriorityChip({
             setOpen(o => !o)
           }}
           aria-label="Set priority"
-          className="inline-flex items-center justify-center rounded-md border border-dashed border-line px-1.5 py-0.5 text-[10px] font-medium text-ink-faint opacity-0 transition-opacity hover:border-line-strong hover:text-ink group-hover:opacity-100"
+          className="inline-flex items-center justify-center rounded-md border border-dashed border-line-strong px-1.5 py-0.5 text-[10px] font-medium text-ink-faint hover:border-ink hover:text-ink"
           title="Set priority"
         >
           P–
@@ -1820,6 +1844,60 @@ function groupItems(items: MockItem[], groupBy: 'none' | 'source' | 'due'): Item
   if (later.length) out.push({ key: 'later', label: 'Later', items: later })
   if (none.length) out.push({ key: 'no-due', label: 'No due date', items: none })
   return out
+}
+
+// ─── Prep tab ───────────────────────────────────────────────────────────
+// Calendar-derived "Prep: <meeting>" briefs. Split out from Open so the
+// main list stays focused on action items the user actually owes work on,
+// not the read-it-before-the-meeting kind. Same row component so the
+// interactions are consistent.
+
+function PrepTab({
+  items,
+  selectedId,
+  onSelect,
+  onComplete,
+  onDismiss,
+  onSnooze,
+}: {
+  items: MockItem[]
+  selectedId?: string
+  onSelect: (item: MockItem) => void
+  onComplete: (id: string) => void
+  onDismiss: (id: string) => void
+  onSnooze: (id: string) => void
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
+        <p className="m-0 text-[15px] font-medium text-ink">No meetings to prep for</p>
+        <p className="mt-1 text-[13px] text-ink-faint m-0">
+          Calendar prep briefs land here automatically the morning of a meeting.
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="mt-4">
+      <p className="m-0 mb-2 text-[12px] text-ink-faint">
+        Briefs for upcoming meetings. Read them, then mark done — they don&apos;t
+        clutter your Open list.
+      </p>
+      <ul className="list-none p-0 m-0 divide-y divide-line/70">
+        {items.map(item => (
+          <TaskRow
+            key={item.id}
+            item={item}
+            isSelected={selectedId === item.id}
+            onSelect={() => onSelect(item)}
+            onComplete={() => onComplete(item.id)}
+            onDismiss={() => onDismiss(item.id)}
+            onSnooze={() => onSnooze(item.id)}
+          />
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 // ─── Cleared tab ────────────────────────────────────────────────────────
