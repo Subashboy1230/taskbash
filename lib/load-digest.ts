@@ -2,13 +2,12 @@
 // Returns the same shape (MockDigestSummary) so the UI doesn't need to change.
 
 import { supabase } from './supabase'
+import { resolveUserId } from './supabase-server'
 import type { Item, Source, Tag } from './types'
 import type { MockDigestSummary, MockItem } from './mock-items'
 
-const USER_ID = process.env.APP_USER_ID!
-
 export async function loadDigest(): Promise<MockDigestSummary> {
-  if (!USER_ID) throw new Error('APP_USER_ID is not set')
+  const USER_ID = await resolveUserId()
 
   const now = new Date()
   const today = new Date(now)
@@ -130,9 +129,14 @@ function toUIItem(
     completed_at: item.completed_at ?? undefined,
     // The synthesized brief — null until backfill-briefs.ts runs / extractor generates it
     brief: item.brief ?? null,
+    // Nummo-style approval-queue fields (migration 006)
+    proposed_action: item.proposed_action ?? null,
+    source_excerpt: item.source_excerpt ?? null,
     detail_status:
       item.status === 'completed'
         ? 'Approved'
+        : item.proposed_action
+        ? 'Draft ready'
         : item.urgent
         ? 'Needs your review'
         : 'Review needed',

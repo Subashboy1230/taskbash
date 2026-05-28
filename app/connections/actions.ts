@@ -20,9 +20,8 @@ import {
   deactivateConnection,
   NANGO_PROVIDER_KEY,
 } from '@/lib/connections'
+import { resolveUserId } from '@/lib/supabase-server'
 import type { ConnectionProvider } from '@/lib/types'
-
-const USER_ID = process.env.APP_USER_ID!
 
 /**
  * Mint a one-shot Nango Connect session token. The frontend SDK uses this
@@ -40,7 +39,7 @@ export async function createNangoConnectSession(
   // @nangohq/node returns the session object directly in newer versions; we
   // pull the token defensively so this still works on older SDKs.
   const session = (await nango.createConnectSession({
-    end_user: { id: USER_ID, email: 'subashraj411@gmail.com' },
+    end_user: { id: await resolveUserId(), email: 'subashraj411@gmail.com' },
     allowed_integrations: [providerKey],
   })) as { data?: { token?: string }; token?: string }
 

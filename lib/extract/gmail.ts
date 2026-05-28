@@ -20,6 +20,7 @@
 import { anthropic, MODELS } from '../anthropic'
 import { nangoProxy } from '../nango'
 import { getActiveConnection, NANGO_PROVIDER_KEY } from '../connections'
+import { draftReply } from '../draft/reply'
 import type { ExtractedItem } from '../types'
 import { WORK_ONLY_RULE } from './filters'
 import { extractJsonObject } from './parse'
@@ -148,6 +149,8 @@ async function extractItemsFromThread(
   // Keep the most recent messages — that's where the live asks are.
   const recent = messages.slice(-MAX_MESSAGES_PER_THREAD)
   const subject = headerValue(messages[0], 'Subject') || '(no subject)'
+  const latestMessage = recent[recent.length - 1]
+  const latestBody = extractPlainText(latestMessage?.payload)
 
   const transcript = recent
     .map((m, i) => {
@@ -158,7 +161,7 @@ async function extractItemsFromThread(
     })
     .join('\n\n')
 
-  const latestFrom = headerValue(recent[recent.length - 1], 'From') || 'unknown'
+  const latestFrom = headerValue(latestMessage, 'From') || 'unknown'
 
   const prompt = buildExtractionPrompt({ subject, userEmail, latestFrom, transcript })
 
@@ -174,7 +177,70 @@ async function extractItemsFromThread(
     .map(b => b.text)
     .join('\n')
 
-  return parseExtractionResponse(text, thread, subject)
+  const items = parseExtractionResponse(text, thread, subject)
+
+  // Attach Context Trail source_excerpt to every item from this thread.
+  // The latest message is the most likely thing the user wants to see when
+  // auditing why the agent flagged the task.
+  const sourceExcerpt = buildSourceExcerpt({
+    subject,
+    from: latestFrom,
+    body: latestBody,
+  })
+
+  // For "reply" tagged items, pre-draft the reply so the user can approve.
+  // This is the Nummo-style approval-queue move: the agent does the writing,
+  // user just hits Send. Draft only the first reply item per thread to keep
+  // cost bounded — anything else is unusual.
+  const latestFromEmail = parseEmailAddress(latestFrom)
+  let draftedOnce = false
+  for (const item of items) {
+    item.source_excerpt = sourceExcerpt
+    if (item.tag === 'reply' && !draftedOnce && latestFromEmail) {
+      try {
+        item.proposed_action = await draftReply({
+          threadText: transcript,
+          subject,
+          to: latestFromEmail,
+          threadId: thread.id,
+          messageId: latestMessage?.id,
+        })
+        draftedOnce = true
+      } catch (err) {
+        // Draft failure shouldn't block the item — the user can still
+        // open it as a plain "reply owed" task.
+        console.error(`[gmail] draftReply failed for thread ${thread.id}:`, err)
+      }
+    }
+  }
+
+  return items
+}
+
+/**
+ * Pull just the email out of a "Name <email@x.com>" header value. Falls
+ * back to the trimmed input when there's no angle-bracketed address.
+ */
+function parseEmailAddress(header: string): string | null {
+  const match = header.match(/<([^>]+)>/)
+  if (match) return match[1].trim()
+  if (header.includes('@')) return header.trim()
+  return null
+}
+
+/**
+ * Compact form of the most-recent message for the Context Trail tab.
+ * Keeps subject + sender + truncated body so the user can audit quickly
+ * without leaving the app.
+ */
+function buildSourceExcerpt(args: {
+  subject: string
+  from: string
+  body: string
+}): string {
+  const truncated = args.body.slice(0, 2000)
+  const ellipsis = args.body.length > 2000 ? '\n…' : ''
+  return `Subject: ${args.subject}\nFrom: ${args.from}\n\n${truncated}${ellipsis}`
 }
 
 // Walk the MIME tree and pull the best plain-text representation available.

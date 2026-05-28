@@ -292,6 +292,12 @@ export const morningDigest = inngest.createFunction(
               urgent: fresh.urgent ?? false,
               due_at: fresh.due_at ?? null,
               semantic_hash,
+              // Approval-queue fields (migration 006). The Gmail extractor
+              // populates these for reply-owed items; other sources leave
+              // them null. proposed_action becomes the inline draft the
+              // user approves; source_excerpt powers the Context Trail.
+              proposed_action: fresh.proposed_action ?? null,
+              source_excerpt: fresh.source_excerpt ?? null,
               ...briefFields,
             })
             .select('id')

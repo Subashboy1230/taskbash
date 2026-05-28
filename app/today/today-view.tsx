@@ -12,11 +12,8 @@
 //   8. Mark-as-done strikes through the parent task and fades it
 
 import { useEffect, useState, useTransition } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  Bell,
-  Brain,
   Calendar as CalendarIcon,
   Check,
   ChevronDown,
@@ -24,7 +21,6 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
-  Command,
   Edit3,
   ExternalLink,
   Hash,
@@ -35,18 +31,19 @@ import {
   Pencil,
   RefreshCw,
   RotateCcw,
-  Settings,
   UserPlus,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AppHeader } from '@/app/_components/app-header'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
-import type { Source, Tag, TaskBrief } from '@/lib/types'
+import type { ProposedAction, Source, Tag, TaskBrief } from '@/lib/types'
 import {
   addSubtask,
   completeItem,
   deleteSubtask,
   dismissItem,
+  executeProposedAction,
   requestRefresh,
   snoozeItem,
   toggleSubtaskComplete,
@@ -55,7 +52,13 @@ import {
 
 // ─── Top-level layout ───────────────────────────────────────────────────
 
-export function TodayView({ digest }: { digest: MockDigestSummary }) {
+export function TodayView({
+  digest,
+  userEmail,
+}: {
+  digest: MockDigestSummary
+  userEmail?: string
+}) {
   const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
   const [showCompleted, setShowCompleted] = useState(true)
   const [isRefreshing, startRefresh] = useTransition()
@@ -126,7 +129,10 @@ export function TodayView({ digest }: { digest: MockDigestSummary }) {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <AppHeader userInitials={digest.user_initials} />
+      <AppHeader
+        userInitial={digest.user_initials.charAt(0)}
+        userEmail={userEmail}
+      />
 
       <div className="flex">
         <main
@@ -229,54 +235,6 @@ export function TodayView({ digest }: { digest: MockDigestSummary }) {
   )
 }
 
-// ─── App header ─────────────────────────────────────────────────────────
-
-function AppHeader({ userInitials }: { userInitials: string }) {
-  return (
-    <header className="flex items-center justify-end gap-3 px-6 py-3">
-      <button
-        aria-label="Command palette"
-        className="hidden items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1 text-[12px] text-ink-faint transition-colors hover:border-line-strong hover:text-ink md:flex"
-      >
-        <Command size={12} />
-        <span className="font-medium">K</span>
-        <span className="text-ink-faint">to search</span>
-      </button>
-      <button
-        aria-label="AI assistant"
-        className="rounded-full p-2 text-success-fg hover:bg-surface-muted"
-      >
-        <Brain size={18} />
-      </button>
-      <button
-        aria-label="Notifications"
-        className="relative rounded-full p-2 text-success-fg hover:bg-surface-muted"
-      >
-        <Bell size={18} />
-        <span className="absolute right-1 top-1 flex size-4 items-center justify-center rounded-full bg-success-bg text-[9px] font-semibold text-success-fg">
-          9+
-        </span>
-      </button>
-      <Link
-        href="/connections"
-        aria-label="Connections"
-        className="rounded-full p-2 text-success-fg hover:bg-surface-muted"
-      >
-        <Settings size={18} />
-      </Link>
-      <div
-        className="flex size-8 items-center justify-center rounded-full text-[12px] font-semibold uppercase"
-        style={{
-          backgroundColor: 'var(--color-avatar-bg)',
-          color: 'var(--color-avatar-fg)',
-        }}
-      >
-        {userInitials.charAt(0)}
-      </div>
-    </header>
-  )
-}
-
 // ─── Calendar strip ─────────────────────────────────────────────────────
 
 function CalendarStrip({
@@ -284,39 +242,68 @@ function CalendarStrip({
   itemsWithDueDates,
 }: {
   dateIso: string
-  itemsWithDueDates: { due_at?: string | null }[]
+  itemsWithDueDates: { due_at?: string | null; title?: string }[]
 }) {
-  const [year, month, day] = dateIso.split('-').map(Number)
-  const date = new Date(year, month - 1, day)
-  const dayOfWeek = date.getDay()
-  const sundayOfWeek = new Date(date)
-  sundayOfWeek.setDate(date.getDate() - dayOfWeek)
+  // The page's "today" anchor — never changes. Used to highlight today's
+  // number even when the user is viewing a different week.
+  const [todayY, todayM, todayD] = dateIso.split('-').map(Number)
+  const todayDate = new Date(todayY, todayM - 1, todayD)
 
-  // Build a Set of "YYYY-MM-DD" for days in the current week that have items
-  // with a due date — used to render the small dot under the date number.
-  const daysWithItems = new Set(
-    itemsWithDueDates
-      .map(i => (i.due_at ? new Date(i.due_at) : null))
-      .filter((d): d is Date => !!d && !isNaN(d.getTime()))
-      .map(d => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`)
-  )
+  // weekOffset = how many weeks away from this week we're viewing.
+  // 0 = current, -1 = last week, 1 = next week, etc.
+  const [weekOffset, setWeekOffset] = useState(0)
+
+  const dayOfWeek = todayDate.getDay()
+  const sundayOfThisWeek = new Date(todayDate)
+  sundayOfThisWeek.setDate(todayDate.getDate() - dayOfWeek)
+  const sundayOfViewedWeek = new Date(sundayOfThisWeek)
+  sundayOfViewedWeek.setDate(sundayOfThisWeek.getDate() + weekOffset * 7)
+
+  // Group items by day-key with a sample of titles for the tooltip.
+  const itemsByDay = new Map<string, string[]>()
+  for (const item of itemsWithDueDates) {
+    if (!item.due_at) continue
+    const d = new Date(item.due_at)
+    if (isNaN(d.getTime())) continue
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    const list = itemsByDay.get(key) ?? []
+    if (item.title) list.push(item.title)
+    itemsByDay.set(key, list)
+  }
 
   const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(sundayOfWeek)
-    d.setDate(sundayOfWeek.getDate() + i)
+    const d = new Date(sundayOfViewedWeek)
+    d.setDate(sundayOfViewedWeek.getDate() + i)
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+    const dayItems = itemsByDay.get(key) ?? []
     return {
       letter: ['S', 'M', 'T', 'W', 'T', 'F', 'S'][i],
       number: d.getDate(),
-      isToday: d.toDateString() === date.toDateString(),
-      hasItems: daysWithItems.has(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`),
+      isToday: d.toDateString() === todayDate.toDateString(),
+      hasItems: dayItems.length > 0,
+      itemTitles: dayItems,
     }
   })
 
-  const longDate = date.toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  // Headline date — shows the week range when not on the current week,
+  // otherwise today's full date.
+  const isThisWeek = weekOffset === 0
+  const lastDayOfViewedWeek = new Date(sundayOfViewedWeek)
+  lastDayOfViewedWeek.setDate(sundayOfViewedWeek.getDate() + 6)
+  const headlineDate = isThisWeek
+    ? todayDate.toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : `${sundayOfViewedWeek.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      })} – ${lastDayOfViewedWeek.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })}`
 
   return (
     <div
@@ -327,23 +314,30 @@ function CalendarStrip({
       }}
     >
       <div className="mb-3 flex items-center justify-between">
-        <span className="text-sm font-medium text-cal-strip-text">{longDate}</span>
-        <div className="flex items-center gap-1.5">
+        <span className="text-sm font-medium text-cal-strip-text">{headlineDate}</span>
+        <div className="flex items-center gap-1 rounded-full bg-white/70 pl-2 pr-1 text-cal-strip-text">
           <button
-            aria-label="Open calendar"
-            className="rounded-full bg-white/70 p-1.5 text-cal-strip-text hover:bg-white/90"
+            aria-label="Previous week"
+            onClick={() => setWeekOffset(w => w - 1)}
+            className="p-1 hover:opacity-70"
           >
-            <CalendarIcon size={14} />
+            <ChevronLeft size={14} />
           </button>
-          <div className="flex items-center gap-1 rounded-full bg-white/70 pl-2 pr-1 text-cal-strip-text">
-            <button aria-label="Previous" className="p-1 hover:opacity-70">
-              <ChevronLeft size={14} />
-            </button>
-            <span className="text-xs font-medium px-1">Today</span>
-            <button aria-label="Next" className="p-1 hover:opacity-70">
-              <ChevronRight size={14} />
-            </button>
-          </div>
+          <button
+            aria-label="Jump to today"
+            onClick={() => setWeekOffset(0)}
+            disabled={isThisWeek}
+            className="px-1 text-xs font-medium disabled:opacity-60 disabled:cursor-default hover:opacity-70"
+          >
+            Today
+          </button>
+          <button
+            aria-label="Next week"
+            onClick={() => setWeekOffset(w => w + 1)}
+            className="p-1 hover:opacity-70"
+          >
+            <ChevronRight size={14} />
+          </button>
         </div>
       </div>
       <div className="grid grid-cols-7 gap-2 text-center">
@@ -352,25 +346,42 @@ function CalendarStrip({
             {d.letter}
           </div>
         ))}
-        {days.map((d, i) => (
-          <div key={`n-${i}`} className="flex flex-col items-center pt-1.5">
-            {d.isToday ? (
-              <div className="flex size-9 items-center justify-center rounded-full bg-cal-strip-active text-sm font-semibold text-white">
-                {d.number}
-              </div>
-            ) : (
-              <div className="flex size-9 items-center justify-center text-sm font-medium text-cal-strip-text">
-                {d.number}
-              </div>
-            )}
-            <div className="mt-1 h-1 w-1">
-              {d.hasItems && (
-                <div className="size-1 rounded-full bg-cal-strip-active" />
+        {days.map((d, i) => {
+          // Tooltip text for days that have items — shows up to 3 titles +
+          // a "+N more" hint. Helps the user understand what the dot means.
+          const tooltip = d.hasItems
+            ? `${d.itemTitles.length} item${d.itemTitles.length === 1 ? '' : 's'} due:\n` +
+              d.itemTitles.slice(0, 3).join('\n') +
+              (d.itemTitles.length > 3 ? `\n+${d.itemTitles.length - 3} more` : '')
+            : undefined
+          return (
+            <div
+              key={`n-${i}`}
+              className="flex flex-col items-center pt-1.5"
+              title={tooltip}
+            >
+              {d.isToday ? (
+                <div className="flex size-9 items-center justify-center rounded-full bg-cal-strip-active text-sm font-semibold text-white">
+                  {d.number}
+                </div>
+              ) : (
+                <div className="flex size-9 items-center justify-center text-sm font-medium text-cal-strip-text">
+                  {d.number}
+                </div>
               )}
+              <div className="mt-1 h-1 w-1">
+                {d.hasItems && (
+                  <div className="size-1 rounded-full bg-cal-strip-active" />
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
+      <p className="mt-3 text-[11px] text-cal-strip-text-faint flex items-center gap-1.5">
+        <span className="size-1.5 rounded-full bg-cal-strip-active inline-block" />
+        Dot = items due that day
+      </p>
     </div>
   )
 }
@@ -876,6 +887,19 @@ function DetailPanel({
         {item.due_at && <DeadlineBadge dueIso={item.due_at} />}
       </div>
 
+      {/* Approval queue: when the agent drafted an action (e.g. an email
+          reply), show the draft inline so the user can approve and send. */}
+      {item.proposed_action && (
+        <DraftCard
+          itemId={item.id}
+          action={item.proposed_action}
+          onSent={() => {
+            onComplete()
+            onClose()
+          }}
+        />
+      )}
+
       {/* Subtasks — the headline interaction. Stored as child items in the
           DB; toggle persists; add input creates a new manual item. */}
       <SubtasksSection parentId={item.id} initial={item.sub_items ?? []} />
@@ -883,7 +907,7 @@ function DetailPanel({
       {/* The brief — synthesized context for the task. Why / Know / Done / Next. */}
       {item.brief ? (
         <BriefView brief={item.brief} />
-      ) : (
+      ) : !item.proposed_action ? (
         <div className="mb-5 rounded-md border border-line/60 bg-surface-muted/50 px-3.5 py-3">
           <p className="m-0 text-[13px] text-ink-muted">
             {item.description || 'No brief generated for this task yet.'}
@@ -892,6 +916,15 @@ function DetailPanel({
             Brief pending — run the brief generator to synthesize context for this task.
           </p>
         </div>
+      ) : null}
+
+      {/* Context Trail: the raw underlying content (email body / transcript)
+          so the user can audit why the agent flagged this task. */}
+      {item.source_excerpt && (
+        <ContextTrailSection
+          source={item.source}
+          excerpt={item.source_excerpt}
+        />
       )}
 
       {item.transcript_pull && item.transcript_pull.length > 0 && (
@@ -937,6 +970,154 @@ function DetailPanel({
         </button>
       </div>
     </aside>
+  )
+}
+
+// ─── Draft card ─────────────────────────────────────────────────────────
+// The artifact the agent drafted (e.g. an email reply). The user reads it
+// inline, edits if needed, and clicks Send. "Send" calls
+// executeProposedAction which opens Gmail compose pre-filled with the draft
+// and marks the item completed.
+
+function DraftCard({
+  itemId,
+  action,
+  onSent,
+}: {
+  itemId: string
+  action: ProposedAction
+  onSent: () => void
+}) {
+  const [body, setBody] = useState(action.body)
+  const [busy, startSend] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+
+  function handleSend() {
+    setError(null)
+    startSend(async () => {
+      try {
+        const result = await executeProposedAction(itemId)
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        if (result.openUrl) {
+          // Open Gmail compose in a new tab — the user clicks Send there.
+          window.open(result.openUrl, '_blank', 'noopener,noreferrer')
+        }
+        onSent()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Send failed')
+      }
+    })
+  }
+
+  const isCompose =
+    action.kind === 'gmail_compose' || action.kind === 'gmail_send'
+  const sendLabel = action.kind === 'gmail_compose' ? 'Open in Gmail' : 'Send'
+
+  return (
+    <div className="mb-5 rounded-lg border border-line/60 bg-surface">
+      <div className="flex items-center justify-between border-b border-line/60 px-3.5 py-2.5">
+        <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+          <span>Email</span>
+          <span>·</span>
+          <span>Reply</span>
+          <span className="rounded-full bg-success-bg px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-success-fg">
+            Draft
+          </span>
+        </div>
+      </div>
+
+      {isCompose && (
+        <div className="border-b border-line/60 px-3.5 py-2.5 text-[12px] text-ink-muted">
+          <div className="flex items-baseline gap-2">
+            <span className="w-14 shrink-0 text-ink-faint">Subject:</span>
+            <span className="text-ink">{(action as { subject: string }).subject}</span>
+          </div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="w-14 shrink-0 text-ink-faint">To:</span>
+            <span className="text-ink">
+              {(action as { to: string[] }).to.join(', ')}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <textarea
+        value={body}
+        onChange={e => setBody(e.target.value)}
+        rows={Math.min(14, Math.max(5, body.split('\n').length + 1))}
+        className="block w-full resize-y border-0 bg-transparent px-3.5 py-3 text-[13px] leading-relaxed text-ink focus:outline-none"
+        spellCheck
+      />
+
+      <div className="flex items-center justify-end gap-2 border-t border-line/60 px-3.5 py-2.5">
+        {error && (
+          <span className="mr-auto text-[12px] text-danger-fg">{error}</span>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={handleSend}
+          className="inline-flex items-center gap-1.5 rounded-md bg-success-fg px-3 py-1.5 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {busy ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Check size={12} />
+          )}
+          {sendLabel}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Context Trail ──────────────────────────────────────────────────────
+// Shows the raw underlying source content the agent drew on. The
+// user can audit why the task was flagged. Collapsed by default to keep
+// the panel compact.
+
+function ContextTrailSection({
+  source,
+  excerpt,
+}: {
+  source: Source
+  excerpt: string
+}) {
+  const [open, setOpen] = useState(false)
+  const label =
+    source === 'gmail'
+      ? 'Email thread'
+      : source === 'granola'
+      ? 'Meeting note'
+      : source === 'slack'
+      ? 'Slack message'
+      : source === 'calendar'
+      ? 'Calendar event'
+      : source === 'linear'
+      ? 'Linear issue'
+      : 'Source'
+  return (
+    <div className="mb-5 rounded-lg border border-line/60 bg-canvas/40">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="flex w-full items-center justify-between px-3.5 py-2.5 text-[12px] font-semibold uppercase tracking-wider text-ink-muted"
+      >
+        <span className="flex items-center gap-2">
+          <SourceIcon source={source} />
+          Context · {label}
+        </span>
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+      {open && (
+        <pre className="m-0 whitespace-pre-wrap border-t border-line/60 px-3.5 py-3 text-[12px] leading-relaxed text-ink-muted font-sans">
+          {excerpt}
+        </pre>
+      )}
+    </div>
   )
 }
 

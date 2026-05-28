@@ -6,9 +6,8 @@
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { supabase } from '@/lib/supabase'
+import { resolveUserId } from '@/lib/supabase-server'
 import { inngest, EVENTS } from '@/inngest/client'
-
-const USER_ID = process.env.APP_USER_ID!
 
 /**
  * Add a manual subtask to a parent item. Stored as an `items` row with
@@ -31,7 +30,7 @@ export async function addSubtask(parentId: string, title: string) {
   const { data, error } = await supabase
     .from('items')
     .insert({
-      user_id: USER_ID,
+      user_id: await resolveUserId(),
       title: trimmed,
       task_type: 'manual',
       tag: 'action',
@@ -61,7 +60,7 @@ export async function toggleSubtaskComplete(subtaskId: string, complete: boolean
     .from('items')
     .update(update)
     .eq('id', subtaskId)
-    .eq('user_id', USER_ID)
+    .eq('user_id', await resolveUserId())
   if (error) throw new Error(`toggleSubtaskComplete failed: ${error.message}`)
   revalidatePath('/today')
 }
@@ -77,7 +76,7 @@ export async function deleteSubtask(subtaskId: string) {
     .from('items')
     .delete()
     .eq('id', subtaskId)
-    .eq('user_id', USER_ID)
+    .eq('user_id', await resolveUserId())
   if (error) throw new Error(`deleteSubtask failed: ${error.message}`)
   revalidatePath('/today')
 }
@@ -90,7 +89,7 @@ export async function completeItem(itemId: string) {
       completed_at: new Date().toISOString(),
     })
     .eq('id', itemId)
-    .eq('user_id', USER_ID)
+    .eq('user_id', await resolveUserId())
   if (error) throw new Error(`completeItem failed: ${error.message}`)
   revalidatePath('/today')
 }
@@ -100,7 +99,7 @@ export async function uncompleteItem(itemId: string) {
     .from('items')
     .update({ status: 'open', completed_at: null })
     .eq('id', itemId)
-    .eq('user_id', USER_ID)
+    .eq('user_id', await resolveUserId())
   if (error) throw new Error(`uncompleteItem failed: ${error.message}`)
   revalidatePath('/today')
 }
@@ -110,7 +109,7 @@ export async function dismissItem(itemId: string) {
     .from('items')
     .update({ status: 'dismissed' })
     .eq('id', itemId)
-    .eq('user_id', USER_ID)
+    .eq('user_id', await resolveUserId())
   if (error) throw new Error(`dismissItem failed: ${error.message}`)
   revalidatePath('/today')
 }
@@ -126,9 +125,72 @@ export async function snoozeItem(itemId: string, hours: number = 24) {
     .from('items')
     .update({ status: 'snoozed', snooze_until: snoozeUntil })
     .eq('id', itemId)
-    .eq('user_id', USER_ID)
+    .eq('user_id', await resolveUserId())
   if (error) throw new Error(`snoozeItem failed: ${error.message}`)
   revalidatePath('/today')
+}
+
+/**
+ * Approve & execute the proposed_action attached to an item. For the v1
+ * Gmail flow, we return a `mailto:`-style Gmail compose URL the caller can
+ * open in a new tab — the user actually clicks Send in Gmail. (v2 will
+ * send directly via the Gmail API once we have gmail.send scope.)
+ *
+ * On success the item is marked completed. On error it stays open so the
+ * user can retry from the UI.
+ */
+export async function executeProposedAction(
+  itemId: string
+): Promise<{ ok: true; openUrl?: string } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from('items')
+    .select('id, proposed_action, status')
+    .eq('id', itemId)
+    .eq('user_id', await resolveUserId())
+    .maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  if (!data?.proposed_action) {
+    return { ok: false, error: 'No proposed action on this item.' }
+  }
+
+  const action = data.proposed_action as {
+    kind: string
+    to: string[]
+    cc?: string[]
+    subject: string
+    body: string
+  }
+
+  let openUrl: string | undefined
+  if (action.kind === 'gmail_compose') {
+    // Build a Gmail compose URL with the draft pre-filled. The user
+    // reviews in Gmail and clicks Send themselves — no extra OAuth scope
+    // needed for v1.
+    const params = new URLSearchParams({
+      view: 'cm',
+      fs: '1',
+      to: action.to.join(','),
+      su: action.subject,
+      body: action.body,
+    })
+    if (action.cc?.length) params.set('cc', action.cc.join(','))
+    openUrl = `https://mail.google.com/mail/?${params.toString()}`
+  }
+  // Future: kind === 'gmail_send' calls Gmail API users.messages.send directly.
+
+  // Mark the item completed — the user is committing by approving.
+  const { error: updateErr } = await supabase
+    .from('items')
+    .update({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    })
+    .eq('id', itemId)
+    .eq('user_id', await resolveUserId())
+  if (updateErr) return { ok: false, error: updateErr.message }
+
+  revalidatePath('/today')
+  return { ok: true, openUrl }
 }
 
 export async function requestRefresh(): Promise<{ ok: boolean; error?: string }> {

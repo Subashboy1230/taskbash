@@ -10,18 +10,21 @@
 // key → we persist it directly. (Granola has no OAuth public flow.)
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Mail,
   Mic,
   MessageSquare,
   Calendar as CalendarIcon,
+  ChevronLeft,
   ListChecks,
   Check,
   X,
   Loader2,
 } from 'lucide-react'
 import type { Connection, ConnectionProvider } from '@/lib/types'
+import { AppHeader } from '@/app/_components/app-header'
 import {
   createNangoConnectSession,
   recordNangoConnection,
@@ -78,18 +81,30 @@ const SOURCES: Source[] = [
 
 export function ConnectionsView({
   connections,
+  userInitial,
+  userEmail,
 }: {
   connections: Connection[]
+  userInitial?: string
+  userEmail?: string
 }) {
   const byProvider = new Map(connections.map(c => [c.provider, c]))
   return (
     <div className="min-h-screen bg-canvas">
-      <main className="mx-auto max-w-[920px] px-8 pt-8 pb-16">
+      <AppHeader userInitial={userInitial ?? 'U'} userEmail={userEmail} />
+      <main className="mx-auto max-w-[920px] px-8 pt-4 pb-16">
         <header className="mb-8">
-          <h1 className="m-0 text-[28px] font-semibold tracking-tight text-ink">
+          <Link
+            href="/today"
+            className="inline-flex items-center gap-1.5 text-[13px] text-ink-faint hover:text-ink"
+          >
+            <ChevronLeft size={14} />
+            Back to today
+          </Link>
+          <h1 className="mt-2 mb-1 text-[28px] font-semibold tracking-tight text-ink">
             Connections
           </h1>
-          <p className="mt-1 text-[14px] text-ink-faint">
+          <p className="m-0 text-[14px] text-ink-faint">
             Sources ToDoo pulls action items from. Connect what you use; the
             morning digest reads from anything that's active here.
           </p>

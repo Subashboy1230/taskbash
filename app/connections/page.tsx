@@ -6,6 +6,7 @@ import {
   listUserConnections,
   syncOAuthConnectionsFromNango,
 } from '@/lib/connections'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { ConnectionsView } from './connections-view'
 
 export const dynamic = 'force-dynamic'
@@ -15,5 +16,16 @@ export default async function ConnectionsPage() {
   // rendering — robust against the frontend SDK's popup→postMessage glitches.
   await syncOAuthConnectionsFromNango()
   const connections = await listUserConnections()
-  return <ConnectionsView connections={connections} />
+  const supabase = await createSupabaseServerClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const initial = (user?.email ?? 'U').charAt(0).toUpperCase()
+  return (
+    <ConnectionsView
+      connections={connections}
+      userInitial={initial}
+      userEmail={user?.email ?? undefined}
+    />
+  )
 }

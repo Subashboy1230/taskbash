@@ -7,9 +7,8 @@
 
 import { supabase } from './supabase'
 import { nango } from './nango'
+import { resolveUserId } from './supabase-server'
 import type { Connection, ConnectionProvider } from './types'
-
-const USER_ID = process.env.APP_USER_ID!
 
 // Reverse map: Nango provider config key → our internal provider name.
 const PROVIDER_FROM_NANGO_KEY: Record<string, ConnectionProvider> = {
@@ -37,11 +36,11 @@ export const NANGO_PROVIDER_KEY: Record<ConnectionProvider, string | null> = {
 export async function getActiveConnection(
   provider: ConnectionProvider
 ): Promise<Connection | null> {
-  if (!USER_ID) throw new Error('APP_USER_ID is not set')
+  const userId = await resolveUserId()
   const { data, error } = await supabase
     .from('connections')
     .select('*')
-    .eq('user_id', USER_ID)
+    .eq('user_id', userId)
     .eq('provider', provider)
     .eq('status', 'active')
     .maybeSingle()
@@ -61,12 +60,12 @@ export async function upsertConnection(args: {
   api_key?: string | null
   scopes?: string[] | null
 }): Promise<Connection> {
-  if (!USER_ID) throw new Error('APP_USER_ID is not set')
+  const userId = await resolveUserId()
   const { data, error } = await supabase
     .from('connections')
     .upsert(
       {
-        user_id: USER_ID,
+        user_id: userId,
         provider: args.provider,
         nango_connection_id: args.nango_connection_id ?? null,
         api_key: args.api_key ?? null,
@@ -88,11 +87,11 @@ export async function upsertConnection(args: {
 export async function deactivateConnection(
   provider: ConnectionProvider
 ): Promise<void> {
-  if (!USER_ID) throw new Error('APP_USER_ID is not set')
+  const userId = await resolveUserId()
   const { error } = await supabase
     .from('connections')
     .update({ status: 'expired' })
-    .eq('user_id', USER_ID)
+    .eq('user_id', userId)
     .eq('provider', provider)
   if (error) throw new Error(`deactivateConnection failed: ${error.message}`)
 }
@@ -101,11 +100,11 @@ export async function deactivateConnection(
  * List all of the current user's connections for the /connections UI.
  */
 export async function listUserConnections(): Promise<Connection[]> {
-  if (!USER_ID) throw new Error('APP_USER_ID is not set')
+  const userId = await resolveUserId()
   const { data, error } = await supabase
     .from('connections')
     .select('*')
-    .eq('user_id', USER_ID)
+    .eq('user_id', userId)
     .order('created_at', { ascending: true })
   if (error) throw new Error(`listUserConnections failed: ${error.message}`)
   return (data as Connection[]) ?? []
@@ -123,7 +122,7 @@ export async function syncOAuthConnectionsFromNango(): Promise<{
   updated: ConnectionProvider[]
   error?: string
 }> {
-  if (!USER_ID) throw new Error('APP_USER_ID is not set')
+  const userId = await resolveUserId()
 
   let raw: unknown
   try {
@@ -155,7 +154,7 @@ export async function syncOAuthConnectionsFromNango(): Promise<{
     if (!nangoKey || !nangoConnectionId) continue
     // If the response includes end-user info, filter to ours. Otherwise
     // accept everything (single-user mode — there's only this user).
-    if (endUserId !== null && endUserId !== USER_ID) continue
+    if (endUserId !== null && endUserId !== userId) continue
 
     const internalProvider = PROVIDER_FROM_NANGO_KEY[nangoKey]
     if (!internalProvider) continue

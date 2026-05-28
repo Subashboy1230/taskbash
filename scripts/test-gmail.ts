@@ -48,6 +48,16 @@ async function main() {
     for (const sub of item.sub_items ?? []) {
       console.log(`      - ${sub.title}`)
     }
+    if (item.proposed_action) {
+      const a = item.proposed_action as { to?: string[]; subject?: string; body?: string }
+      console.log(`    DRAFT → ${a.to?.join(', ')}`)
+      console.log(`    subj:  ${a.subject}`)
+      const preview = (a.body || '').split('\n').slice(0, 3).join(' / ')
+      console.log(`    body:  ${preview.slice(0, 180)}${(a.body?.length ?? 0) > 180 ? '…' : ''}`)
+    }
+    if (item.source_excerpt) {
+      console.log(`    src:   (${item.source_excerpt.length} chars excerpt captured)`)
+    }
     console.log('')
   }
   console.log('Gmail extraction path works end-to-end.')

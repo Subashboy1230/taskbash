@@ -2,7 +2,7 @@
 // All three sources represented (Granola, Gmail, Slack), varied tags, varied
 // deadline states (overdue, today, tomorrow, this week, none).
 
-import type { Source, Tag, TaskType, TaskBrief } from './types'
+import type { ProposedAction, Source, Tag, TaskType, TaskBrief } from './types'
 
 export interface MockSubItem {
   id: string
@@ -38,6 +38,14 @@ export interface MockItem {
 
   // The synthesized brief — the differentiator. Null until generated.
   brief?: TaskBrief | null
+
+  // Pre-drafted artifact (Nummo-style approval queue). When present, the
+  // detail panel shows the draft inline + an Approve/Send action.
+  proposed_action?: ProposedAction | null
+
+  // Raw underlying source content (the email body, the meeting transcript
+  // excerpt) for the Context Trail tab.
+  source_excerpt?: string | null
 
   sub_items?: MockSubItem[]
 }
