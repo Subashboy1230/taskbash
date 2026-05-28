@@ -61,6 +61,7 @@ export function TodayView({
   // Filter chips — null = "All". Persist in localStorage so the user's
   // filter survives a reload.
   const [sourceFilter, setSourceFilter] = useState<Source | null>(null)
+  const [tagFilter, setTagFilter] = useState<NonNullable<Tag> | null>(null)
   const [groupBy, setGroupBy] = useState<'none' | 'source' | 'due'>('none')
   const [isRefreshing, startRefresh] = useTransition()
   const router = useRouter()
@@ -71,6 +72,15 @@ export function TodayView({
     try {
       const savedSource = localStorage.getItem('todoo:sourceFilter')
       if (savedSource && savedSource !== 'null') setSourceFilter(savedSource as Source)
+      const savedTag = localStorage.getItem('todoo:tagFilter')
+      if (
+        savedTag === 'reply' ||
+        savedTag === 'action' ||
+        savedTag === 'commit' ||
+        savedTag === 'fyi'
+      ) {
+        setTagFilter(savedTag)
+      }
       const savedGroup = localStorage.getItem('todoo:groupBy')
       if (savedGroup === 'source' || savedGroup === 'due' || savedGroup === 'none') {
         setGroupBy(savedGroup)
@@ -82,11 +92,12 @@ export function TodayView({
   useEffect(() => {
     try {
       localStorage.setItem('todoo:sourceFilter', sourceFilter ?? 'null')
+      localStorage.setItem('todoo:tagFilter', tagFilter ?? 'null')
       localStorage.setItem('todoo:groupBy', groupBy)
     } catch {
       /* ignore */
     }
-  }, [sourceFilter, groupBy])
+  }, [sourceFilter, tagFilter, groupBy])
 
   // Items the user just dismissed/completed — hide them locally before revalidate lands
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
@@ -147,12 +158,24 @@ export function TodayView({
     return Array.from(set)
   }, [digest.open_items])
 
-  // Apply source-filter to the open list. Cleared tab is unfiltered for now
-  // (small enough that it doesn't need it; can revisit if it grows).
-  const filteredOpen = useMemo(
-    () => (sourceFilter ? visibleOpen.filter(i => i.source === sourceFilter) : visibleOpen),
-    [visibleOpen, sourceFilter]
-  )
+  // Same idea for tags — only show chips for tags that actually exist in
+  // the current digest.
+  const availableTags = useMemo(() => {
+    const set = new Set<NonNullable<Tag>>()
+    for (const it of digest.open_items) {
+      if (it.tag) set.add(it.tag)
+    }
+    return Array.from(set)
+  }, [digest.open_items])
+
+  // Apply source+tag filter to the open list. Cleared tab is unfiltered for
+  // now (small enough that it doesn't need it; can revisit if it grows).
+  const filteredOpen = useMemo(() => {
+    let out = visibleOpen
+    if (sourceFilter) out = out.filter(i => i.source === sourceFilter)
+    if (tagFilter) out = out.filter(i => i.tag === tagFilter)
+    return out
+  }, [visibleOpen, sourceFilter, tagFilter])
 
   const groups = useMemo(() => groupItems(filteredOpen, groupBy), [filteredOpen, groupBy])
 
@@ -236,13 +259,23 @@ export function TodayView({
                 availableSources={availableSources}
                 sourceFilter={sourceFilter}
                 onSourceChange={setSourceFilter}
+                availableTags={availableTags}
+                tagFilter={tagFilter}
+                onTagChange={setTagFilter}
                 groupBy={groupBy}
                 onGroupByChange={setGroupBy}
               />
 
               {filteredOpen.length === 0 ? (
-                sourceFilter ? (
-                  <FilterEmpty source={sourceFilter} onClear={() => setSourceFilter(null)} />
+                sourceFilter || tagFilter ? (
+                  <FilterEmpty
+                    source={sourceFilter}
+                    tag={tagFilter}
+                    onClear={() => {
+                      setSourceFilter(null)
+                      setTagFilter(null)
+                    }}
+                  />
                 ) : (
                   <EmptyState />
                 )
@@ -1417,48 +1450,93 @@ function TabButton({
 // ─── Filter bar ─────────────────────────────────────────────────────────
 
 const SOURCE_ORDER: Source[] = ['gmail', 'calendar', 'granola', 'linear', 'slack', 'manual']
+const TAG_ORDER: NonNullable<Tag>[] = ['reply', 'action', 'commit', 'fyi']
+const TAG_LABEL: Record<NonNullable<Tag>, string> = {
+  reply: 'Replies',
+  action: 'Actions',
+  commit: 'Commits',
+  fyi: 'FYIs',
+}
 
 function FilterBar({
   availableSources,
   sourceFilter,
   onSourceChange,
+  availableTags,
+  tagFilter,
+  onTagChange,
   groupBy,
   onGroupByChange,
 }: {
   availableSources: Source[]
   sourceFilter: Source | null
   onSourceChange: (s: Source | null) => void
+  availableTags: NonNullable<Tag>[]
+  tagFilter: NonNullable<Tag> | null
+  onTagChange: (t: NonNullable<Tag> | null) => void
   groupBy: 'none' | 'source' | 'due'
   onGroupByChange: (g: 'none' | 'source' | 'due') => void
 }) {
-  const ordered = SOURCE_ORDER.filter(s => availableSources.includes(s))
+  const orderedSources = SOURCE_ORDER.filter(s => availableSources.includes(s))
+  const orderedTags = TAG_ORDER.filter(t => availableTags.includes(t))
   // Hide the bar entirely when there's nothing to filter or group.
-  if (ordered.length === 0) return null
+  if (orderedSources.length === 0 && orderedTags.length === 0) return null
   return (
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <FilterChip
-          active={sourceFilter === null}
-          onClick={() => onSourceChange(null)}
-        >
-          All
-        </FilterChip>
-        {ordered.map(s => (
+    <div className="mt-4 space-y-2">
+      {/* Row 1: Source chips + Group-by toggle (right-aligned) */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+            Source
+          </span>
           <FilterChip
-            key={s}
-            active={sourceFilter === s}
-            onClick={() => onSourceChange(sourceFilter === s ? null : s)}
+            active={sourceFilter === null}
+            onClick={() => onSourceChange(null)}
           >
-            <BrandLogo brand={s} size={12} />
-            {SOURCE_LABEL[s]}
+            All
           </FilterChip>
-        ))}
+          {orderedSources.map(s => (
+            <FilterChip
+              key={s}
+              active={sourceFilter === s}
+              onClick={() => onSourceChange(sourceFilter === s ? null : s)}
+            >
+              <BrandLogo brand={s} size={12} />
+              {SOURCE_LABEL[s]}
+            </FilterChip>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 text-[12px] text-ink-faint">
+          <Layers size={12} />
+          <span>Group:</span>
+          <GroupToggle value={groupBy} onChange={onGroupByChange} />
+        </div>
       </div>
-      <div className="flex items-center gap-1.5 text-[12px] text-ink-faint">
-        <Layers size={12} />
-        <span>Group:</span>
-        <GroupToggle value={groupBy} onChange={onGroupByChange} />
-      </div>
+
+      {/* Row 2: Tag chips */}
+      {orderedTags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+            Tag
+          </span>
+          <FilterChip
+            active={tagFilter === null}
+            onClick={() => onTagChange(null)}
+          >
+            All
+          </FilterChip>
+          {orderedTags.map(t => (
+            <FilterChip
+              key={t}
+              active={tagFilter === t}
+              onClick={() => onTagChange(tagFilter === t ? null : t)}
+              tone={t}
+            >
+              {TAG_LABEL[t]}
+            </FilterChip>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1467,24 +1545,41 @@ function FilterChip({
   active,
   onClick,
   children,
+  tone,
 }: {
   active: boolean
   onClick: () => void
   children: React.ReactNode
+  // Optional tag tone — active state uses the tag color so the chip
+  // visually mirrors the row's tag pill.
+  tone?: NonNullable<Tag>
 }) {
+  const activeToneCls = tone
+    ? TAG_CHIP_ACTIVE[tone]
+    : 'border-ink bg-ink text-canvas'
   return (
     <button
       onClick={onClick}
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors',
         active
-          ? 'border-ink bg-ink text-canvas'
+          ? activeToneCls
           : 'border-line bg-surface text-ink-muted hover:border-line-strong hover:text-ink'
       )}
     >
       {children}
     </button>
   )
+}
+
+// Per-tag active styling for the tag chip row. Matches the row's tag pill
+// palette so a "Replies" chip in its active state visually anchors to the
+// blue reply rows below.
+const TAG_CHIP_ACTIVE: Record<NonNullable<Tag>, string> = {
+  reply: 'border-tag-reply-fg bg-tag-reply-fg text-white',
+  action: 'border-tag-action-fg bg-tag-action-fg text-white',
+  commit: 'border-tag-commit-fg bg-tag-commit-fg text-white',
+  fyi: 'border-ink-muted bg-ink-muted text-canvas',
 }
 
 function GroupToggle({
@@ -1623,23 +1718,32 @@ function ClearedTab({
 
 function FilterEmpty({
   source,
+  tag,
   onClear,
 }: {
-  source: Source
+  source: Source | null
+  tag: NonNullable<Tag> | null
   onClear: () => void
 }) {
+  // Build a "Gmail + Replies" style description of the active filter.
+  const parts: string[] = []
+  if (source) parts.push(SOURCE_LABEL[source])
+  if (tag) parts.push(TAG_LABEL[tag])
+  const desc = parts.join(' + ')
   return (
     <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
-      <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-md bg-surface-muted">
-        <BrandLogo brand={source} size={20} />
-      </div>
+      {source && (
+        <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-md bg-surface-muted">
+          <BrandLogo brand={source} size={20} />
+        </div>
+      )}
       <p className="m-0 text-[15px] font-medium text-ink">
-        No {SOURCE_LABEL[source]} items
+        No items match {desc}
       </p>
       <p className="mt-1 text-[13px] text-ink-faint m-0">
-        Nothing from {SOURCE_LABEL[source]} matched your filter.{' '}
+        Nothing in your morning digest hit this filter.{' '}
         <button onClick={onClear} className="underline hover:text-ink">
-          Clear filter
+          Clear filters
         </button>
       </p>
     </div>
