@@ -97,7 +97,7 @@ export async function extractCalendarPrepItems(
 
   const items: ExtractedItem[] = []
   for (const event of events) {
-    const brief = await generatePrepBrief(event, args.userEmail)
+    const { brief, llmCallId } = await generatePrepBrief(event, args.userEmail)
     const startIso = event.start?.dateTime || event.start?.date || ''
     items.push({
       source: 'calendar',
@@ -112,6 +112,7 @@ export async function extractCalendarPrepItems(
       urgent: false,
       due_at: startIso || null,
       brief,
+      _llm_call_id: llmCallId,
     })
   }
 
@@ -164,7 +165,7 @@ function buildParentContext(event: GoogleCalendarEvent): string {
 async function generatePrepBrief(
   event: GoogleCalendarEvent,
   userEmail: string
-): Promise<TaskBrief> {
+): Promise<{ brief: TaskBrief; llmCallId?: string }> {
   const attendeeList = (event.attendees ?? [])
     .map(
       a =>
@@ -209,20 +210,26 @@ async function generatePrepBrief(
   try {
     const parsed = JSON.parse(extractJsonObject(text)) as Partial<TaskBrief>
     return {
-      why: parsed.why || 'Meeting prep',
-      know: Array.isArray(parsed.know) ? parsed.know : [],
-      done: parsed.done || '',
-      next: parsed.next || '',
+      brief: {
+        why: parsed.why || 'Meeting prep',
+        know: Array.isArray(parsed.know) ? parsed.know : [],
+        done: parsed.done || '',
+        next: parsed.next || '',
+      },
+      llmCallId: response._llmCallId,
     }
   } catch {
     // Fallback: a minimal brief from raw event data.
     return {
-      why: `Meeting with ${attendeeList || 'attendees'}`,
-      know: event.description
-        ? [stripHtml(event.description).slice(0, 200)]
-        : [],
-      done: '',
-      next: '',
+      brief: {
+        why: `Meeting with ${attendeeList || 'attendees'}`,
+        know: event.description
+          ? [stripHtml(event.description).slice(0, 200)]
+          : [],
+        done: '',
+        next: '',
+      },
+      llmCallId: response._llmCallId,
     }
   }
 }

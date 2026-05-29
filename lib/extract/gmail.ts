@@ -192,6 +192,10 @@ async function extractItemsFromThread(
     .join('\n')
 
   const items = parseExtractionResponse(text, thread, subject)
+  // Tag every produced item with the call that made it — the digest
+  // insert path uses this to populate llm_calls.produced_item_ids so
+  // slop_rate per prompt-version actually shows non-zero.
+  for (const it of items) it._llm_call_id = response._llmCallId
 
   // Attach Context Trail source_excerpt to every item from this thread.
   // The latest message is the most likely thing the user wants to see when

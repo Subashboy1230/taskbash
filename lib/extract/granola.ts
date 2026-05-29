@@ -177,6 +177,9 @@ async function extractItemsFromNote(
     .join('\n')
 
   const items = parseExtractionResponse(text, note)
+  // Tag every produced item with its source LLM call (for slop-rate
+  // joins on /observability).
+  for (const it of items) it._llm_call_id = response._llmCallId
 
   // Capture the meeting summary as Context Trail source_excerpt and
   // optionally pre-draft a follow-up for items where we can confidently

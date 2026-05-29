@@ -15,6 +15,7 @@ import { extractLinearActionItems } from '../extract/linear'
 import { diffSingleSource } from '../diff'
 import { computeSemanticHash } from '../normalize'
 import { getActiveConnection } from '../connections'
+import { tagCallWithItems } from '../llm-trace'
 import type { ExtractedItem, Item, Source } from '../types'
 
 export interface DigestRunSummary {
@@ -108,6 +109,11 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   let carryoverCount = 0
   let completedCount = 0
 
+  // Buckets new item ids by the llm_call that produced them — used at
+  // the end of the loop to tag llm_calls.produced_item_ids so per-prompt
+  // slop_rate joins on /observability return real numbers.
+  const callToItemIds = new Map<string, string[]>()
+
   for (const source of sourcesRun) {
     const freshForSource = allFresh.filter(i => i.source === source)
     const result = diffSingleSource(currentItems, freshForSource, source)
@@ -126,22 +132,38 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
             brief_generated_at: new Date().toISOString(),
           }
         : {}
-      const { error } = await supabase.from('items').insert({
-        user_id: userId,
-        title: fresh.title,
-        task_type: fresh.task_type,
-        tag: fresh.tag ?? null,
-        parent_context: fresh.parent_context,
-        source: fresh.source,
-        source_ref: fresh.source_ref,
-        urgent: fresh.urgent ?? false,
-        due_at: fresh.due_at ?? null,
-        semantic_hash,
-        proposed_action: fresh.proposed_action ?? null,
-        source_excerpt: fresh.source_excerpt ?? null,
-        ...briefFields,
-      })
-      if (!error) newCount += 1
+      const { data: inserted, error } = await supabase
+        .from('items')
+        .insert({
+          user_id: userId,
+          title: fresh.title,
+          task_type: fresh.task_type,
+          tag: fresh.tag ?? null,
+          parent_context: fresh.parent_context,
+          source: fresh.source,
+          source_ref: fresh.source_ref,
+          urgent: fresh.urgent ?? false,
+          due_at: fresh.due_at ?? null,
+          semantic_hash,
+          proposed_action: fresh.proposed_action ?? null,
+          source_excerpt: fresh.source_excerpt ?? null,
+          // Persist the producing call id on the item too — gives
+          // markItemSlop a fast O(1) lookup without scanning arrays.
+          extraction_meta: fresh._llm_call_id
+            ? { llm_call_id: fresh._llm_call_id }
+            : null,
+          ...briefFields,
+        })
+        .select('id')
+        .single()
+      if (!error && inserted?.id) {
+        newCount += 1
+        if (fresh._llm_call_id) {
+          const list = callToItemIds.get(fresh._llm_call_id) ?? []
+          list.push(inserted.id)
+          callToItemIds.set(fresh._llm_call_id, list)
+        }
+      }
       // Ignore unique-index race (23505) — treat as carryover silently.
     }
 
@@ -169,6 +191,16 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
       completedCount += completedIds.length
     }
   }
+
+  // Tag each LLM call with the items it actually produced. Fire-and-
+  // forget per call — observability writes must not block the digest.
+  await Promise.all(
+    Array.from(callToItemIds.entries()).map(([callId, itemIds]) =>
+      tagCallWithItems(callId, itemIds).catch(err =>
+        console.error('[runDigest] tagCallWithItems failed:', err)
+      )
+    )
+  )
 
   return {
     sources_run: sourcesRun,

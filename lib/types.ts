@@ -125,6 +125,11 @@ export interface ExtractedItem {
   proposed_action?: ProposedAction | null
   // Raw underlying content (email body, transcript chunk) for Context Trail.
   source_excerpt?: string | null
+  // The id of the llm_calls row that produced this item. Set by
+  // extractors after tracedMessage returns; the digest insert path uses
+  // it to populate llm_calls.produced_item_ids[] so slop rate joins
+  // work. Underscore prefix = transient (not a column on items).
+  _llm_call_id?: string
 }
 
 export interface Run {
