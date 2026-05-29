@@ -21,6 +21,7 @@
 import { anthropic, MODELS } from '../anthropic'
 import { nangoProxy } from '../nango'
 import { getActiveConnection, NANGO_PROVIDER_KEY } from '../connections'
+import { tracedMessage } from '../llm-trace'
 import type { ExtractedItem, TaskBrief } from '../types'
 import { extractJsonObject } from './parse'
 
@@ -179,17 +180,26 @@ async function generatePrepBrief(
     `Description: ${stripHtml(event.description || '(empty)').slice(0, 1500)}`,
   ].join('\n')
 
-  const response = await anthropic.messages.create({
-    model: MODELS.classifier,
-    max_tokens: 600,
-    system: PREP_BRIEF_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: `User: ${userEmail}\n\n${eventText}\n\nGenerate the prep brief as JSON.`,
-      },
-    ],
-  })
+  const response = await tracedMessage(
+    anthropic,
+    {
+      prompt_id: 'extract.calendar',
+      prompt_version: 1,
+      user_id: process.env.APP_USER_ID ?? null,
+      source_ref: { google_calendar_event_id: event.id },
+    },
+    {
+      model: MODELS.classifier,
+      max_tokens: 600,
+      system: PREP_BRIEF_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: `User: ${userEmail}\n\n${eventText}\n\nGenerate the prep brief as JSON.`,
+        },
+      ],
+    }
+  )
 
   const text = response.content
     .filter((b): b is { type: 'text'; text: string } => b.type === 'text')

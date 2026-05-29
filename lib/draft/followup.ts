@@ -12,6 +12,7 @@
 
 import { anthropic, MODELS } from '../anthropic'
 import { supabase } from '../supabase'
+import { tracedMessage } from '../llm-trace'
 import type { ProposedAction } from '../types'
 import { extractJsonObject } from '../extract/parse'
 
@@ -106,12 +107,20 @@ ${args.meetingContext.slice(0, 2500)}
 
 Decide and output JSON.`
 
-  const response = await anthropic.messages.create({
-    model: MODELS.classifier,
-    max_tokens: 600,
-    system,
-    messages: [{ role: 'user', content: userMsg }],
-  })
+  const response = await tracedMessage(
+    anthropic,
+    {
+      prompt_id: 'draft.followup',
+      prompt_version: 1,
+      user_id: process.env.APP_USER_ID ?? null,
+    },
+    {
+      model: MODELS.classifier,
+      max_tokens: 600,
+      system,
+      messages: [{ role: 'user', content: userMsg }],
+    }
+  )
 
   const text = response.content
     .filter((b): b is { type: 'text'; text: string } => b.type === 'text')

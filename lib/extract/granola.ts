@@ -20,6 +20,7 @@
 import { anthropic, MODELS } from '../anthropic'
 import { getActiveConnection } from '../connections'
 import { draftFollowup } from '../draft/followup'
+import { tracedMessage } from '../llm-trace'
 import type { ExtractedItem } from '../types'
 import { subDays, formatISO } from 'date-fns'
 import { WORK_ONLY_RULE } from './filters'
@@ -154,12 +155,21 @@ async function extractItemsFromNote(
     attendeeEmails: note.attendees?.map(a => a.email) ?? [],
   })
 
-  const response = await anthropic.messages.create({
-    model: MODELS.classifier,
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: prompt }],
-  })
+  const response = await tracedMessage(
+    anthropic,
+    {
+      prompt_id: 'extract.granola',
+      prompt_version: 1,
+      user_id: process.env.APP_USER_ID ?? null,
+      source_ref: { granola_meeting_id: note.id },
+    },
+    {
+      model: MODELS.classifier,
+      max_tokens: 1024,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
+    }
+  )
 
   const text = response.content
     .filter((b): b is { type: 'text'; text: string } => b.type === 'text')

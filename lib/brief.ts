@@ -8,6 +8,7 @@
 // source material MEANS for this task — not what it says.
 
 import { anthropic, MODELS } from './anthropic'
+import { tracedMessage } from './llm-trace'
 
 export interface TaskBrief {
   why: string          // one sentence — what triggered this task
@@ -54,12 +55,20 @@ Rules:
 export async function generateBrief(args: GenerateBriefArgs): Promise<TaskBrief> {
   const prompt = buildPrompt(args)
 
-  const response = await anthropic.messages.create({
-    model: MODELS.synthesis, // Sonnet — quality matters here, this is the moat
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: prompt }],
-  })
+  const response = await tracedMessage(
+    anthropic,
+    {
+      prompt_id: 'brief.synthesize',
+      prompt_version: 1,
+      user_id: process.env.APP_USER_ID ?? null,
+    },
+    {
+      model: MODELS.synthesis, // Sonnet — quality matters here, this is the moat
+      max_tokens: 1024,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
+    }
+  )
 
   const text = response.content
     .filter((b): b is { type: 'text'; text: string } => b.type === 'text')

@@ -42,7 +42,19 @@ export async function markItemSlop(
   if (readErr) throw new Error(`markItemSlop read failed: ${readErr.message}`)
   if (!item) throw new Error('Item not found.')
 
-  // 2. Insert feedback row.
+  // 2. Find the most recent LLM call whose produced_item_ids contains
+  //    this item — that's the extraction that produced the slopped
+  //    output. We link the feedback row to it so the /observability
+  //    page can compute slop_rate per prompt + per prompt-version.
+  const { data: producingCall } = await supabase
+    .from('llm_calls')
+    .select('id')
+    .contains('produced_item_ids', [itemId])
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  // 3. Insert feedback row, linked to the producing call when known.
   const { error: feedbackErr } = await supabase.from('item_feedback').insert({
     item_id: itemId,
     user_id: userId,
@@ -50,6 +62,7 @@ export async function markItemSlop(
     reason,
     note: note ?? null,
     item_snapshot: item,
+    llm_call_id: producingCall?.id ?? null,
   })
   if (feedbackErr) {
     throw new Error(`markItemSlop feedback insert failed: ${feedbackErr.message}`)

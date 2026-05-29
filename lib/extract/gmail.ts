@@ -21,9 +21,14 @@ import { anthropic, MODELS } from '../anthropic'
 import { nangoProxy } from '../nango'
 import { getActiveConnection, NANGO_PROVIDER_KEY } from '../connections'
 import { draftReply } from '../draft/reply'
+import { tracedMessage } from '../llm-trace'
 import type { ExtractedItem } from '../types'
 import { WORK_ONLY_RULE } from './filters'
 import { extractJsonObject } from './parse'
+
+// Bump when you change SYSTEM_PROMPT or buildExtractionPrompt — used by
+// the observability page to bucket slop-rate per prompt revision.
+const PROMPT_VERSION = 1
 
 const GMAIL_API = '/gmail/v1/users/me'
 
@@ -165,12 +170,21 @@ async function extractItemsFromThread(
 
   const prompt = buildExtractionPrompt({ subject, userEmail, latestFrom, transcript })
 
-  const response = await anthropic.messages.create({
-    model: MODELS.classifier,
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: prompt }],
-  })
+  const response = await tracedMessage(
+    anthropic,
+    {
+      prompt_id: 'extract.gmail',
+      prompt_version: PROMPT_VERSION,
+      user_id: process.env.APP_USER_ID ?? null,
+      source_ref: { gmail_thread_id: thread.id },
+    },
+    {
+      model: MODELS.classifier,
+      max_tokens: 1024,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
+    }
+  )
 
   const text = response.content
     .filter((b): b is { type: 'text'; text: string } => b.type === 'text')

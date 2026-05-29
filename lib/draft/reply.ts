@@ -8,6 +8,7 @@
 
 import { anthropic, MODELS } from '../anthropic'
 import { supabase } from '../supabase'
+import { tracedMessage } from '../llm-trace'
 import type { ProposedAction } from '../types'
 
 const USER_ID = process.env.APP_USER_ID!
@@ -68,12 +69,20 @@ ${args.threadText.slice(0, 4000)}
 
 Draft the reply.`
 
-  const response = await anthropic.messages.create({
-    model: MODELS.classifier,
-    max_tokens: 600,
-    system,
-    messages: [{ role: 'user', content: userMsg }],
-  })
+  const response = await tracedMessage(
+    anthropic,
+    {
+      prompt_id: 'draft.reply',
+      prompt_version: 1,
+      user_id: process.env.APP_USER_ID ?? null,
+    },
+    {
+      model: MODELS.classifier,
+      max_tokens: 600,
+      system,
+      messages: [{ role: 'user', content: userMsg }],
+    }
+  )
 
   const body = response.content
     .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
