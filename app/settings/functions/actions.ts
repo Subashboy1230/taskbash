@@ -90,16 +90,182 @@ export async function deleteFunction(id: string) {
  * Replace the array of function_ids on an item. Called by the detail
  * panel's multi-select. Pass the FULL desired list; this isn't an
  * incremental add/remove.
+ *
+ * Captures user corrections vs the auto-classifier as a first-class
+ * training signal:
+ *   1. Diff old vs new function_ids
+ *   2. If different AND the item has a classify_call_id, write a
+ *      'wrong_tag' row to item_feedback with the before/after state +
+ *      the classifier call that's being corrected
+ *   3. Auto-promote into the corrections-classify.functions eval
+ *      dataset so `npm run eval` can regression-test prompt changes
+ *      against every correction the user has ever made
  */
 export async function setItemFunctions(itemId: string, functionIds: string[]) {
   const userId = await resolveUserId()
-  const { error } = await supabase
+
+  // 1. Read the current state BEFORE updating, so we can diff.
+  const { data: before, error: beforeErr } = await supabase
+    .from('items')
+    .select('id, title, source, source_ref, source_excerpt, parent_context, function_ids, extraction_meta')
+    .eq('id', itemId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (beforeErr) throw new Error(`setItemFunctions read failed: ${beforeErr.message}`)
+  if (!before) throw new Error('Item not found.')
+
+  // 2. Apply the update.
+  const { error: updateErr } = await supabase
     .from('items')
     .update({ function_ids: functionIds })
     .eq('id', itemId)
     .eq('user_id', userId)
-  if (error) throw new Error(`setItemFunctions failed: ${error.message}`)
+  if (updateErr) throw new Error(`setItemFunctions failed: ${updateErr.message}`)
+
+  // 3. Capture the correction (fire-and-forget — failures don't block
+  //    the user's edit).
+  void captureFunctionCorrection({
+    userId,
+    item: before as ItemSnapshot,
+    before: (before as { function_ids?: string[] }).function_ids ?? [],
+    after: functionIds,
+  })
+
   revalidatePath('/today')
+}
+
+interface ItemSnapshot {
+  id: string
+  title: string
+  source: string
+  source_ref: unknown
+  source_excerpt: string | null
+  parent_context: string | null
+  function_ids: string[] | null
+  extraction_meta: { llm_call_id?: string; classify_call_id?: string } | null
+}
+
+async function captureFunctionCorrection(args: {
+  userId: string
+  item: ItemSnapshot
+  before: string[]
+  after: string[]
+}) {
+  try {
+    const beforeSet = new Set(args.before)
+    const afterSet = new Set(args.after)
+    const added = args.after.filter(id => !beforeSet.has(id))
+    const removed = args.before.filter(id => !afterSet.has(id))
+    if (added.length === 0 && removed.length === 0) return // no change
+
+    const classifyCallId = args.item.extraction_meta?.classify_call_id ?? null
+
+    // 3a. Insert the feedback row.
+    const { data: feedbackRow, error: fbErr } = await supabase
+      .from('item_feedback')
+      .insert({
+        item_id: args.item.id,
+        user_id: args.userId,
+        kind: 'wrong_tag',
+        // 'function_added' | 'function_removed' | 'function_replaced'
+        reason:
+          added.length > 0 && removed.length > 0
+            ? 'function_replaced'
+            : added.length > 0
+            ? 'function_added'
+            : 'function_removed',
+        note: null,
+        item_snapshot: args.item,
+        llm_call_id: classifyCallId,
+        correction: {
+          before: args.before,
+          after: args.after,
+          added,
+          removed,
+        },
+      })
+      .select('id')
+      .single()
+    if (fbErr) {
+      console.error('[setItemFunctions] feedback insert failed:', fbErr.message)
+      return
+    }
+
+    // 3b. Auto-promote into the corrections-classify.functions dataset.
+    //     Only when we know which classifier call to attach to — without
+    //     that we can't capture the original prompt + input.
+    if (!classifyCallId) return
+
+    const { data: call } = await supabase
+      .from('llm_calls')
+      .select('prompt_id, request_payload, input_content, response_text')
+      .eq('id', classifyCallId)
+      .maybeSingle()
+    if (!call?.prompt_id) return
+
+    const datasetName = `corrections-${call.prompt_id}`
+    let datasetId: string
+    const { data: existing } = await supabase
+      .from('eval_datasets')
+      .select('id')
+      .eq('user_id', args.userId)
+      .eq('name', datasetName)
+      .maybeSingle()
+    if (existing) {
+      datasetId = existing.id
+    } else {
+      const { data: newDs, error: dsErr } = await supabase
+        .from('eval_datasets')
+        .insert({
+          user_id: args.userId,
+          name: datasetName,
+          prompt_id: call.prompt_id,
+          description: `User corrections to ${call.prompt_id} — every time the auto-classifier got a function tag wrong and the user fixed it. Use \`npm run eval -- --dataset ${datasetName}\` to regression-test prompt changes against these corrections.`,
+        })
+        .select('id')
+        .single()
+      if (dsErr || !newDs) {
+        console.error('[setItemFunctions] dataset create failed:', dsErr?.message)
+        return
+      }
+      datasetId = newDs.id
+    }
+
+    // Expected output: a JSON snippet showing what the classifier
+    // SHOULD have returned for THIS item. We can't easily reconstruct
+    // the per-batch task index after the fact, so we encode the
+    // correction as a per-item assertion. `expected_behavior='contains'`
+    // means the response just has to include the right tag(s).
+    const expectedOutput = JSON.stringify({
+      itemId: args.item.id,
+      title: args.item.title,
+      added,
+      removed,
+      correct: args.after,
+    })
+
+    const { error: caseErr } = await supabase.from('eval_cases').insert({
+      dataset_id: datasetId,
+      source: 'promoted_from_trace',
+      source_llm_call_id: classifyCallId,
+      source_feedback_id: feedbackRow.id,
+      request_payload: call.request_payload,
+      input_content: call.input_content,
+      expected_output: expectedOutput,
+      expected_behavior: 'manual_review',
+      notes:
+        added.length > 0
+          ? `Should have tagged: ${added.join(', ')}${
+              removed.length > 0 ? ` | Should NOT have tagged: ${removed.join(', ')}` : ''
+            }`
+          : `Should NOT have tagged: ${removed.join(', ')}`,
+    })
+    if (caseErr) {
+      console.error('[setItemFunctions] case insert failed:', caseErr.message)
+    }
+  } catch (err) {
+    console.error('[setItemFunctions] captureCorrection failed:', err)
+  }
 }
 
 /**

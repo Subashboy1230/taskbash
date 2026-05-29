@@ -111,12 +111,14 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   // One Claude call batches every item across every source. Failure is
   // silent — items just go in untagged and the user can tag manually.
   const userFunctions = await loadUserFunctions().catch(() => [])
+  let classifyCallId: string | null = null
   if (userFunctions.length > 0 && allFresh.length > 0) {
-    await classifyAndTagFunctions({
+    const result = await classifyAndTagFunctions({
       items: allFresh,
       functions: userFunctions,
       userId,
     })
+    classifyCallId = result.classifyCallId
   }
 
   // ─── Diff per-source and persist ─────────────────────────────────────
@@ -162,11 +164,19 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
           semantic_hash,
           proposed_action: fresh.proposed_action ?? null,
           source_excerpt: fresh.source_excerpt ?? null,
-          // Persist the producing call id on the item too — gives
-          // markItemSlop a fast O(1) lookup without scanning arrays.
-          extraction_meta: fresh._llm_call_id
-            ? { llm_call_id: fresh._llm_call_id }
-            : null,
+          // Persist producing call ids on the item.
+          //   llm_call_id        → the extractor call that produced it
+          //                        (markItemSlop reads this for fast lookup)
+          //   classify_call_id   → the classify.functions call that
+          //                        assigned function_ids (setItemFunctions
+          //                        reads this when capturing corrections)
+          extraction_meta:
+            fresh._llm_call_id || classifyCallId
+              ? {
+                  ...(fresh._llm_call_id ? { llm_call_id: fresh._llm_call_id } : {}),
+                  ...(classifyCallId ? { classify_call_id: classifyCallId } : {}),
+                }
+              : null,
           // Auto-assigned function tags from classifyAndTagFunctions
           // (empty array when no functions defined or none fit).
           function_ids: fresh.function_ids ?? [],

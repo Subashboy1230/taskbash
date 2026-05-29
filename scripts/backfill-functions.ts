@@ -90,11 +90,12 @@ async function main() {
     function_ids: [] as string[],
   })) as unknown as import('../lib/types').ExtractedItem[]
 
-  await classifyAndTagFunctions({
+  const { classifyCallId } = await classifyAndTagFunctions({
     items: synthetic,
     functions,
     userId: process.env.APP_USER_ID,
   })
+  void classifyCallId // intentionally unused — backfill doesn't persist classify_call_id
 
   // Persist assigned ids back to the DB.
   let tagged = 0

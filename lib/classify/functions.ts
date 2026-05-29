@@ -91,9 +91,10 @@ export async function classifyAndTagFunctions(args: {
   items: ExtractedItem[]
   functions: UserFunction[]
   userId?: string | null
-}): Promise<ExtractedItem[]> {
+}): Promise<{ items: ExtractedItem[]; classifyCallId: string | null }> {
   const { items, functions } = args
-  if (items.length === 0 || functions.length === 0) return items
+  if (items.length === 0 || functions.length === 0)
+    return { items, classifyCallId: null }
 
   // Build the classifier input. The key is a synthetic batch-index so
   // we can map the LLM output back to items by position.
@@ -106,6 +107,7 @@ export async function classifyAndTagFunctions(args: {
 
   const prompt = buildUserPrompt(functions, tasks)
   const inputContent = { functions, tasks }
+  let classifyCallId: string | null = null
 
   try {
     const response = await tracedMessage(
@@ -124,6 +126,7 @@ export async function classifyAndTagFunctions(args: {
       }
     )
 
+    classifyCallId = response._llmCallId || null
     const text = response.content
       .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
       .map(b => b.text)
@@ -134,7 +137,7 @@ export async function classifyAndTagFunctions(args: {
       parsed = JSON.parse(extractJsonObject(text)) as ClassifyResponse
     } catch (err) {
       console.warn('[classify.functions] JSON parse failed, skipping tags:', err)
-      return items
+      return { items, classifyCallId }
     }
 
     const validIds = new Set(functions.map(f => f.id))
@@ -160,7 +163,7 @@ export async function classifyAndTagFunctions(args: {
     )
   }
 
-  return items
+  return { items, classifyCallId }
 }
 
 // ─── Eval replay ────────────────────────────────────────────────────
