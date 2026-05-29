@@ -29,6 +29,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import type { Messages } from '@anthropic-ai/sdk/resources/messages'
 import { supabase } from './supabase'
+import { getLangfuse } from './langfuse'
 
 // Anthropic pricing (USD per 1M tokens). Keep in sync with
 // https://www.anthropic.com/pricing.
@@ -173,9 +174,99 @@ async function logCall(args: {
     if (response && data?.id) {
       ;(response as unknown as { _llmCallId?: string })._llmCallId = data.id
     }
+
+    // ─── Secondary destination: Langfuse cloud ──────────────────
+    // Fire-and-forget. When env vars are missing, getLangfuse() returns
+    // null and this is a no-op. The Supabase row above is always the
+    // source of truth — Langfuse just gives you a nicer drill-down UI.
+    pushToLangfuse({
+      callId: data?.id ?? '',
+      ctx,
+      request,
+      response,
+      startedAt,
+      endedAt,
+      input,
+      output,
+      cost,
+      responseText,
+      errorMessage,
+    })
   } catch (err) {
     // Logging failure is never fatal.
     console.error('[llm-trace] unexpected log error:', err instanceof Error ? err.message : err)
+  }
+}
+
+/**
+ * Push a trace + generation to Langfuse. Wrapped so the Langfuse SDK
+ * never crashes the calling pipeline.
+ *
+ * Langfuse model:
+ *   trace      = a single user-facing action (one LLM call in our case)
+ *   generation = the actual model invocation inside that trace
+ *   score      = quality signal attached later (e.g. by markItemSlop)
+ *
+ * The trace id is set to our llm_calls.id so markItemSlop can look up
+ * and score the right trace by its Supabase row id — no need to track
+ * Langfuse's own trace ids separately.
+ */
+function pushToLangfuse(args: {
+  callId: string
+  ctx: TraceContext
+  request: Messages.MessageCreateParamsNonStreaming
+  response?: Messages.Message
+  startedAt: Date
+  endedAt: Date
+  input: number
+  output: number
+  cost: number
+  responseText: string | null
+  errorMessage: string | null
+}) {
+  const lf = getLangfuse()
+  if (!lf) return
+  try {
+    const traceId = args.callId || undefined
+    const trace = lf.trace({
+      id: traceId,
+      name: args.ctx.prompt_id,
+      userId: args.ctx.user_id ?? undefined,
+      metadata: {
+        prompt_version: args.ctx.prompt_version ?? 1,
+        source_ref: args.ctx.source_ref ?? null,
+        parent_run_id: args.ctx.parent_run_id ?? null,
+        // Echo the structured input so it's searchable in Langfuse UI.
+        input_content: args.ctx.input_content ?? null,
+      },
+      input: args.request.messages,
+      output: args.responseText,
+    })
+    trace.generation({
+      name: args.ctx.prompt_id,
+      model: args.request.model,
+      modelParameters: {
+        max_tokens: args.request.max_tokens,
+        // Add temperature, top_p when extractors start setting them.
+      },
+      input: args.request.messages,
+      output: args.responseText,
+      startTime: args.startedAt,
+      endTime: args.endedAt,
+      usage: {
+        input: args.input,
+        output: args.output,
+        total: args.input + args.output,
+        inputCost: 0, // computed below if we want; Langfuse can also
+        outputCost: 0, // compute from model name. Skip for now.
+        totalCost: args.cost,
+        unit: 'TOKENS',
+      },
+      level: args.errorMessage ? 'ERROR' : 'DEFAULT',
+      statusMessage: args.errorMessage ?? undefined,
+    })
+  } catch (err) {
+    console.error('[langfuse] push failed:', err instanceof Error ? err.message : err)
   }
 }
 
@@ -191,6 +282,32 @@ export async function tagCallWithItems(callId: string, itemIds: string[]) {
     .eq('id', callId)
   if (error) {
     console.error('[llm-trace] tagCallWithItems failed:', error.message)
+  }
+}
+
+/**
+ * Push a slop score to the Langfuse trace for a given call id. Scores
+ * appear in the Langfuse UI as a 0-1 quality bar on the trace row,
+ * making slopped traces visually distinct. No-op when Langfuse isn't
+ * configured.
+ */
+export function scoreLangfuseSlop(
+  callId: string,
+  reason: string,
+  note?: string | null
+) {
+  const lf = getLangfuse()
+  if (!lf || !callId) return
+  try {
+    lf.score({
+      traceId: callId,
+      name: 'quality',
+      value: 0, // slop = lowest quality
+      dataType: 'NUMERIC',
+      comment: note ? `${reason} — ${note}` : reason,
+    })
+  } catch (err) {
+    console.error('[langfuse] score failed:', err instanceof Error ? err.message : err)
   }
 }
 

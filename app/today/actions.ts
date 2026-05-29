@@ -77,7 +77,15 @@ export async function markItemSlop(
     throw new Error(`markItemSlop feedback insert failed: ${feedbackErr.message}`)
   }
 
-  // 4. Auto-promote into the user's default 'slop-cases' dataset for
+  // 4. Push a low-quality score to the matching Langfuse trace so
+  //    slopped traces show up flagged in their UI. No-op if Langfuse
+  //    isn't configured.
+  if (producingCallId) {
+    const { scoreLangfuseSlop } = await import('@/lib/llm-trace')
+    scoreLangfuseSlop(producingCallId, reason, note ?? null)
+  }
+
+  // 5. Auto-promote into the user's default 'slop-cases' dataset for
   //    the producing prompt — every slop becomes a negative case that
   //    the eval runner replays expecting empty output. Best-effort:
   //    failure here is logged but doesn't block the slop dismissal.

@@ -16,6 +16,7 @@ import { diffSingleSource } from '../diff'
 import { computeSemanticHash } from '../normalize'
 import { getActiveConnection } from '../connections'
 import { tagCallWithItems } from '../llm-trace'
+import { flushLangfuse } from '../langfuse'
 import type { ExtractedItem, Item, Source } from '../types'
 
 export interface DigestRunSummary {
@@ -201,6 +202,10 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
       )
     )
   )
+
+  // Flush any pending Langfuse events before the serverless function
+  // exits. No-op when Langfuse isn't configured.
+  await flushLangfuse()
 
   return {
     sources_run: sourcesRun,
