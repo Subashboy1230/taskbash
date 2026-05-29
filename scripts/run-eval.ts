@@ -44,6 +44,11 @@ interface RawCase {
     system?: string
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
   }
+  // Optional structured input. When present, the runner builds a fresh
+  // request via lib/eval/replay.ts using the CURRENT prompt template
+  // rather than re-sending request_payload (which has the old prompt
+  // baked in). This is the B2 path — true prompt regression testing.
+  input_content: unknown | null
   expected_output: string | null
   expected_behavior: 'exact' | 'contains' | 'empty' | 'manual_review'
   notes: string | null
@@ -87,7 +92,7 @@ async function main() {
   // ─── Pull cases ─────────────────────────────────────────────────
   const { data: cases, error: casesErr } = await supabase
     .from('eval_cases')
-    .select('id, request_payload, expected_output, expected_behavior, notes')
+    .select('id, request_payload, input_content, expected_output, expected_behavior, notes')
     .eq('dataset_id', dataset.id)
     .order('created_at', { ascending: true })
     .limit(limit)
@@ -128,6 +133,14 @@ async function main() {
   }
   const runId = runRow.id
 
+  // Map prompt_id → "current prompt" replay function. When a case has
+  // input_content AND its prompt_id is supported, we test the CURRENT
+  // codebase prompt (B2). Otherwise we fall back to replaying the
+  // saved request_payload (B1).
+  const { replayByPromptId } = await import('../lib/eval/replay')
+  let currentPromptUsed = 0
+  let savedPromptUsed = 0
+
   // ─── Score each case ───────────────────────────────────────────
   let passed = 0
   let failed = 0
@@ -136,12 +149,40 @@ async function main() {
     const c = cases[i] as RawCase
     const tag = `[${i + 1}/${cases.length}]`
     try {
-      const response = await anthropic.messages.create(c.request_payload)
-      const output = response.content
-        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-        .map(b => b.text)
-        .join('\n')
-        .trim()
+      // B2 path: structured input → current prompt
+      let output: string
+      let pathTag: 'current' | 'saved' = 'saved'
+      if (c.input_content) {
+        const replayResult = await replayByPromptId(
+          dataset.prompt_id,
+          c.input_content,
+          anthropic
+        )
+        if (replayResult) {
+          output = replayResult.responseText.trim()
+          pathTag = 'current'
+          currentPromptUsed++
+        } else {
+          // Prompt not supported yet — fall through to saved.
+          const response = await anthropic.messages.create(c.request_payload)
+          output = response.content
+            .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+            .map(b => b.text)
+            .join('\n')
+            .trim()
+          savedPromptUsed++
+        }
+      } else {
+        // B1 path: no structured input on this case → replay saved request
+        const response = await anthropic.messages.create(c.request_payload)
+        output = response.content
+          .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+          .map(b => b.text)
+          .join('\n')
+          .trim()
+        savedPromptUsed++
+      }
+      void pathTag // logged in the per-case line below
 
       const expected = (c.expected_output ?? '').trim()
       let isPassing: boolean
@@ -184,10 +225,10 @@ async function main() {
 
       if (isPassing) {
         passed++
-        console.log(`${tag} ✓ pass — ${c.expected_behavior}`)
+        console.log(`${tag} ✓ pass [${pathTag}] — ${c.expected_behavior}`)
       } else {
         failed++
-        console.log(`${tag} ✗ fail — ${c.expected_behavior} — ${diff?.slice(0, 100) ?? ''}`)
+        console.log(`${tag} ✗ fail [${pathTag}] — ${c.expected_behavior} — ${diff?.slice(0, 100) ?? ''}`)
       }
     } catch (err) {
       errored++
@@ -216,13 +257,15 @@ async function main() {
     .eq('id', runId)
 
   console.log('\n─── Summary ────────────────────────────────────')
-  console.log(`  Dataset:   ${dataset.name}`)
-  console.log(`  Prompt:    ${dataset.prompt_id}`)
-  console.log(`  Model:     ${sampleModel}`)
-  console.log(`  Total:     ${cases.length}`)
-  console.log(`  Passed:    ${passed}`)
-  console.log(`  Failed:    ${failed}`)
-  console.log(`  Errored:   ${errored}`)
+  console.log(`  Dataset:        ${dataset.name}`)
+  console.log(`  Prompt:         ${dataset.prompt_id}`)
+  console.log(`  Model:          ${sampleModel}`)
+  console.log(`  Total:          ${cases.length}`)
+  console.log(`  Passed:         ${passed}`)
+  console.log(`  Failed:         ${failed}`)
+  console.log(`  Errored:        ${errored}`)
+  console.log(`  Current prompt: ${currentPromptUsed} cases  (B2 — tests today's prompt)`)
+  console.log(`  Saved request:  ${savedPromptUsed} cases  (B1 fallback)`)
   const denom = passed + failed
   if (denom > 0) {
     const pct = ((passed / denom) * 100).toFixed(1)

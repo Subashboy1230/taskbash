@@ -170,6 +170,16 @@ async function extractItemsFromThread(
 
   const prompt = buildExtractionPrompt({ subject, userEmail, latestFrom, transcript })
 
+  // Structured input — persisted to llm_calls.input_content so the
+  // eval runner can replay this case through whatever prompt template
+  // is in the codebase later (lib/eval/replay.ts → replayGmailExtraction).
+  const inputContent: GmailExtractInput = {
+    subject,
+    userEmail,
+    latestFrom,
+    transcript,
+  }
+
   const response = await tracedMessage(
     anthropic,
     {
@@ -177,6 +187,7 @@ async function extractItemsFromThread(
       prompt_version: PROMPT_VERSION,
       user_id: process.env.APP_USER_ID ?? null,
       source_ref: { gmail_thread_id: thread.id },
+      input_content: inputContent,
     },
     {
       model: MODELS.classifier,
@@ -466,4 +477,51 @@ function normalizeDueAt(value: unknown): string | null {
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return null
   return d.toISOString()
+}
+
+// ─── Eval replay ────────────────────────────────────────────────────
+// The structured input that produced an extract.gmail call. Persisted
+// to llm_calls.input_content + eval_cases.input_content so the eval
+// runner can rebuild the request with the CURRENT prompt template
+// (rather than re-sending the saved request_payload, which has the
+// OLD prompt baked in).
+
+export interface GmailExtractInput {
+  subject: string
+  userEmail: string
+  latestFrom: string
+  transcript: string
+}
+
+/**
+ * Re-extract from a stored GmailExtractInput using the CURRENT prompt
+ * template (SYSTEM_PROMPT + buildExtractionPrompt). Used by the eval
+ * runner to test new prompts against gold cases. Returns the raw
+ * response text — the runner compares it against expected_output.
+ */
+export async function replayGmailExtraction(
+  input: unknown,
+  client: import('@anthropic-ai/sdk').default
+): Promise<{ responseText: string; model: string }> {
+  const i = input as GmailExtractInput
+  if (!i || typeof i !== 'object' || typeof i.transcript !== 'string') {
+    throw new Error('replayGmailExtraction: invalid input_content shape')
+  }
+  const prompt = buildExtractionPrompt({
+    subject: i.subject ?? '',
+    userEmail: i.userEmail ?? '',
+    latestFrom: i.latestFrom ?? 'unknown',
+    transcript: i.transcript,
+  })
+  const response = await client.messages.create({
+    model: MODELS.classifier,
+    max_tokens: 1024,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  const responseText = response.content
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+    .map(b => b.text)
+    .join('\n')
+  return { responseText, model: response.model }
 }

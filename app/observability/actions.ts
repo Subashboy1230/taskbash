@@ -39,7 +39,7 @@ export async function promoteCallToDataset(args: {
   // 1. Pull the call we're promoting.
   const { data: call, error: callErr } = await supabase
     .from('llm_calls')
-    .select('id, prompt_id, prompt_version, request_payload, response_text')
+    .select('id, prompt_id, prompt_version, request_payload, response_text, input_content')
     .eq('id', args.callId)
     .maybeSingle()
   if (callErr) return { ok: false, error: callErr.message }
@@ -96,6 +96,11 @@ export async function promoteCallToDataset(args: {
       source: args.source ?? 'promoted_from_trace',
       source_llm_call_id: call.id,
       request_payload: call.request_payload,
+      // Copy the structured input from the producing call. When
+      // present, the eval runner uses replayByPromptId() to test the
+      // CURRENT prompt against this input; when absent, falls back to
+      // replaying request_payload as-is.
+      input_content: (call as { input_content?: unknown }).input_content ?? null,
       expected_output: expectedOutput,
       expected_behavior: expectedBehavior,
       notes: args.notes ?? null,

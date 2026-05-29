@@ -147,13 +147,14 @@ async function extractItemsFromNote(
   const sourceText = note.summary_markdown || note.summary_text || ''
   if (!sourceText.trim()) return []
 
-  const prompt = buildExtractionPrompt({
+  const inputContent: GranolaExtractInput = {
     meetingTitle: note.title || note.calendar_event?.event_title || 'Untitled meeting',
-    meetingDate: note.created_at,
+    meetingDate: note.created_at ?? '',
     userEmail,
     sourceText,
     attendeeEmails: note.attendees?.map(a => a.email) ?? [],
-  })
+  }
+  const prompt = buildExtractionPrompt(inputContent)
 
   const response = await tracedMessage(
     anthropic,
@@ -162,6 +163,7 @@ async function extractItemsFromNote(
       prompt_version: 1,
       user_id: process.env.APP_USER_ID ?? null,
       source_ref: { granola_meeting_id: note.id },
+      input_content: inputContent,
     },
     {
       model: MODELS.classifier,
@@ -388,4 +390,48 @@ async function safeReadText(res: Response): Promise<string> {
   } catch {
     return ''
   }
+}
+
+// ─── Eval replay ────────────────────────────────────────────────────
+// Structured input for an extract.granola call. Persisted to
+// llm_calls.input_content so the eval runner can re-extract with the
+// current prompt template — see lib/eval/replay.ts.
+
+export interface GranolaExtractInput {
+  meetingTitle: string
+  meetingDate: string
+  userEmail: string
+  sourceText: string
+  attendeeEmails: string[]
+}
+
+/**
+ * Re-extract from a stored GranolaExtractInput using the CURRENT prompt.
+ */
+export async function replayGranolaExtraction(
+  input: unknown,
+  client: import('@anthropic-ai/sdk').default
+): Promise<{ responseText: string; model: string }> {
+  const i = input as GranolaExtractInput
+  if (!i || typeof i !== 'object' || typeof i.sourceText !== 'string') {
+    throw new Error('replayGranolaExtraction: invalid input_content shape')
+  }
+  const prompt = buildExtractionPrompt({
+    meetingTitle: i.meetingTitle ?? 'Untitled meeting',
+    meetingDate: i.meetingDate ?? '',
+    userEmail: i.userEmail ?? '',
+    sourceText: i.sourceText,
+    attendeeEmails: Array.isArray(i.attendeeEmails) ? i.attendeeEmails : [],
+  })
+  const response = await client.messages.create({
+    model: MODELS.classifier,
+    max_tokens: 1024,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  const responseText = response.content
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+    .map(b => b.text)
+    .join('\n')
+  return { responseText, model: response.model }
 }

@@ -86,7 +86,7 @@ export async function markItemSlop(
       try {
         const { data: call } = await supabase
           .from('llm_calls')
-          .select('prompt_id, request_payload')
+          .select('prompt_id, request_payload, input_content')
           .eq('id', producingCallId)
           .maybeSingle()
         if (!call?.prompt_id) return
@@ -122,6 +122,8 @@ export async function markItemSlop(
           source_llm_call_id: producingCallId,
           source_feedback_id: feedbackRow.id,
           request_payload: call.request_payload,
+          input_content:
+            (call as { input_content?: unknown }).input_content ?? null,
           expected_output: '',
           expected_behavior: 'empty',
           notes: `Reason: ${reason}${note ? ` — ${note}` : ''}`,

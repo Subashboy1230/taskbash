@@ -58,6 +58,11 @@ export interface TraceContext {
   user_id?: string | null
   parent_run_id?: string | null
   source_ref?: unknown
+  // Structured input that produced this request (subject, transcript,
+  // attendee list, etc.). Persisted to llm_calls.input_content so the
+  // eval runner can replay it through a NEW prompt template later.
+  // Shape varies by prompt_id — see lib/eval/replay.ts for the mapping.
+  input_content?: unknown
 }
 
 export type TracedResponse<T> = T & { _llmCallId: string }
@@ -153,6 +158,7 @@ async function logCall(args: {
         parent_run_id: ctx.parent_run_id ?? null,
         produced_item_ids: null,
         source_ref: ctx.source_ref ?? null,
+        input_content: ctx.input_content ?? null,
         error: errorMessage,
       })
       .select('id')

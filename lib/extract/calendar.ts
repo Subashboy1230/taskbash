@@ -181,6 +181,8 @@ async function generatePrepBrief(
     `Description: ${stripHtml(event.description || '(empty)').slice(0, 1500)}`,
   ].join('\n')
 
+  const inputContent: CalendarBriefInput = { userEmail, eventText }
+
   const response = await tracedMessage(
     anthropic,
     {
@@ -188,6 +190,7 @@ async function generatePrepBrief(
       prompt_version: 1,
       user_id: process.env.APP_USER_ID ?? null,
       source_ref: { google_calendar_event_id: event.id },
+      input_content: inputContent,
     },
     {
       model: MODELS.classifier,
@@ -260,4 +263,44 @@ function stripHtml(s: string): string {
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+// ─── Eval replay ────────────────────────────────────────────────────
+// Structured input for an extract.calendar call. Persisted to
+// llm_calls.input_content so the eval runner can re-generate the brief
+// with the current prompt template — see lib/eval/replay.ts.
+
+export interface CalendarBriefInput {
+  userEmail: string
+  eventText: string
+}
+
+/**
+ * Re-generate a prep brief from a stored CalendarBriefInput using the
+ * CURRENT prompt template (PREP_BRIEF_PROMPT).
+ */
+export async function replayCalendarBrief(
+  input: unknown,
+  client: import('@anthropic-ai/sdk').default
+): Promise<{ responseText: string; model: string }> {
+  const i = input as CalendarBriefInput
+  if (!i || typeof i !== 'object' || typeof i.eventText !== 'string') {
+    throw new Error('replayCalendarBrief: invalid input_content shape')
+  }
+  const response = await client.messages.create({
+    model: MODELS.classifier,
+    max_tokens: 600,
+    system: PREP_BRIEF_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: `User: ${i.userEmail ?? ''}\n\n${i.eventText}\n\nGenerate the prep brief as JSON.`,
+      },
+    ],
+  })
+  const responseText = response.content
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+    .map(b => b.text)
+    .join('\n')
+  return { responseText, model: response.model }
 }
