@@ -18,7 +18,8 @@
     "backfill:tags": "tsx scripts/backfill-tags.ts",
     "backfill:briefs": "tsx scripts/backfill-briefs.ts",
     "seed:connections": "tsx scripts/seed-connections.ts",
-    "replay:slop": "tsx scripts/replay-slop.ts"
+    "replay:slop": "tsx scripts/replay-slop.ts",
+    "eval": "tsx scripts/run-eval.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

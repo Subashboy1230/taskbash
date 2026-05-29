@@ -11,6 +11,7 @@ import { ChevronLeft } from 'lucide-react'
 import { AppHeader } from '@/app/_components/app-header'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { loadObservability } from '@/lib/load-observability'
+import { RecentCallsTable } from './recent-calls-table'
 
 export const dynamic = 'force-dynamic'
 
@@ -156,60 +157,19 @@ export default async function ObservabilityPage() {
 
         {/* ─── Recent live feed ─────────────────────────────────────── */}
         <section>
-          <h2 className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-ink-faint">
-            Recent calls
-          </h2>
-          {data.recent_calls.length === 0 ? (
-            <p className="m-0 text-[13px] text-ink-faint">No recent calls.</p>
-          ) : (
-            <div className="overflow-hidden rounded-lg border border-line bg-surface">
-              <table className="w-full text-left text-[13px]">
-                <thead className="border-b border-line bg-surface-muted/40 text-[11px] uppercase tracking-wider text-ink-faint">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Time</th>
-                    <th className="px-3 py-2 font-medium">Prompt</th>
-                    <th className="px-3 py-2 font-medium">Model</th>
-                    <th className="px-3 py-2 text-right font-medium">Tokens</th>
-                    <th className="px-3 py-2 text-right font-medium">Cost</th>
-                    <th className="px-3 py-2 text-right font-medium">ms</th>
-                    <th className="px-3 py-2 font-medium">Finish</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line/70">
-                  {data.recent_calls.map(c => (
-                    <tr key={c.id}>
-                      <td className="px-3 py-2 text-ink-muted">
-                        {new Date(c.started_at).toLocaleTimeString('en-US', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit',
-                        })}
-                      </td>
-                      <td className="px-3 py-2 text-ink">
-                        {c.prompt_id}
-                        <span className="ml-1 text-[11px] text-ink-faint">v{c.prompt_version}</span>
-                      </td>
-                      <td className="px-3 py-2 text-[11px] text-ink-faint">
-                        {c.request_model.replace('claude-', '').replace(/-\d{8}$/, '')}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-ink-muted">
-                        {(c.input_tokens ?? 0) + (c.output_tokens ?? 0)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-ink-muted">
-                        ${(c.cost_usd ?? 0).toFixed(4)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-ink-muted">
-                        {c.latency_ms ?? '—'}
-                      </td>
-                      <td className={cellTone('finish', c.finish_reason)}>
-                        {c.error ? 'error' : c.finish_reason ?? '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="m-0 text-[12px] font-semibold uppercase tracking-wider text-ink-faint">
+              Recent calls
+            </h2>
+            <p className="m-0 text-[11px] text-ink-faint">
+              Save a good call → eval case. Run with{' '}
+              <code className="text-[10px]">npm run eval</code>.
+            </p>
+          </div>
+          <RecentCallsTable
+            calls={data.recent_calls}
+            datasetSuggestions={data.dataset_suggestions}
+          />
         </section>
       </main>
     </div>

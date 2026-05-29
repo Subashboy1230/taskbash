@@ -60,17 +60,76 @@ export async function markItemSlop(
   }
 
   // 3. Insert feedback row, linked to the producing call when known.
-  const { error: feedbackErr } = await supabase.from('item_feedback').insert({
-    item_id: itemId,
-    user_id: userId,
-    kind: 'slop',
-    reason,
-    note: note ?? null,
-    item_snapshot: item,
-    llm_call_id: producingCallId,
-  })
+  const { data: feedbackRow, error: feedbackErr } = await supabase
+    .from('item_feedback')
+    .insert({
+      item_id: itemId,
+      user_id: userId,
+      kind: 'slop',
+      reason,
+      note: note ?? null,
+      item_snapshot: item,
+      llm_call_id: producingCallId,
+    })
+    .select('id')
+    .single()
   if (feedbackErr) {
     throw new Error(`markItemSlop feedback insert failed: ${feedbackErr.message}`)
+  }
+
+  // 4. Auto-promote into the user's default 'slop-cases' dataset for
+  //    the producing prompt — every slop becomes a negative case that
+  //    the eval runner replays expecting empty output. Best-effort:
+  //    failure here is logged but doesn't block the slop dismissal.
+  if (producingCallId && feedbackRow?.id) {
+    void (async () => {
+      try {
+        const { data: call } = await supabase
+          .from('llm_calls')
+          .select('prompt_id, request_payload')
+          .eq('id', producingCallId)
+          .maybeSingle()
+        if (!call?.prompt_id) return
+
+        // One dataset per prompt_id: "slop-{prompt_id}"
+        const datasetName = `slop-${call.prompt_id}`
+        let datasetId: string
+        const { data: existing } = await supabase
+          .from('eval_datasets')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('name', datasetName)
+          .maybeSingle()
+        if (existing) {
+          datasetId = existing.id
+        } else {
+          const { data: newDs, error: dsErr } = await supabase
+            .from('eval_datasets')
+            .insert({
+              user_id: userId,
+              name: datasetName,
+              prompt_id: call.prompt_id,
+              description: `Auto-collected slop signals for ${call.prompt_id}. Each case expects empty output — a fixed prompt should skip the input that caused the slop.`,
+            })
+            .select('id')
+            .single()
+          if (dsErr || !newDs) return
+          datasetId = newDs.id
+        }
+        await supabase.from('eval_cases').insert({
+          dataset_id: datasetId,
+          source: 'slop_negative',
+          source_llm_call_id: producingCallId,
+          source_feedback_id: feedbackRow.id,
+          request_payload: call.request_payload,
+          expected_output: '',
+          expected_behavior: 'empty',
+          notes: `Reason: ${reason}${note ? ` — ${note}` : ''}`,
+        })
+      } catch (err) {
+        console.error('[markItemSlop] auto-promote to dataset failed:', err)
+      }
+    })()
   }
 
   // 3. Dismiss the item so it leaves the open list.

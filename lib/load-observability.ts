@@ -43,7 +43,10 @@ export interface ObservabilitySummary {
     latency_ms: number | null
     started_at: string
     error: string | null
+    response_text: string | null
   }>
+  // Eval dataset suggestions for the Promote modal
+  dataset_suggestions: Array<{ id: string; name: string; prompt_id: string }>
 }
 
 export async function loadObservability(): Promise<ObservabilitySummary> {
@@ -155,12 +158,25 @@ export async function loadObservability(): Promise<ObservabilitySummary> {
   const { data: recentRows, error: rrErr } = await supabase
     .from('llm_calls')
     .select(
-      'id, prompt_id, prompt_version, request_model, finish_reason, input_tokens, output_tokens, cost_usd, latency_ms, started_at, error'
+      'id, prompt_id, prompt_version, request_model, finish_reason, input_tokens, output_tokens, cost_usd, latency_ms, started_at, error, response_text'
     )
     .or(`user_id.eq.${userId},user_id.is.null`)
     .order('started_at', { ascending: false })
     .limit(30)
   if (rrErr) throw new Error(`loadObservability recent failed: ${rrErr.message}`)
+
+  // ─── Dataset suggestions for the Promote modal ──────────────────
+  const { data: dsRows, error: dsErr } = await supabase
+    .from('eval_datasets')
+    .select('id, name, prompt_id')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(50)
+  if (dsErr) {
+    // Don't fail the whole load — the migration may not have been
+    // applied yet. Just return an empty suggestion list.
+    console.warn('loadObservability dataset suggestions:', dsErr.message)
+  }
 
   // ─── Slop corpus size (count, not row) ────────────────────────────
   const { count: slopTotal, error: stErr } = await supabase
@@ -179,5 +195,6 @@ export async function loadObservability(): Promise<ObservabilitySummary> {
     slop_total: slopTotal ?? 0,
     slop_today: slopToday,
     recent_calls: (recentRows ?? []) as ObservabilitySummary['recent_calls'],
+    dataset_suggestions: (dsRows ?? []) as ObservabilitySummary['dataset_suggestions'],
   }
 }

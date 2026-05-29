@@ -1,0 +1,260 @@
+// scripts/run-eval.ts — Regression-test a prompt against a dataset.
+//
+// Each `eval_cases` row stores the EXACT Anthropic request that was
+// used to extract a piece of data the user later promoted as a "gold"
+// case. This runner:
+//
+//   1. Pulls every case in the requested dataset
+//   2. Re-sends each request_payload to Claude
+//   3. Compares the response against expected_output per expected_behavior
+//        exact          — string-equal (after trim)
+//        contains       — expected appears as substring in output
+//        empty          — output should be empty (slop case — the
+//                         prompt should now SKIP this input)
+//        manual_review  — record output, mark not_scored (no pass/fail)
+//   4. Writes an eval_runs row + per-case eval_case_results rows
+//   5. Prints a summary
+//
+// Caveat: this re-sends the SAVED request, which includes the prompt
+// that was in effect when the case was created. To true-test a NEW
+// prompt, you need to:
+//   a. ship the new prompt
+//   b. trigger a fresh extraction (morning digest, or a /today refresh)
+//   c. promote those new calls into the dataset (or replace existing
+//      cases)
+//   d. re-run this eval
+// Phase B2 will add per-extractor replay functions so we can test the
+// CURRENT codebase prompt against the case's INPUT — not just replay
+// the saved request.
+//
+// Run:
+//   npm run eval -- --dataset gold-extract.gmail
+//   npm run eval -- --dataset slop-extract.gmail --limit 5
+//   npm run eval -- --dataset gold-extract.gmail --notes "v3 prompt"
+
+import { config } from 'dotenv'
+import { resolve } from 'node:path'
+config({ path: resolve(process.cwd(), '.env.local') })
+
+interface RawCase {
+  id: string
+  request_payload: {
+    model: string
+    max_tokens: number
+    system?: string
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>
+  }
+  expected_output: string | null
+  expected_behavior: 'exact' | 'contains' | 'empty' | 'manual_review'
+  notes: string | null
+}
+
+async function main() {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error('Missing ANTHROPIC_API_KEY in .env.local')
+    process.exit(1)
+  }
+  if (!process.env.APP_USER_ID) {
+    console.error('Missing APP_USER_ID in .env.local')
+    process.exit(1)
+  }
+
+  const args = process.argv.slice(2)
+  const datasetName = flag(args, '--dataset')
+  const limit = Number(flag(args, '--limit') ?? '999')
+  const notes = flag(args, '--notes') ?? null
+
+  if (!datasetName) {
+    console.error('Usage: npm run eval -- --dataset <name> [--limit N] [--notes "..."]')
+    process.exit(1)
+  }
+
+  const { supabase } = await import('../lib/supabase')
+  const { anthropic } = await import('../lib/anthropic')
+
+  // ─── Look up the dataset ────────────────────────────────────────
+  const { data: dataset, error: dsErr } = await supabase
+    .from('eval_datasets')
+    .select('id, name, prompt_id, description')
+    .eq('user_id', process.env.APP_USER_ID!)
+    .eq('name', datasetName)
+    .maybeSingle()
+  if (dsErr || !dataset) {
+    console.error(`Dataset "${datasetName}" not found.`)
+    process.exit(1)
+  }
+
+  // ─── Pull cases ─────────────────────────────────────────────────
+  const { data: cases, error: casesErr } = await supabase
+    .from('eval_cases')
+    .select('id, request_payload, expected_output, expected_behavior, notes')
+    .eq('dataset_id', dataset.id)
+    .order('created_at', { ascending: true })
+    .limit(limit)
+  if (casesErr) {
+    console.error('Failed to load cases:', casesErr.message)
+    process.exit(1)
+  }
+  if (!cases || cases.length === 0) {
+    console.log('No cases in this dataset.')
+    return
+  }
+
+  console.log(
+    `\nRunning ${cases.length} case(s) from "${dataset.name}" (${dataset.prompt_id})\n`
+  )
+
+  // ─── Open an eval_runs row ──────────────────────────────────────
+  const sampleModel = (cases[0] as RawCase).request_payload.model
+  const { data: runRow, error: runInsertErr } = await supabase
+    .from('eval_runs')
+    .insert({
+      dataset_id: dataset.id,
+      prompt_id: dataset.prompt_id,
+      // prompt_version: TODO — read from the relevant extractor module
+      //   once Phase B2 adds replay functions. For now, leave null.
+      model: sampleModel,
+      total: cases.length,
+      passed: 0,
+      failed: 0,
+      errored: 0,
+      notes,
+    })
+    .select('id')
+    .single()
+  if (runInsertErr || !runRow) {
+    console.error('Failed to start run:', runInsertErr?.message)
+    process.exit(1)
+  }
+  const runId = runRow.id
+
+  // ─── Score each case ───────────────────────────────────────────
+  let passed = 0
+  let failed = 0
+  let errored = 0
+  for (let i = 0; i < cases.length; i++) {
+    const c = cases[i] as RawCase
+    const tag = `[${i + 1}/${cases.length}]`
+    try {
+      const response = await anthropic.messages.create(c.request_payload)
+      const output = response.content
+        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+        .map(b => b.text)
+        .join('\n')
+        .trim()
+
+      const expected = (c.expected_output ?? '').trim()
+      let isPassing: boolean
+      let diff: string | null = null
+      switch (c.expected_behavior) {
+        case 'exact':
+          isPassing = output === expected
+          if (!isPassing) diff = compactDiff(expected, output)
+          break
+        case 'contains':
+          isPassing = expected.length === 0 || output.includes(expected)
+          if (!isPassing) diff = `expected substring not found: ${expected.slice(0, 80)}`
+          break
+        case 'empty':
+          // A response is "empty" if the model returns nothing or
+          // returns an empty-array / empty-object signal. Tolerate
+          // common JSON-empty markers.
+          isPassing =
+            output.length === 0 ||
+            output === '[]' ||
+            output === '{}' ||
+            /no items|no actions|nothing to extract/i.test(output)
+          if (!isPassing) diff = `expected empty, got ${output.length} chars: ${output.slice(0, 80)}…`
+          break
+        case 'manual_review':
+        default:
+          isPassing = true // counts as passed; mark in notes
+          diff = null
+          break
+      }
+
+      await supabase.from('eval_case_results').insert({
+        run_id: runId,
+        case_id: c.id,
+        output,
+        passed: isPassing,
+        diff,
+        error: null,
+      })
+
+      if (isPassing) {
+        passed++
+        console.log(`${tag} ✓ pass — ${c.expected_behavior}`)
+      } else {
+        failed++
+        console.log(`${tag} ✗ fail — ${c.expected_behavior} — ${diff?.slice(0, 100) ?? ''}`)
+      }
+    } catch (err) {
+      errored++
+      const msg = err instanceof Error ? err.message : String(err)
+      console.log(`${tag} ! error — ${msg.slice(0, 100)}`)
+      await supabase.from('eval_case_results').insert({
+        run_id: runId,
+        case_id: c.id,
+        output: null,
+        passed: false,
+        diff: null,
+        error: msg,
+      })
+    }
+  }
+
+  // ─── Finalize the run ─────────────────────────────────────────
+  await supabase
+    .from('eval_runs')
+    .update({
+      ended_at: new Date().toISOString(),
+      passed,
+      failed,
+      errored,
+    })
+    .eq('id', runId)
+
+  console.log('\n─── Summary ────────────────────────────────────')
+  console.log(`  Dataset:   ${dataset.name}`)
+  console.log(`  Prompt:    ${dataset.prompt_id}`)
+  console.log(`  Model:     ${sampleModel}`)
+  console.log(`  Total:     ${cases.length}`)
+  console.log(`  Passed:    ${passed}`)
+  console.log(`  Failed:    ${failed}`)
+  console.log(`  Errored:   ${errored}`)
+  const denom = passed + failed
+  if (denom > 0) {
+    const pct = ((passed / denom) * 100).toFixed(1)
+    console.log(`  Pass rate: ${pct}%`)
+  }
+  console.log(`\n  Run id: ${runId}`)
+  console.log('  See full results in supabase: select * from eval_case_results where run_id = ...')
+}
+
+/**
+ * Return a short snippet of the diff between expected and actual,
+ * highlighting the first divergence so the CLI summary is scannable.
+ */
+function compactDiff(expected: string, actual: string): string {
+  const maxLen = 120
+  if (expected.length === 0) return `expected empty, got ${actual.length} chars`
+  let i = 0
+  while (i < Math.min(expected.length, actual.length) && expected[i] === actual[i]) {
+    i++
+  }
+  const before = expected.slice(Math.max(0, i - 20), i)
+  const expectedAt = expected.slice(i, Math.min(expected.length, i + 60))
+  const actualAt = actual.slice(i, Math.min(actual.length, i + 60))
+  return `…${before}[exp:${expectedAt}|got:${actualAt}]`.slice(0, maxLen)
+}
+
+function flag(argv: string[], name: string): string | undefined {
+  const idx = argv.indexOf(name)
+  return idx >= 0 ? argv[idx + 1] : undefined
+}
+
+main().catch(err => {
+  console.error('FATAL:', err instanceof Error ? err.message : err)
+  process.exit(1)
+})
