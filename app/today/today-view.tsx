@@ -35,7 +35,9 @@ import { AppHeader } from '@/app/_components/app-header'
 import { BrandLogo } from '@/app/_components/brand-logo'
 import { StatusPill, type StatusPillKind } from '@/app/_components/status-pill'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
-import type { Priority, ProposedAction, Source, Tag, TaskBrief } from '@/lib/types'
+import type { Priority, ProposedAction, Source, Tag, TaskBrief, UserFunction } from '@/lib/types'
+import { functionColor } from '@/lib/load-functions'
+import { setItemFunctions } from '@/app/settings/functions/actions'
 import {
   addSubtask,
   completeItem,
@@ -55,9 +57,11 @@ import {
 export function TodayView({
   digest,
   userEmail,
+  functions = [],
 }: {
   digest: MockDigestSummary
   userEmail?: string
+  functions?: UserFunction[]
 }) {
   const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
   const [tab, setTab] = useState<'open' | 'prep' | 'cleared'>('open')
@@ -65,7 +69,10 @@ export function TodayView({
   // filter survives a reload.
   const [sourceFilter, setSourceFilter] = useState<Source | null>(null)
   const [tagFilter, setTagFilter] = useState<NonNullable<Tag> | null>(null)
-  const [groupBy, setGroupBy] = useState<'none' | 'source' | 'due'>('none')
+  // Function filter — multi-select. Empty set = no filter applied. Match
+  // mode is OR (any selected function matches).
+  const [functionFilter, setFunctionFilter] = useState<Set<string>>(new Set())
+  const [groupBy, setGroupBy] = useState<'none' | 'source' | 'due' | 'function'>('none')
   const [isRefreshing, startRefresh] = useTransition()
   const router = useRouter()
 
@@ -84,8 +91,22 @@ export function TodayView({
       ) {
         setTagFilter(savedTag)
       }
+      const savedFns = localStorage.getItem('todoo:functionFilter')
+      if (savedFns && savedFns !== 'null') {
+        try {
+          const parsed = JSON.parse(savedFns)
+          if (Array.isArray(parsed)) setFunctionFilter(new Set(parsed))
+        } catch {
+          /* corrupt — ignore */
+        }
+      }
       const savedGroup = localStorage.getItem('todoo:groupBy')
-      if (savedGroup === 'source' || savedGroup === 'due' || savedGroup === 'none') {
+      if (
+        savedGroup === 'source' ||
+        savedGroup === 'due' ||
+        savedGroup === 'function' ||
+        savedGroup === 'none'
+      ) {
         setGroupBy(savedGroup)
       }
     } catch {
@@ -96,11 +117,12 @@ export function TodayView({
     try {
       localStorage.setItem('todoo:sourceFilter', sourceFilter ?? 'null')
       localStorage.setItem('todoo:tagFilter', tagFilter ?? 'null')
+      localStorage.setItem('todoo:functionFilter', JSON.stringify(Array.from(functionFilter)))
       localStorage.setItem('todoo:groupBy', groupBy)
     } catch {
       /* ignore */
     }
-  }, [sourceFilter, tagFilter, groupBy])
+  }, [sourceFilter, tagFilter, functionFilter, groupBy])
 
   // Items the user just dismissed/completed — hide them locally before revalidate lands
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
@@ -185,16 +207,26 @@ export function TodayView({
     return Array.from(set)
   }, [digest.open_items])
 
-  // Apply source+tag filter to the open list. Cleared tab is unfiltered for
-  // now (small enough that it doesn't need it; can revisit if it grows).
+  // Apply source+tag+function filter to the open list. Cleared tab is
+  // unfiltered for now (small enough that it doesn't need it).
   const filteredOpen = useMemo(() => {
     let out = visibleOpen
     if (sourceFilter) out = out.filter(i => i.source === sourceFilter)
     if (tagFilter) out = out.filter(i => i.tag === tagFilter)
+    if (functionFilter.size > 0) {
+      out = out.filter(i => (i.function_ids ?? []).some(fid => functionFilter.has(fid)))
+    }
     return out
-  }, [visibleOpen, sourceFilter, tagFilter])
+  }, [visibleOpen, sourceFilter, tagFilter, functionFilter])
 
-  const groups = useMemo(() => groupItems(filteredOpen, groupBy), [filteredOpen, groupBy])
+  // Fast lookup map for chip rendering and the multi-select editor.
+  const functionsById = useMemo(() => {
+    const m = new Map<string, UserFunction>()
+    for (const f of functions) m.set(f.id, f)
+    return m
+  }, [functions])
+
+  const groups = useMemo(() => groupItems(filteredOpen, groupBy, functionsById), [filteredOpen, groupBy, functionsById])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -290,6 +322,7 @@ export function TodayView({
               onComplete={handleComplete}
               onDismiss={handleDismiss}
               onSnooze={handleSnooze}
+              functionsById={functionsById}
             />
           ) : tab === 'open' ? (
             <>
@@ -301,18 +334,31 @@ export function TodayView({
                 availableTags={availableTags}
                 tagFilter={tagFilter}
                 onTagChange={setTagFilter}
+                functions={functions}
+                functionFilter={functionFilter}
+                onFunctionToggle={fid => {
+                  setFunctionFilter(prev => {
+                    const next = new Set(prev)
+                    if (next.has(fid)) next.delete(fid)
+                    else next.add(fid)
+                    return next
+                  })
+                }}
+                onFunctionClear={() => setFunctionFilter(new Set())}
                 groupBy={groupBy}
                 onGroupByChange={setGroupBy}
               />
 
               {filteredOpen.length === 0 ? (
-                sourceFilter || tagFilter ? (
+                sourceFilter || tagFilter || functionFilter.size > 0 ? (
                   <FilterEmpty
                     source={sourceFilter}
                     tag={tagFilter}
+                    functionCount={functionFilter.size}
                     onClear={() => {
                       setSourceFilter(null)
                       setTagFilter(null)
+                      setFunctionFilter(new Set())
                     }}
                   />
                 ) : (
@@ -341,6 +387,7 @@ export function TodayView({
                             onComplete={() => handleComplete(item.id)}
                             onDismiss={() => handleDismiss(item.id)}
                             onSnooze={hours => handleSnooze(item.id, hours)}
+                            functionsById={functionsById}
                           />
                         ))}
                       </ul>
@@ -362,6 +409,7 @@ export function TodayView({
             item={selectedItem}
             onClose={() => setSelectedItem(null)}
             onComplete={() => handleComplete(selectedItem.id)}
+            allFunctions={functions}
           />
         )}
       </div>
@@ -661,6 +709,7 @@ function TaskRow({
   onComplete,
   onDismiss,
   onSnooze,
+  functionsById,
 }: {
   item: MockItem
   isSelected: boolean
@@ -669,6 +718,7 @@ function TaskRow({
   onDismiss: () => void
   // Hours-aware so the SnoozeMenu can request different durations.
   onSnooze: (hours: number) => void
+  functionsById?: Map<string, UserFunction>
 }) {
   // Visual strikethrough animates before the row gets removed by the parent
   const [completed, setCompleted] = useState(false)
@@ -771,6 +821,11 @@ function TaskRow({
                 {subCompleted}/{subTotal}
               </span>
             )}
+            {(item.function_ids ?? []).map(fid => {
+              const fn = functionsById?.get(fid)
+              if (!fn) return null
+              return <FunctionPill key={fid} fn={fn} />
+            })}
             {item.due_at && <DeadlineBadge dueIso={item.due_at} />}
           </div>
 
@@ -1064,6 +1119,114 @@ function SlopMenu({
   )
 }
 
+// ─── Function pill ──────────────────────────────────────────────────
+// Small colored chip showing a function name. Rendered next to the row
+// title; clickable to scope the row's filter (TODO).
+
+function FunctionPill({ fn, onClick }: { fn: UserFunction; onClick?: () => void }) {
+  const c = functionColor(fn)
+  return (
+    <span
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider"
+      style={{
+        backgroundColor: c + '22', // ~13% alpha tint of the function color
+        color: c,
+      }}
+      title={`Function: ${fn.name}`}
+    >
+      <span
+        className="inline-block size-1.5 rounded-full"
+        style={{ backgroundColor: c }}
+      />
+      {fn.name}
+    </span>
+  )
+}
+
+// ─── Functions editor ───────────────────────────────────────────────
+// Multi-select dropdown for the DetailPanel. Renders the full list of
+// the user's functions as toggleable chips; clicking persists via
+// setItemFunctions and updates local state.
+
+function FunctionsEditor({
+  itemId,
+  initialIds,
+  allFunctions,
+}: {
+  itemId: string
+  initialIds: string[]
+  allFunctions: UserFunction[]
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set(initialIds))
+  useEffect(() => {
+    setSelected(new Set(initialIds))
+  }, [initialIds])
+
+  function toggle(id: string) {
+    const prev = new Set(selected)
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setSelected(next)
+    setItemFunctions(itemId, Array.from(next)).catch(() => setSelected(prev))
+  }
+
+  if (allFunctions.length === 0) {
+    return (
+      <div className="mb-5 rounded-lg border border-dashed border-line bg-surface px-3.5 py-3 text-[12px] text-ink-faint">
+        No functions defined yet.{' '}
+        <Link href="/settings/functions" className="underline hover:text-ink">
+          Add some in Settings →
+        </Link>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mb-5 rounded-lg border border-line/60 bg-canvas/40 px-3.5 py-3">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="m-0 text-[12px] font-semibold uppercase tracking-wider text-ink-muted">
+          Functions
+        </h3>
+        <Link
+          href="/settings/functions"
+          className="text-[11px] text-ink-faint hover:text-ink"
+        >
+          Manage →
+        </Link>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {allFunctions.map(fn => {
+          const isOn = selected.has(fn.id)
+          const c = functionColor(fn)
+          return (
+            <button
+              key={fn.id}
+              type="button"
+              onClick={() => toggle(fn.id)}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors'
+              )}
+              style={
+                isOn
+                  ? { backgroundColor: c, borderColor: c, color: '#fff' }
+                  : { backgroundColor: 'transparent', borderColor: c + '66', color: c }
+              }
+            >
+              <span
+                className="inline-block size-1.5 rounded-full"
+                style={{ backgroundColor: isOn ? '#fff' : c }}
+              />
+              {fn.name}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function TagPill({ tag }: { tag: NonNullable<Tag> }) {
   return (
     <span
@@ -1348,10 +1511,12 @@ function DetailPanel({
   item,
   onClose,
   onComplete,
+  allFunctions = [],
 }: {
   item: MockItem
   onClose: () => void
   onComplete: () => void
+  allFunctions?: UserFunction[]
 }) {
   return (
     <aside className="sticky top-0 max-h-screen w-[480px] shrink-0 overflow-y-auto border-l border-line bg-surface px-6 py-6">
@@ -1412,6 +1577,14 @@ function DetailPanel({
           }}
         />
       )}
+
+      {/* Function multi-select — Product, People Ops, Hiring, etc. Tag
+          this item so it shows up under the right filter on /today. */}
+      <FunctionsEditor
+        itemId={item.id}
+        initialIds={item.function_ids ?? []}
+        allFunctions={allFunctions}
+      />
 
       {/* Subtasks — the headline interaction. Stored as child items in the
           DB; toggle persists; add input creates a new manual item. */}
@@ -1887,6 +2060,10 @@ function FilterBar({
   availableTags,
   tagFilter,
   onTagChange,
+  functions,
+  functionFilter,
+  onFunctionToggle,
+  onFunctionClear,
   groupBy,
   onGroupByChange,
 }: {
@@ -1896,13 +2073,17 @@ function FilterBar({
   availableTags: NonNullable<Tag>[]
   tagFilter: NonNullable<Tag> | null
   onTagChange: (t: NonNullable<Tag> | null) => void
-  groupBy: 'none' | 'source' | 'due'
-  onGroupByChange: (g: 'none' | 'source' | 'due') => void
+  functions: UserFunction[]
+  functionFilter: Set<string>
+  onFunctionToggle: (fid: string) => void
+  onFunctionClear: () => void
+  groupBy: 'none' | 'source' | 'due' | 'function'
+  onGroupByChange: (g: 'none' | 'source' | 'due' | 'function') => void
 }) {
   const orderedSources = SOURCE_ORDER.filter(s => availableSources.includes(s))
   const orderedTags = TAG_ORDER.filter(t => availableTags.includes(t))
   // Hide the bar entirely when there's nothing to filter or group.
-  if (orderedSources.length === 0 && orderedTags.length === 0) return null
+  if (orderedSources.length === 0 && orderedTags.length === 0 && functions.length === 0) return null
   return (
     <div className="mt-4 space-y-2">
       {/* Row 1: Source chips + Group-by toggle (right-aligned) */}
@@ -1959,6 +2140,47 @@ function FilterBar({
           ))}
         </div>
       )}
+
+      {/* Row 3: Function chips (multi-select) */}
+      {functions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
+            Function
+          </span>
+          <FilterChip active={functionFilter.size === 0} onClick={onFunctionClear}>
+            All
+          </FilterChip>
+          {functions.map(fn => {
+            const isOn = functionFilter.has(fn.id)
+            const c = functionColor(fn)
+            return (
+              <button
+                key={fn.id}
+                type="button"
+                onClick={() => onFunctionToggle(fn.id)}
+                className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors"
+                style={
+                  isOn
+                    ? { backgroundColor: c, borderColor: c, color: '#fff' }
+                    : { backgroundColor: 'transparent', borderColor: c + '66', color: c }
+                }
+              >
+                <span
+                  className="inline-block size-1.5 rounded-full"
+                  style={{ backgroundColor: isOn ? '#fff' : c }}
+                />
+                {fn.name}
+              </button>
+            )
+          })}
+          <Link
+            href="/settings/functions"
+            className="ml-1 text-[11px] text-ink-faint underline hover:text-ink"
+          >
+            Manage
+          </Link>
+        </div>
+      )}
     </div>
   )
 }
@@ -2008,13 +2230,14 @@ function GroupToggle({
   value,
   onChange,
 }: {
-  value: 'none' | 'source' | 'due'
-  onChange: (g: 'none' | 'source' | 'due') => void
+  value: 'none' | 'source' | 'due' | 'function'
+  onChange: (g: 'none' | 'source' | 'due' | 'function') => void
 }) {
-  const options: Array<{ key: 'none' | 'source' | 'due'; label: string }> = [
+  const options: Array<{ key: 'none' | 'source' | 'due' | 'function'; label: string }> = [
     { key: 'none', label: 'None' },
     { key: 'source', label: 'Source' },
     { key: 'due', label: 'Due' },
+    { key: 'function', label: 'Function' },
   ]
   return (
     <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
@@ -2045,7 +2268,11 @@ interface ItemGroup {
   items: MockItem[]
 }
 
-function groupItems(items: MockItem[], groupBy: 'none' | 'source' | 'due'): ItemGroup[] {
+function groupItems(
+  items: MockItem[],
+  groupBy: 'none' | 'source' | 'due' | 'function',
+  functionsById?: Map<string, UserFunction>
+): ItemGroup[] {
   if (groupBy === 'none') {
     return [{ key: 'all', label: null, items }]
   }
@@ -2062,6 +2289,51 @@ function groupItems(items: MockItem[], groupBy: 'none' | 'source' | 'due'): Item
       icon: <BrandLogo brand={s} size={12} />,
       items: buckets.get(s) ?? [],
     }))
+  }
+  if (groupBy === 'function') {
+    // Items can belong to multiple functions, so they appear in EVERY
+    // bucket they're tagged with. Untagged items go to "Unassigned".
+    const buckets = new Map<string, MockItem[]>()
+    const unassigned: MockItem[] = []
+    for (const it of items) {
+      const fids = it.function_ids ?? []
+      if (fids.length === 0) {
+        unassigned.push(it)
+        continue
+      }
+      for (const fid of fids) {
+        const list = buckets.get(fid) ?? []
+        list.push(it)
+        buckets.set(fid, list)
+      }
+    }
+    const out: ItemGroup[] = []
+    // Order matches the user's defined function order.
+    if (functionsById) {
+      for (const [fid, fn] of functionsById.entries()) {
+        if (!buckets.has(fid)) continue
+        const c = functionColor(fn)
+        out.push({
+          key: `fn-${fid}`,
+          label: fn.name,
+          icon: (
+            <span
+              className="inline-block size-2 rounded-full"
+              style={{ backgroundColor: c }}
+            />
+          ),
+          items: buckets.get(fid) ?? [],
+        })
+      }
+    }
+    if (unassigned.length > 0) {
+      out.push({
+        key: 'fn-unassigned',
+        label: 'Unassigned',
+        items: unassigned,
+      })
+    }
+    return out
   }
   // groupBy === 'due'
   const now = Date.now()
@@ -2109,6 +2381,7 @@ function PrepTab({
   onComplete,
   onDismiss,
   onSnooze,
+  functionsById,
 }: {
   items: MockItem[]
   selectedId?: string
@@ -2116,6 +2389,7 @@ function PrepTab({
   onComplete: (id: string) => void
   onDismiss: (id: string) => void
   onSnooze: (id: string, hours: number) => void
+  functionsById?: Map<string, UserFunction>
 }) {
   if (items.length === 0) {
     return (
@@ -2143,6 +2417,7 @@ function PrepTab({
             onComplete={() => onComplete(item.id)}
             onDismiss={() => onDismiss(item.id)}
             onSnooze={hours => onSnooze(item.id, hours)}
+            functionsById={functionsById}
           />
         ))}
       </ul>
@@ -2195,16 +2470,20 @@ function ClearedTab({
 function FilterEmpty({
   source,
   tag,
+  functionCount = 0,
   onClear,
 }: {
   source: Source | null
   tag: NonNullable<Tag> | null
+  functionCount?: number
   onClear: () => void
 }) {
   // Build a "Gmail + Replies" style description of the active filter.
   const parts: string[] = []
   if (source) parts.push(SOURCE_LABEL[source])
   if (tag) parts.push(TAG_LABEL[tag])
+  if (functionCount > 0)
+    parts.push(`${functionCount} function${functionCount === 1 ? '' : 's'}`)
   const desc = parts.join(' + ')
   return (
     <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">

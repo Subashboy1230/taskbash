@@ -24,6 +24,9 @@ export interface MockItem {
   source: Source
   priority?: Priority
   urgent: boolean
+  // User-defined function tags ("Product", "Hiring", etc.). Many-to-many
+  // — a task can belong to multiple functions.
+  function_ids?: string[]
   age_days: number
   due_at?: string | null            // ISO timestamp; formatDeadline() turns it into a label
   is_new_today?: boolean

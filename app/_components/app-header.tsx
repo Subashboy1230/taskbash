@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
-import { LogOut, Plug } from 'lucide-react'
+import { LayoutGrid, LogOut, Plug } from 'lucide-react'
 import { signOut } from '@/app/auth/actions'
 
 export function AppHeader({
@@ -76,6 +76,14 @@ export function AppHeader({
             >
               <Plug size={14} className="text-ink-faint" />
               Connections
+            </Link>
+            <Link
+              href="/settings/functions"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2.5 px-3 py-2 text-[13px] text-ink hover:bg-surface-muted"
+            >
+              <LayoutGrid size={14} className="text-ink-faint" />
+              Functions
             </Link>
             <button
               type="button"

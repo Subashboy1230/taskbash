@@ -164,3 +164,15 @@ export interface Connection {
 // What the user thinks of as a "source". Maps 1:1 to the connections.provider
 // text column.
 export type ConnectionProvider = 'gmail' | 'granola' | 'slack' | 'calendar' | 'linear'
+
+// User-defined functions for cross-source bucketing — e.g. Product,
+// Marketing, People Ops. Many-to-many on items via items.function_ids[].
+export interface UserFunction {
+  id: string
+  user_id: string
+  name: string
+  color: string | null
+  sort_order: number
+  created_at: string
+  deleted_at: string | null
+}

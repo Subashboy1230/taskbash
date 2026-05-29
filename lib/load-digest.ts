@@ -126,6 +126,7 @@ function toUIItem(
     source: item.source as Source,
     priority: item.priority,
     urgent: !!item.urgent,
+    function_ids: (item as { function_ids?: string[] }).function_ids ?? [],
     age_days: ageDays,
     due_at: item.due_at,
     is_new_today: ageDays === 0,
