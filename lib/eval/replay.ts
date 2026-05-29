@@ -45,6 +45,10 @@ export async function replayByPromptId(
       const { replayCalendarBrief } = await import('../extract/calendar')
       return replayCalendarBrief(input, anthropic)
     }
+    case 'classify.functions': {
+      const { replayClassifyFunctions } = await import('../classify/functions')
+      return replayClassifyFunctions(input, anthropic)
+    }
     // brief.synthesize, draft.reply, draft.followup — not yet wired
     // for current-prompt replay. Runner falls back to request_payload.
     default:
@@ -56,4 +60,5 @@ export const SUPPORTED_REPLAY_PROMPTS: readonly string[] = [
   'extract.gmail',
   'extract.granola',
   'extract.calendar',
+  'classify.functions',
 ] as const

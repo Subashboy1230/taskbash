@@ -130,6 +130,11 @@ export interface ExtractedItem {
   // it to populate llm_calls.produced_item_ids[] so slop rate joins
   // work. Underscore prefix = transient (not a column on items).
   _llm_call_id?: string
+  // User-function tags assigned by the post-extraction classifier
+  // (lib/classify/functions.ts). Persisted to items.function_ids at
+  // insert time. May be empty when the user has no functions defined
+  // yet or when the classifier decided none fit.
+  function_ids?: string[]
 }
 
 export interface Run {

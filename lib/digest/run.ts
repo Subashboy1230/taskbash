@@ -17,6 +17,8 @@ import { computeSemanticHash } from '../normalize'
 import { getActiveConnection } from '../connections'
 import { tagCallWithItems } from '../llm-trace'
 import { flushLangfuse } from '../langfuse'
+import { classifyAndTagFunctions } from '../classify/functions'
+import { loadUserFunctions } from '../load-functions'
 import type { ExtractedItem, Item, Source } from '../types'
 
 export interface DigestRunSummary {
@@ -105,6 +107,18 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     }
   }
 
+  // ─── Auto-tag user functions onto every freshly-extracted item ──────
+  // One Claude call batches every item across every source. Failure is
+  // silent — items just go in untagged and the user can tag manually.
+  const userFunctions = await loadUserFunctions().catch(() => [])
+  if (userFunctions.length > 0 && allFresh.length > 0) {
+    await classifyAndTagFunctions({
+      items: allFresh,
+      functions: userFunctions,
+      userId,
+    })
+  }
+
   // ─── Diff per-source and persist ─────────────────────────────────────
   let newCount = 0
   let carryoverCount = 0
@@ -153,6 +167,9 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
           extraction_meta: fresh._llm_call_id
             ? { llm_call_id: fresh._llm_call_id }
             : null,
+          // Auto-assigned function tags from classifyAndTagFunctions
+          // (empty array when no functions defined or none fit).
+          function_ids: fresh.function_ids ?? [],
           ...briefFields,
         })
         .select('id')
