@@ -12,7 +12,12 @@ import { AppSidebar } from '@/app/_components/app-sidebar'
 import { TodayView, DetailPanel } from './today-view'
 import { TodayCalendarColumn } from './today-calendar-column'
 import { AddTaskPanel } from './add-task-panel'
-import { Sheet, SheetContent } from '@/app/_components/ui/sheet'
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetDescription,
+} from '@/app/_components/ui/sheet'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { UserFunction } from '@/lib/types'
 import type { DayEvent } from '@/lib/load-day-events'
@@ -96,12 +101,20 @@ export function TodayShell({
       />
 
       {/* Task detail slides over from the right. The Sheet's overlay is
-          transparent (see ui/sheet) so the task list stays fully visible. */}
+          transparent (see ui/sheet) so the task list stays fully visible.
+          SheetTitle + SheetDescription are visually hidden but present for
+          screen readers; Radix Dialog requires them. */}
       <Sheet open={!!selectedItem} onOpenChange={open => !open && closeDetail()}>
         <SheetContent
           side="right"
           className="w-full overflow-y-auto p-0 sm:max-w-md md:max-w-lg"
         >
+          <SheetTitle className="sr-only">
+            {selectedItem?.title ?? 'Task details'}
+          </SheetTitle>
+          <SheetDescription className="sr-only">
+            Details, brief, and actions for the selected task.
+          </SheetDescription>
           {selectedItem && (
             <DetailPanel
               item={selectedItem}
@@ -119,6 +132,10 @@ export function TodayShell({
           side="right"
           className="w-full overflow-y-auto p-0 sm:max-w-md md:max-w-lg"
         >
+          <SheetTitle className="sr-only">Add a manual task</SheetTitle>
+          <SheetDescription className="sr-only">
+            Create a new task with optional due date and function tags.
+          </SheetDescription>
           <AddTaskPanel
             allFunctions={functions}
             onClose={() => setAddOpen(false)}
