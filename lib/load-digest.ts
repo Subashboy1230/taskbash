@@ -10,8 +10,11 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   const USER_ID = await resolveUserId()
 
   const now = new Date()
-  const today = new Date(now)
-  today.setHours(0, 0, 0, 0)
+  // "Today" boundary = midnight America/Los_Angeles.
+  // en-CA gives YYYY-MM-DD; appending the fixed PST offset gives a proper ISO string.
+  // In May, Los Angeles is on PDT (UTC-7).
+  const todayDateStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+  const today = new Date(`${todayDateStr}T00:00:00-07:00`)
 
   // Open items (the main list)
   // Sort priority order:
@@ -24,6 +27,7 @@ export async function loadDigest(): Promise<MockDigestSummary> {
     .select('*')
     .eq('user_id', USER_ID)
     .in('status', ['open', 'in_progress'])
+    .order('sort_order', { ascending: true, nullsFirst: false })
     .order('priority', { ascending: true, nullsFirst: false })
     .order('proposed_action', { ascending: false, nullsFirst: false })
     .order('due_at', { ascending: true, nullsFirst: false })
@@ -31,10 +35,11 @@ export async function loadDigest(): Promise<MockDigestSummary> {
     .limit(200)
   if (openErr) throw new Error(`loadDigest openItems failed: ${openErr.message}`)
 
-  // Completed today (the cleared section)
-  const { data: completedRows, error: completedErr } = await supabase
+  // Completed today (the cleared section) — fetch rows + exact count separately
+  // so the tab badge shows the real total even when the row list is capped.
+  const { data: completedRows, error: completedErr, count: completedCount } = await supabase
     .from('items')
-    .select('*')
+    .select('*', { count: 'exact' })
     .eq('user_id', USER_ID)
     .eq('status', 'completed')
     .gte('completed_at', today.toISOString())
@@ -90,14 +95,14 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   return {
     user_name: 'Subash',
     user_initials: 'SR',
-    greeting: getGreeting(now),
+    greeting: pickGreeting(openItems.length, completedItems.length, parseInt(new Date().toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: 'America/Los_Angeles' }))),
     date_iso: now.toISOString().split('T')[0],
     active_tasks_label:
       openItems.length === 0
         ? "All clear. Take the morning back."
         : "A few left. Let's clear them.",
     active_count: openItems.length,
-    completed_today_count: completedItems.length,
+    completed_today_count: completedCount ?? completedItems.length,
     counts: {
       new: newToday,
       carryover,
@@ -119,6 +124,7 @@ function toUIItem(
   return {
     id: item.id,
     title: item.title,
+    subtitle: (item as any).subtitle ?? null,
     task_type: item.task_type,
     tag: item.tag as Tag,
     parent_context: item.parent_context,
@@ -151,7 +157,9 @@ function toUIItem(
     description: item.parent_context
       ? `Auto-extracted from ${labelFor(item.source as Source)} — ${item.parent_context}.`
       : `Auto-extracted from ${labelFor(item.source as Source)}.`,
+    reply_outcome: (item as any).reply_outcome ?? null,
     sub_items: subtasks ?? [],
+    sort_order: (item as { sort_order?: number | null }).sort_order ?? null,
   }
 }
 
@@ -198,12 +206,11 @@ function labelFor(source: Source): string {
   return map[source] || source
 }
 
-function getGreeting(now: Date): string {
-  const hour = now.getHours()
-  const name = 'Subash'
-  if (hour < 5) return `Up late, ${name}`
-  if (hour < 12) return `Good morning, ${name}`
-  if (hour < 17) return `Good afternoon, ${name}`
-  if (hour < 21) return `Good evening, ${name}`
-  return `Late night, ${name}`
+function pickGreeting(open: number, completed: number, hour: number): string {
+  if (open === 0) return 'All clear. Beautiful.'
+  if (completed > 0 && open < 5) return "A few left. Let's clear them."
+  if (open > 30) return 'Heavy day. Triage the top of the list first.'
+  if (hour < 12) return `Morning, Subash. Here's what's queued.`
+  if (hour < 18) return 'Afternoon check-in.'
+  return 'Late, but still time to clear a few.'
 }

@@ -349,6 +349,7 @@ export async function executeProposedAction(
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),
+          reply_outcome: 'approved',
         })
         .eq('id', itemId)
         .eq('user_id', userId)
@@ -382,6 +383,7 @@ export async function executeProposedAction(
     .update({
       status: 'completed',
       completed_at: new Date().toISOString(),
+      reply_outcome: 'approved',
     })
     .eq('id', itemId)
     .eq('user_id', userId)
@@ -452,6 +454,131 @@ export async function getEventsForDateAction(yyyymmdd: string) {
 }
 
 /**
+ * Persist a manual drag-to-reorder. Computes a new sort_order float for
+ * `itemId` so it sits between `beforeId` and `afterId` (either can be null
+ * for "moved to top" or "moved to bottom"). Uses midpoint insertion so we
+ * never need to renumber existing rows. If the gap gets too small (<0.01)
+ * we renumber all items for the user with step=1000 to reset breathing room.
+ */
+export async function reorderItem(
+  itemId: string,
+  beforeId: string | null,
+  afterId: string | null
+) {
+  const userId = await resolveUserId()
+
+  // Fetch the sort_order of the two neighbours (only the fields we need).
+  const neighbourIds = [beforeId, afterId].filter(Boolean) as string[]
+  let beforeOrder: number | null = null
+  let afterOrder: number | null = null
+
+  if (neighbourIds.length > 0) {
+    const { data, error } = await supabase
+      .from('items')
+      .select('id, sort_order')
+      .eq('user_id', userId)
+      .in('id', neighbourIds)
+    if (error) throw new Error(`reorderItem fetch neighbours failed: ${error.message}`)
+    for (const row of data ?? []) {
+      const r = row as { id: string; sort_order: number | null }
+      if (r.id === beforeId) beforeOrder = r.sort_order
+      if (r.id === afterId) afterOrder = r.sort_order
+    }
+  }
+
+  // If a neighbour has no sort_order yet, we need the full ordered list to
+  // assign virtual positions first.
+  const needsBootstrap = neighbourIds.length > 0 &&
+    (beforeId && beforeOrder === null) || (afterId && afterOrder === null)
+
+  if (needsBootstrap || neighbourIds.length === 0) {
+    // Load all open items in current display order to assign initial sort_orders.
+    const { data: allItems, error: allErr } = await supabase
+      .from('items')
+      .select('id, sort_order, priority, proposed_action, due_at, first_seen_at')
+      .eq('user_id', userId)
+      .in('status', ['open', 'in_progress'])
+      .order('sort_order', { ascending: true, nullsFirst: false })
+      .order('priority', { ascending: true, nullsFirst: false })
+      .order('due_at', { ascending: true, nullsFirst: false })
+      .order('first_seen_at', { ascending: false })
+    if (allErr) throw new Error(`reorderItem load all failed: ${allErr.message}`)
+
+    const rows = (allItems ?? []) as { id: string; sort_order: number | null }[]
+    // Assign sequential sort_orders (step 1000) to any that don't have one yet.
+    const updates: { id: string; sort_order: number }[] = []
+    let cursor = 1000
+    for (const row of rows) {
+      if (row.sort_order === null) {
+        updates.push({ id: row.id, sort_order: cursor })
+        row.sort_order = cursor
+      }
+      cursor += 1000
+    }
+    if (updates.length > 0) {
+      for (const upd of updates) {
+        await supabase.from('items').update({ sort_order: upd.sort_order })
+          .eq('id', upd.id).eq('user_id', userId)
+      }
+    }
+    // Re-read neighbours' sort_orders from the now-populated rows.
+    for (const row of rows) {
+      if (row.id === beforeId) beforeOrder = row.sort_order
+      if (row.id === afterId) afterOrder = row.sort_order
+    }
+  }
+
+  // Compute new sort_order via midpoint.
+  let newOrder: number
+  if (beforeOrder === null && afterOrder === null) {
+    newOrder = 1000
+  } else if (beforeOrder === null) {
+    newOrder = (afterOrder as number) - 500
+  } else if (afterOrder === null) {
+    newOrder = (beforeOrder as number) + 500
+  } else {
+    newOrder = (beforeOrder + afterOrder) / 2
+  }
+
+  // If gap too small, renumber everything with step=1000 then recompute.
+  const MIN_GAP = 0.01
+  const gapTooSmall =
+    beforeOrder !== null && afterOrder !== null &&
+    Math.abs((afterOrder - beforeOrder)) < MIN_GAP * 2
+
+  if (gapTooSmall) {
+    const { data: allItems2 } = await supabase
+      .from('items')
+      .select('id, sort_order')
+      .eq('user_id', userId)
+      .in('status', ['open', 'in_progress'])
+      .order('sort_order', { ascending: true, nullsFirst: false })
+    const rows2 = (allItems2 ?? []) as { id: string; sort_order: number | null }[]
+    let c = 1000
+    for (const row of rows2) {
+      await supabase.from('items').update({ sort_order: c })
+        .eq('id', row.id).eq('user_id', userId)
+      if (row.id === beforeId) beforeOrder = c
+      if (row.id === afterId) afterOrder = c + 1000
+      c += 1000
+    }
+    newOrder = beforeOrder !== null && afterOrder !== null
+      ? (beforeOrder + afterOrder) / 2
+      : beforeOrder !== null ? (beforeOrder as number) + 500
+      : afterOrder !== null ? (afterOrder as number) - 500
+      : 1000
+  }
+
+  const { error } = await supabase
+    .from('items')
+    .update({ sort_order: newOrder })
+    .eq('id', itemId)
+    .eq('user_id', userId)
+  if (error) throw new Error(`reorderItem update failed: ${error.message}`)
+  revalidatePath('/today')
+}
+
+/**
  * Update a task's title and/or description. Used by the inline edit UI in
  * the detail panel.
  */
@@ -461,7 +588,7 @@ export async function updateItemDescription(
 ) {
   const update: Record<string, string> = {}
   if (args.title !== undefined) update.title = args.title.trim()
-  if (args.description !== undefined) update.description = args.description.trim()
+  if (args.description !== undefined) update.parent_context = args.description.trim()
   if (Object.keys(update).length === 0) return
   const { error } = await supabase
     .from('items')
@@ -510,4 +637,23 @@ export async function addManualTask(args: {
   if (error) throw new Error(`addManualTask failed: ${error.message}`)
   revalidatePath('/today')
   return data
+}
+
+/**
+ * Reject the agent-drafted reply attached to an item. Marks the item
+ * completed with reply_outcome='rejected' so the user can distinguish
+ * "I reviewed and decided not to send" from "I approved and sent".
+ */
+export async function rejectDraft(itemId: string) {
+  const { error } = await supabase
+    .from('items')
+    .update({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      reply_outcome: 'rejected',
+    })
+    .eq('id', itemId)
+    .eq('user_id', await resolveUserId())
+  if (error) throw new Error(`rejectDraft failed: ${error.message}`)
+  revalidatePath('/today')
 }

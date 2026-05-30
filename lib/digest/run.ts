@@ -9,7 +9,7 @@
 
 import { supabase } from '../supabase'
 import { extractGranolaActionItems } from '../extract/granola'
-import { extractGmailActionItems } from '../extract/gmail'
+import { extractGmailActionItems, extractGmailSentCommitments } from '../extract/gmail'
 import { extractCalendarPrepItems } from '../extract/calendar'
 import { extractLinearActionItems } from '../extract/linear'
 import { diffSingleSource } from '../diff'
@@ -94,7 +94,11 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   await tryRun('gmail', async () => {
     const conn = await getActiveConnection('gmail')
     if (!conn?.nango_connection_id) return null
-    return extractGmailActionItems({ userEmail, days })
+    const [inbox, sent] = await Promise.all([
+      extractGmailActionItems({ userEmail, days }),
+      extractGmailSentCommitments({ userEmail, days }),
+    ])
+    return [...inbox, ...sent]
   })
 
   await tryRun('calendar', async () => {
@@ -174,6 +178,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
         .insert({
           user_id: userId,
           title: fresh.title,
+          subtitle: fresh.subtitle ?? null,
           task_type: fresh.task_type,
           tag: fresh.tag ?? null,
           parent_context: fresh.parent_context,

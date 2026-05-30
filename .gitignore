@@ -37,3 +37,8 @@ next-env.d.ts
 .vscode/
 .idea/
 .vercel
+
+# Claude Code / agent runtime
+.claude/settings.local.json
+.taskbash-*.md
+

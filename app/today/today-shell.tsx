@@ -68,7 +68,7 @@ export function TodayShell({
         userEmail={userEmail}
         userInitial={digest.user_initials.charAt(0)}
       />
-      <main className="flex-1 min-w-0 px-8 pt-4 pb-16">
+      <main className="flex-1 min-w-0 pl-8 pr-0 pt-4 pb-16">
         <TodayView
           digest={digest}
           userEmail={userEmail}

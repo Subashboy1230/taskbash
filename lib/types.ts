@@ -35,6 +35,7 @@ export interface SourceRef {
   google_calendar_event_start?: string
   linear_issue_id?: string
   linear_issue_identifier?: string
+  sent_by_user?: boolean
 }
 
 // The synthesized brief attached to each task — the differentiator.
@@ -76,6 +77,7 @@ export interface Item {
   id: string
   user_id: string
   title: string
+  subtitle?: string | null
   task_type: TaskType
   tag: Tag
   parent_context: string | null
@@ -101,6 +103,9 @@ export interface Item {
   proposed_action: ProposedAction | null
   // Raw underlying content the agent drew on. Rendered in the Context Trail.
   source_excerpt: string | null
+  // Reply lifecycle outcome — set when the item is completed via approval
+  // queue or rejection. null = completed via "Mark as Done" or not yet done.
+  reply_outcome?: 'approved' | 'rejected' | 'completed' | null
   created_at: string
   updated_at: string
 }
@@ -111,6 +116,8 @@ export interface ExtractedItem {
   source_ref: SourceRef
   parent_context: string  // e.g. meeting title, email thread subject
   title: string           // the action item / task text
+  subtitle?: string | null
+  entities?: Array<{ kind: string; label: string; ref?: string }>
   tag?: Tag
   task_type: TaskType
   urgent?: boolean

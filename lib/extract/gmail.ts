@@ -28,7 +28,7 @@ import { extractJsonObject } from './parse'
 
 // Bump when you change SYSTEM_PROMPT or buildExtractionPrompt — used by
 // the observability page to bucket slop-rate per prompt revision.
-const PROMPT_VERSION = 1
+const PROMPT_VERSION = 2
 
 const GMAIL_API = '/gmail/v1/users/me'
 
@@ -40,6 +40,21 @@ const MAX_MESSAGES_PER_THREAD = 6
 const MAX_CHARS_PER_MESSAGE = 1500
 
 // ─── Gmail API types (only the fields we use) ────────────────────────
+
+interface GmailHistoryResponse {
+  history?: Array<{
+    id: string
+    messages?: Array<{ id: string; threadId: string }>
+    messagesAdded?: Array<{ message: { id: string; threadId: string } }>
+  }>
+  historyId?: string
+  nextPageToken?: string
+}
+
+interface GmailProfileResponse {
+  historyId?: string
+  emailAddress?: string
+}
 
 interface GmailThreadListItem {
   id: string
@@ -336,7 +351,11 @@ Schema:
 {
   "items": [
     {
-      "title": "string. The action item, in imperative form ('Reply to X about Y', 'Send the Z report')",
+      "title": "string. Imperative form, max 8 words, MUST include the specific topic. Example: 'Reply on EverTutor pilot next steps' NOT 'Reply to email' or 'Reply to Megan'.",
+      "subtitle": "string. 1-2 sentences, max 30 words. Explain who triggered this, what they are asking, and what context the user needs to act. Reference specific names, topics, dollar amounts. No em-dashes.",
+      "entities": [
+        { "kind": "person" | "project" | "thread", "label": "Display Name", "ref": "optional email or id" }
+      ],
       "tag": "action" | "reply" | "commit" | "fyi",
       "due_at": "ISO 8601 date or datetime, or null",
       "urgent": true | false,
@@ -422,6 +441,8 @@ Return JSON with action items owned by ${a.userEmail}. Resolve any relative dead
 
 type ParsedItem = {
   title: string
+  subtitle?: string
+  entities?: Array<{ kind: string; label: string; ref?: string }>
   tag?: 'action' | 'reply' | 'commit' | 'fyi'
   due_at?: string | null
   urgent?: boolean
@@ -457,6 +478,8 @@ function parseExtractionResponse(
       source_ref,
       parent_context: subject,
       title: raw.title,
+      subtitle: raw.subtitle ?? null,
+      entities: raw.entities ?? [],
       task_type: 'review',
       tag,
       due_at: normalizeDueAt(raw.due_at),
@@ -481,6 +504,141 @@ function normalizeDueAt(value: unknown): string | null {
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return null
   return d.toISOString()
+}
+
+// ─── Sent-folder commitment extraction ──────────────────────────────
+
+const COMMITMENT_SYSTEM_PROMPT = `You extract commitments the user made in their own sent emails.
+
+Your output is STRICT JSON. No prose, no markdown fences, no explanation.
+
+Schema:
+{
+  "items": [
+    {
+      "title": "string. Imperative form, max 8 words. The commitment the user made. Example: 'Send the redlined contract back', 'Loop in Sarah on the deal'. NOT 'Follow up on email'.",
+      "subtitle": "string. 1-2 sentences. What the user promised, to whom, and by when if stated.",
+      "tag": "commit",
+      "due_at": "ISO 8601 date or null",
+      "urgent": true | false,
+      "sub_items": []
+    }
+  ]
+}
+
+Rules:
+- Only extract EXPLICIT promises the user made: "I'll send X", "I'll loop in Y", "I'll get back to you on Z by Friday".
+- Do not extract vague intentions or pleasantries ("I'll think about it", "sounds good").
+- If the sent message has no explicit commitment, return { "items": [] }.
+- tag is always "commit" for sent-folder items.
+- NEVER use em-dashes (—). Use hyphens, colons, or rewrite.`
+
+export async function extractGmailSentCommitments(
+  args: ExtractActionItemsArgs
+): Promise<ExtractedItem[]> {
+  const conn = await getActiveConnection('gmail')
+  if (!conn || !conn.nango_connection_id) return []
+  const providerConfigKey = NANGO_PROVIDER_KEY.gmail!
+  const connectionId = conn.nango_connection_id
+
+  const query = `in:sent newer_than:${args.days}d`
+  const list = await nangoProxy<GmailThreadListResponse>({
+    providerConfigKey,
+    connectionId,
+    method: 'GET',
+    endpoint: `${GMAIL_API}/threads`,
+    params: { q: query, maxResults: 20 },
+  })
+
+  const items: ExtractedItem[] = []
+  for (const ref of list.threads ?? []) {
+    const thread = await fetchThread(providerConfigKey, connectionId, ref.id)
+    if (!thread) continue
+    const threadItems = await extractCommitmentsFromThread(thread, args.userEmail)
+    items.push(...threadItems)
+  }
+  return items
+}
+
+async function extractCommitmentsFromThread(
+  thread: GmailThreadDetail,
+  userEmail: string
+): Promise<ExtractedItem[]> {
+  const messages = thread.messages ?? []
+  if (messages.length === 0) return []
+
+  // Only process threads where the LATEST message is from the user (they sent it)
+  const latestMessage = messages[messages.length - 1]
+  const latestFrom = headerValue(latestMessage, 'From') || ''
+  if (!latestFrom.toLowerCase().includes(userEmail.toLowerCase())) return []
+
+  const subject = headerValue(messages[0], 'Subject') || '(no subject)'
+  const recent = messages.slice(-MAX_MESSAGES_PER_THREAD)
+  const transcript = recent
+    .map((m, i) => {
+      const from = headerValue(m, 'From') || 'unknown'
+      const date = headerValue(m, 'Date') || ''
+      const body = extractPlainText(m.payload).slice(0, MAX_CHARS_PER_MESSAGE)
+      return `--- Message ${i + 1} ---\nFrom: ${from}\nDate: ${date}\n${body || m.snippet || ''}`
+    })
+    .join('\n\n')
+
+  const prompt = `Email thread: ${subject}
+User email: ${userEmail}
+Thread (oldest to newest):
+${transcript}
+
+Extract any explicit commitments the user made in their most recent sent message. Return JSON.`
+
+  const response = await tracedMessage(
+    anthropic,
+    {
+      prompt_id: 'extract.gmail.sent',
+      prompt_version: 1,
+      user_id: process.env.APP_USER_ID ?? null,
+      source_ref: { gmail_thread_id: thread.id },
+      input_content: { subject, userEmail, transcript },
+    },
+    {
+      model: MODELS.classifier,
+      max_tokens: 512,
+      system: COMMITMENT_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
+    }
+  )
+
+  const text = response.content
+    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+    .map(b => b.text)
+    .join('\n')
+
+  let parsed: { items?: ParsedItem[] }
+  try {
+    parsed = JSON.parse(extractJsonObject(text))
+  } catch {
+    return []
+  }
+
+  const latestMessageId = latestMessage?.id
+  return (parsed.items ?? [])
+    .filter(raw => raw.title)
+    .map(raw => ({
+      source: 'gmail' as const,
+      source_ref: {
+        gmail_thread_id: thread.id,
+        gmail_message_id: latestMessageId,
+        sent_by_user: true,
+      },
+      parent_context: subject,
+      title: raw.title,
+      subtitle: raw.subtitle ?? null,
+      task_type: 'review' as const,
+      tag: 'commit' as const,
+      due_at: normalizeDueAt(raw.due_at),
+      urgent: raw.urgent === true,
+      sub_items: [],
+      _llm_call_id: response._llmCallId,
+    }))
 }
 
 // ─── Eval replay ────────────────────────────────────────────────────
@@ -528,4 +686,105 @@ export async function replayGmailExtraction(
     .map(b => b.text)
     .join('\n')
   return { responseText, model: response.model }
+}
+
+/**
+ * Fetch Gmail's current historyId (the cursor for incremental sync).
+ * Called on first poll to seed gmail_sync_state.
+ */
+export async function getGmailHistoryId(
+  providerConfigKey: string,
+  connectionId: string
+): Promise<string | null> {
+  try {
+    const profile = await nangoProxy<GmailProfileResponse>({
+      providerConfigKey,
+      connectionId,
+      method: 'GET',
+      endpoint: `${GMAIL_API}/profile`,
+    })
+    return profile.historyId ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Incremental Gmail extraction: only fetch threads that have new messages
+ * since `sinceHistoryId`. Returns extracted items + the new historyId cursor.
+ * Falls back to returning empty + new cursor if historyId is null or history is unavailable.
+ */
+export async function extractGmailActionItemsIncremental(args: {
+  userEmail: string
+  sinceHistoryId: string | null
+}): Promise<{ items: ExtractedItem[]; newHistoryId: string | null }> {
+  const conn = await getActiveConnection('gmail')
+  if (!conn || !conn.nango_connection_id) {
+    return { items: [], newHistoryId: null }
+  }
+  const providerConfigKey = NANGO_PROVIDER_KEY.gmail!
+  const connectionId = conn.nango_connection_id
+
+  // Get current historyId first (we'll return this as the new cursor)
+  const profile = await nangoProxy<GmailProfileResponse>({
+    providerConfigKey,
+    connectionId,
+    method: 'GET',
+    endpoint: `${GMAIL_API}/profile`,
+  }).catch(() => null)
+  const newHistoryId = profile?.historyId ?? null
+
+  if (!args.sinceHistoryId) {
+    // No cursor yet - seed historyId and return empty (next poll will be incremental)
+    return { items: [], newHistoryId }
+  }
+
+  try {
+    const history = await nangoProxy<GmailHistoryResponse>({
+      providerConfigKey,
+      connectionId,
+      method: 'GET',
+      endpoint: `${GMAIL_API}/history`,
+      params: {
+        startHistoryId: args.sinceHistoryId,
+        historyTypes: 'messageAdded',
+        labelId: 'INBOX',
+        maxResults: '50',
+      },
+    })
+
+    if (!history.history || history.history.length === 0) {
+      return { items: [], newHistoryId }
+    }
+
+    // Collect unique thread IDs from new messages
+    const seenThreadIds = new Set<string>()
+    for (const entry of history.history) {
+      for (const added of entry.messagesAdded ?? []) {
+        seenThreadIds.add(added.message.threadId)
+      }
+      for (const msg of entry.messages ?? []) {
+        seenThreadIds.add(msg.threadId)
+      }
+    }
+
+    if (seenThreadIds.size === 0) {
+      return { items: [], newHistoryId }
+    }
+
+    // Extract from only the changed threads (capped at 10 to bound cost)
+    const threadIds = Array.from(seenThreadIds).slice(0, 10)
+    const items: ExtractedItem[] = []
+    for (const threadId of threadIds) {
+      const thread = await fetchThread(providerConfigKey, connectionId, threadId)
+      if (!thread) continue
+      const threadItems = await extractItemsFromThread(thread, args.userEmail)
+      items.push(...threadItems)
+    }
+
+    return { items, newHistoryId }
+  } catch (err) {
+    console.error('[gmail] incremental extraction failed:', err)
+    return { items: [], newHistoryId }
+  }
 }

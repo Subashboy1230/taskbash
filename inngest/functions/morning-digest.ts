@@ -298,6 +298,7 @@ export const morningDigest = inngest.createFunction(
             .insert({
               user_id: USER_ID,
               title: fresh.title,
+              subtitle: fresh.subtitle ?? null,
               task_type: fresh.task_type,
               tag: fresh.tag ?? null,
               parent_context: fresh.parent_context,

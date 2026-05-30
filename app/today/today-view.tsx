@@ -53,6 +53,8 @@ import { Card } from '@/app/_components/ui/card'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { Priority, ProposedAction, Source, Tag, TaskBrief, UserFunction } from '@/lib/types'
 import { functionColor } from '@/lib/function-color'
+import { renderSubtitleWithEntities } from '@/app/_components/entity-chip'
+import type { Entity } from '@/app/_components/entity-chip'
 import { setItemFunctions } from '@/app/settings/functions/actions'
 import {
   addSubtask,
@@ -61,12 +63,14 @@ import {
   dismissItem,
   executeProposedAction,
   markItemSlop,
+  rejectDraft,
   requestRefresh,
   setItemPriority,
   snoozeItem,
   toggleSubtaskComplete,
   uncompleteItem,
   updateItemDescription,
+  reorderItem,
 } from './actions'
 
 // ─── Top-level layout ───────────────────────────────────────────────────
@@ -116,6 +120,11 @@ export function TodayView({
     externalSelectedItemId
       ? digest.open_items.find(i => i.id === externalSelectedItemId) ?? null
       : null
+  // When the shell clears the selection (e.g. Sheet close button), mirror
+  // that into internal state so the width constraint is also removed.
+  useEffect(() => {
+    if (externalSelectedItemId === null) setSelectedItemInternal(null)
+  }, [externalSelectedItemId])
   const selectedItem = externalSelectedItem ?? selectedItemInternal
   // Wrapped setter that BOTH updates local state AND notifies the
   // parent shell. The shell needs the full item object to render its
@@ -187,6 +196,31 @@ export function TodayView({
   // Items the user just dismissed/completed — hide them locally before revalidate lands
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
 
+  function handleReorder(draggedId: string, beforeId: string | null, afterId: string | null) {
+    // Optimistic: move the row immediately in local state
+    setOrderedOpen(prev => {
+      const idx = prev.findIndex(i => i.id === draggedId)
+      if (idx === -1) return prev
+      const item = prev[idx]
+      const without = prev.filter(i => i.id !== draggedId)
+      const insertAfterIdx = afterId ? without.findIndex(i => i.id === afterId) : -1
+      const next = [...without]
+      if (afterId && insertAfterIdx !== -1) {
+        next.splice(insertAfterIdx + 1, 0, item)
+      } else if (beforeId) {
+        const insertBeforeIdx = without.findIndex(i => i.id === beforeId)
+        next.splice(Math.max(0, insertBeforeIdx), 0, item)
+      } else {
+        next.unshift(item)
+      }
+      return next
+    })
+    reorderItem(draggedId, beforeId, afterId).catch(() => {
+      // revert on error — reset from server data
+      setOrderedOpen(allVisible.filter(i => !isPrep(i)))
+    })
+  }
+
   function handleComplete(id: string) {
     setHiddenIds(s => new Set(s).add(id))
     completeItem(id).catch(() => {
@@ -244,10 +278,22 @@ export function TodayView({
   // float to the top alongside user-set ones (DB sort can't see auto
   // defaults). Stable within priority bucket: preserves the DB-side
   // proposed_action / due_at / first_seen order.
-  const sortByPriority = (a: MockItem, b: MockItem) =>
-    PRIORITY_RANK[effectivePriority(a)] - PRIORITY_RANK[effectivePriority(b)]
-  const visibleOpen = allVisible.filter(i => !isPrep(i)).sort(sortByPriority)
-  const visiblePrep = allVisible.filter(isPrep).sort(sortByPriority)
+  // DB already orders by sort_order → priority → due_at → first_seen_at.
+  // Client keeps a mutable ordered list so optimistic drag reorders are instant.
+  const [orderedOpen, setOrderedOpen] = useState<MockItem[]>(() =>
+    allVisible.filter(i => !isPrep(i))
+  )
+  const [orderedPrep, setOrderedPrep] = useState<MockItem[]>(() =>
+    allVisible.filter(isPrep)
+  )
+  // Sync when server data changes (new revalidation, refresh, etc.)
+  useEffect(() => {
+    setOrderedOpen(allVisible.filter(i => !isPrep(i)))
+    setOrderedPrep(allVisible.filter(isPrep))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [digest.open_items])
+  const visibleOpen = orderedOpen
+  const visiblePrep = orderedPrep
 
   // Which sources actually appear in this digest — drives the chip row so
   // we don't show "Linear" as a filter option when there's no Linear data.
@@ -319,9 +365,7 @@ export function TodayView({
             selectedItem
               ? 'max-w-[680px]'
               : hideHeader
-              ? mainExpanded
-                ? 'w-full max-w-none'
-                : 'max-w-[820px] w-full'
+              ? 'w-full max-w-none'
               : 'max-w-[920px] flex-1'
           )}
         >
@@ -469,18 +513,30 @@ export function TodayView({
                         </h2>
                       )}
                       <ul className="list-none p-0 m-0 divide-y divide-line/70">
-                        {group.items.map(item => (
-                          <TaskRow
-                            key={item.id}
-                            item={item}
-                            isSelected={selectedItem?.id === item.id}
-                            onSelect={() => setSelectedItem(item)}
-                            onComplete={() => handleComplete(item.id)}
-                            onDismiss={() => handleDismiss(item.id)}
-                            onSnooze={hours => handleSnooze(item.id, hours)}
-                            functionsById={functionsById}
-                          />
-                        ))}
+                        {group.items.map((item, idx) => {
+                          const allItems = group.items
+                          return (
+                            <TaskRow
+                              key={item.id}
+                              item={item}
+                              isSelected={selectedItem?.id === item.id}
+                              onSelect={() => setSelectedItem(item)}
+                              onComplete={() => handleComplete(item.id)}
+                              onDismiss={() => handleDismiss(item.id)}
+                              onSnooze={hours => handleSnooze(item.id, hours)}
+                              functionsById={functionsById}
+                              onReorder={(draggedId, position) => {
+                                if (position === 'before') {
+                                  const beforeId = idx > 0 ? allItems[idx - 1].id : null
+                                  handleReorder(draggedId, beforeId, item.id)
+                                } else {
+                                  const afterId = idx < allItems.length - 1 ? allItems[idx + 1].id : null
+                                  handleReorder(draggedId, item.id, afterId)
+                                }
+                              }}
+                            />
+                          )
+                        })}
                       </ul>
                     </section>
                   ))}
@@ -801,18 +857,19 @@ function TaskRow({
   onDismiss,
   onSnooze,
   functionsById,
+  onReorder,
 }: {
   item: MockItem
   isSelected: boolean
   onSelect: () => void
   onComplete: () => void
   onDismiss: () => void
-  // Hours-aware so the SnoozeMenu can request different durations.
   onSnooze: (hours: number) => void
   functionsById?: Map<string, UserFunction>
+  onReorder?: (draggedId: string, position: 'before' | 'after') => void
 }) {
-  // Visual strikethrough animates before the row gets removed by the parent
   const [completed, setCompleted] = useState(false)
+  const [dragOver, setDragOver] = useState<'before' | 'after' | null>(null)
   // Optimistic local state for subtask completion. We seed from server data
   // and update immediately on click; the server call runs in the background
   // and reverts on error.
@@ -839,21 +896,49 @@ function TaskRow({
   }
   const handleDismissClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    setCompleted(true) // fades the row before it's removed
+    setCompleted(true)
     setTimeout(() => onDismiss(), 250)
   }
   const onSnoozeWithHours = (hours: number) => {
-    setCompleted(true) // fade out before removal
+    setCompleted(true)
     setTimeout(() => onSnooze(hours), 250)
+  }
+
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData('text/plain', item.id)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!onReorder) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setDragOver(e.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
+  }
+  const handleDragLeave = () => setDragOver(null)
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    const draggedId = e.dataTransfer.getData('text/plain')
+    if (draggedId && draggedId !== item.id && dragOver && onReorder) {
+      onReorder(draggedId, dragOver)
+    }
+    setDragOver(null)
   }
 
   return (
     <li
+      draggable
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       onClick={onSelect}
       className={cn(
         'group relative cursor-pointer pl-12 pr-2 py-4 transition-colors',
         isSelected ? 'bg-success-bg/30' : 'hover:bg-surface-muted/50',
-        completed && 'opacity-50'
+        completed && 'opacity-50',
+        dragOver === 'before' && 'border-t-2 border-t-accent',
+        dragOver === 'after' && 'border-b-2 border-b-accent',
       )}
     >
       {/* Hover-triage micro-buttons on the LEFT — speed approval. Hidden
@@ -921,10 +1006,9 @@ function TaskRow({
           </div>
 
           <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
-            {item.brief?.why ||
-              item.description ||
-              item.parent_context ||
-              `From ${item.source}`}
+            {item.subtitle && item.entities && item.entities.length > 0
+              ? renderSubtitleWithEntities(item.subtitle, item.entities as Entity[])
+              : item.subtitle || item.brief?.why || item.description || item.parent_context || `From ${item.source}`}
           </p>
 
           {subTotal > 0 && (
@@ -1481,6 +1565,21 @@ const SOURCE_LABEL: Record<Source, string> = {
 // ─── Completed row ──────────────────────────────────────────────────────
 
 function CompletedRow({ item }: { item: MockItem }) {
+  const outcome = item.reply_outcome
+  const pill =
+    outcome === 'approved' ? (
+      <span className="shrink-0 rounded-full bg-success-bg px-2.5 py-0.5 text-[12px] font-medium text-success-fg">
+        Approved
+      </span>
+    ) : outcome === 'rejected' ? (
+      <span className="shrink-0 rounded-full bg-danger-bg px-2.5 py-0.5 text-[12px] font-medium text-danger-fg">
+        Rejected
+      </span>
+    ) : (
+      <span className="shrink-0 rounded-full bg-success-bg px-2.5 py-0.5 text-[12px] font-medium text-success-fg">
+        Done
+      </span>
+    )
   return (
     <li className="flex items-start justify-between gap-4 border-b border-line/50 py-4 px-2">
       <div className="min-w-0 flex-1">
@@ -1488,15 +1587,10 @@ function CompletedRow({ item }: { item: MockItem }) {
           {item.title}
         </p>
         <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
-          {item.brief?.why ||
-            item.description ||
-            item.parent_context ||
-            `From ${item.source}`}
+          {item.subtitle || item.brief?.why || item.description || item.parent_context || `From ${item.source}`}
         </p>
       </div>
-      <span className="shrink-0 rounded-full bg-success-bg px-2.5 py-0.5 text-[12px] font-medium text-success-fg">
-        Approved
-      </span>
+      {pill}
     </li>
   )
 }
@@ -1759,16 +1853,29 @@ export function DetailPanel({
       <div className="mt-6 flex gap-2">
         <button
           onClick={onClose}
-          className="flex-1 rounded-md border border-line bg-surface px-4 py-2 text-[14px] font-medium text-ink hover:bg-surface-muted"
+          className="flex-1 rounded-md border border-line bg-surface px-4 py-2 text-[13px] font-medium text-ink hover:bg-surface-muted"
         >
           Close
         </button>
+        {item.proposed_action && item.status !== 'completed' && (
+          <button
+            onClick={() => {
+              rejectDraft(item.id).then(() => {
+                onComplete()
+                onClose()
+              })
+            }}
+            className="flex-1 rounded-md border border-line bg-surface px-4 py-2 text-[13px] font-medium text-ink-muted hover:bg-surface-muted"
+          >
+            Reject Draft
+          </button>
+        )}
         <button
           onClick={() => {
             onComplete()
             onClose()
           }}
-          className="flex-1 rounded-md bg-success-fg px-4 py-2 text-[14px] font-medium text-canvas hover:opacity-90"
+          className="flex-1 rounded-md bg-success-fg px-4 py-2 text-[13px] font-medium text-canvas hover:opacity-90"
         >
           <Check size={14} className="-mt-0.5 mr-1 inline" />
           Mark as Done

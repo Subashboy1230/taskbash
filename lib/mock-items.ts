@@ -17,6 +17,8 @@ export interface MockTranscriptBullet {
 export interface MockItem {
   id: string
   title: string
+  subtitle?: string | null
+  entities?: Array<{ kind: string; label: string; ref?: string }>
   task_type: TaskType
   tag: Tag
   parent_context: string | null
@@ -51,7 +53,11 @@ export interface MockItem {
   // excerpt) for the Context Trail tab.
   source_excerpt?: string | null
 
+  // Reply lifecycle outcome set on completion.
+  reply_outcome?: 'approved' | 'rejected' | 'completed' | null
+
   sub_items?: MockSubItem[]
+  sort_order?: number | null
 }
 
 export interface MockDigestSummary {
