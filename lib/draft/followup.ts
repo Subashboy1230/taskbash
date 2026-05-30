@@ -62,18 +62,18 @@ You will be given:
 
 Decide ONE of two outcomes:
 
-OUTCOME A — draft a follow-up. Pick this when:
+OUTCOME A. Draft a follow-up. Pick this when:
 - The action item is clearly about delivering something to / replying to /
   coordinating with a SPECIFIC named attendee.
 - You can confidently pick which attendee is the recipient.
-- The draft has substance to write — even a 2-sentence acknowledgment
+- The draft has substance to write. Even a 2-sentence acknowledgment
   counts ("sending the doc now / will follow up tomorrow").
 
-OUTCOME B — no draft. Pick this when:
+OUTCOME B. No draft. Pick this when:
 - The task is internal-only (talk to the CEO who isn't in the attendee list,
   research something, build something, decide internally).
 - The recipient is ambiguous or it's a many-to-many follow-up.
-- The action is "schedule a meeting" — that's a calendar action, not an email.
+- The action is "schedule a meeting". That's a calendar action, not an email.
 - The action has no concrete content to write yet (the user needs to do work first).
 
 Bias toward B when in doubt. A stale or wrong draft is worse than no draft.
@@ -86,11 +86,14 @@ Output STRICT JSON:
   "recipient_email": "string or null",   // only when A
   "recipient_name":  "string or null",   // only when A
   "subject":         "string or null",   // only when A
-  "body":            "string or null"    // only when A — match the user's voice
+  "body":            "string or null"    // only when A: match the user's voice
 }
 
-When A, body should be the actual email (greeting + 1–4 short paragraphs +
-sign-off), no markdown, no signature beyond the sign-off.`
+When A, body should be the actual email (greeting + 1 to 4 short paragraphs +
+sign-off), no markdown, no signature beyond the sign-off.
+
+STYLE RULE (absolute): NEVER use em-dashes (—) anywhere in the output. Use a
+regular hyphen with spaces ( - ), a comma, a period, or rewrite the sentence.`
 
   const attendeesList = candidates
     .map(a => `${a.name || 'unknown'} <${a.email}>`)

@@ -20,7 +20,7 @@ export default async function ActivityPage() {
           Activity
         </h1>
         <p className="m-0 mb-6 text-[14px] text-ink-faint">
-          A chronological feed of everything that happened today — extractions,
+          A chronological feed of everything that happened today: extractions,
           completions, slop signals, function corrections.
         </p>
         <div className="rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">

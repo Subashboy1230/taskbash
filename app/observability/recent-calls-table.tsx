@@ -81,7 +81,7 @@ export function RecentCallsTable({
                   ${(c.cost_usd ?? 0).toFixed(4)}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-ink-muted">
-                  {c.latency_ms ?? '—'}
+                  {c.latency_ms ?? '-'}
                 </td>
                 <td
                   className={cn(
@@ -93,7 +93,7 @@ export function RecentCallsTable({
                       : 'text-ink-muted'
                   )}
                 >
-                  {c.error ? 'error' : c.finish_reason ?? '—'}
+                  {c.error ? 'error' : c.finish_reason ?? '-'}
                 </td>
                 <td className="px-3 py-2 text-right">
                   <button
@@ -235,10 +235,10 @@ function PromoteModal({
               onChange={e => setBehavior(e.target.value as ExpectedBehavior)}
               className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-[13px] text-ink focus:border-success-fg focus:outline-none"
             >
-              <option value="exact">Exact match — output equals expected (after trim)</option>
-              <option value="contains">Contains — expected appears as substring</option>
-              <option value="empty">Empty — prompt should skip this input</option>
-              <option value="manual_review">Manual — score by hand later</option>
+              <option value="exact">Exact match: output equals expected (after trim)</option>
+              <option value="contains">Contains: expected appears as substring</option>
+              <option value="empty">Empty: prompt should skip this input</option>
+              <option value="manual_review">Manual: score by hand later</option>
             </select>
           </div>
 

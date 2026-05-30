@@ -42,7 +42,7 @@ export default async function ObservabilityPage() {
           </h1>
           <p className="m-0 text-[14px] text-ink-faint">
             Trace of every Claude call ToDoo makes. Slop rate per prompt
-            version is the headline metric — keep it dropping.
+            version is the headline metric. Keep it dropping.
           </p>
         </header>
 

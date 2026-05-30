@@ -37,7 +37,7 @@ export default async function HandledPage() {
             What&apos;s been handled
           </h1>
           <p className="m-0 text-[14px] text-ink-faint">
-            Tasks completed for you — {total} total, newest first.
+            Tasks completed for you. {total} total, newest first.
           </p>
         </header>
 

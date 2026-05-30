@@ -239,20 +239,26 @@ async function generatePrepBrief(
 
 const PREP_BRIEF_PROMPT = `You generate a meeting prep brief in STRICT JSON for an upcoming calendar event.
 
-Output JSON only — no prose, no markdown fences:
+Output JSON only. No prose, no markdown fences:
 {
-  "why": "string — one sentence on why this meeting matters / what it's for",
-  "know": ["bullet 1", "bullet 2", ...]  — 2 to 4 short bullets the user should know walking in,
-  "done": "string — one sentence on what work or decisions have happened so far that are relevant",
-  "next": "string — one sentence on what the user should plan to say, propose, or decide"
+  "why": "string. One sentence on why this meeting matters / what it's for",
+  "know": ["bullet 1", "bullet 2", ...],
+  "done": "string. One sentence on what work or decisions have happened so far that are relevant",
+  "next": "string. One sentence on what the user should plan to say, propose, or decide"
 }
+
+"know" is 2 to 4 short bullets the user should know walking in.
 
 Rules:
 - Be specific to THIS meeting based on its title, description, and attendees. Don't write generic prep advice.
 - If the description is empty or sparse, keep the brief honest and short ("Description is sparse; appears to be a sync with [attendee].").
-- Skip pleasantries. Each field should be a useful, scannable fact — not filler.
-- "know" bullets are short, discrete facts — not paragraphs.
-- For obvious recurring / standard meetings (weekly 1:1, all-hands), keep it short.`
+- Skip pleasantries. Each field should be a useful, scannable fact, not filler.
+- "know" bullets are short, discrete facts, not paragraphs.
+- For obvious recurring / standard meetings (weekly 1:1, all-hands), keep it short.
+
+STYLE RULE (absolute): NEVER use em-dashes (—) anywhere in the output. Use a
+regular hyphen with spaces ( - ), a colon, a comma, a period, or rewrite the
+sentence. Every field must be em-dash free.`
 
 function stripHtml(s: string): string {
   return s

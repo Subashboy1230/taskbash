@@ -19,7 +19,7 @@ export default async function ProfilePage() {
           Profile
         </h1>
         <p className="m-0 mb-6 text-[14px] text-ink-faint">
-          Signed in as {user?.email ?? '—'}.
+          Signed in as {user?.email ?? '-'}.
         </p>
         <div className="rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
           <p className="m-0 text-[14px] text-ink-muted">

@@ -155,7 +155,7 @@ export function AppSidebar({
                 {userName ?? formatNameFromEmail(userEmail) ?? 'You'}
               </p>
               <p className="m-0 truncate text-[10px] text-ink-faint">
-                {userEmail ?? '—'}
+                {userEmail ?? '-'}
               </p>
             </div>
           )}

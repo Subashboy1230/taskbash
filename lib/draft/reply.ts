@@ -40,7 +40,7 @@ export async function draftReply(args: DraftArgs): Promise<ProposedAction> {
 
   const system = `You draft email replies on behalf of a user.
 You will be given the user's communication style profile and the email
-thread that needs a reply. Produce ONE reply body — no subject line, no
+thread that needs a reply. Produce ONE reply body. No subject line, no
 salutation header (just "Hi <name>,"), no signature except a sign-off line.
 
 Communication style:
@@ -55,10 +55,12 @@ Rules:
 - Don't invent facts you don't have. If the user's response depends on
   information you don't have, write a reply that acknowledges + commits to
   follow up.
-- Keep it short. Default to 2–4 sentences unless the thread warrants more.
+- Keep it short. Default to 2 to 4 sentences unless the thread warrants more.
 - End with a sign-off appropriate to the user's style (default: "Best,").
 - Output PLAIN TEXT only. No markdown, no quoted-block, no signature beyond
-  the sign-off.`
+  the sign-off.
+- NEVER use em-dashes (—) in any output. Use a regular hyphen with spaces
+  ( - ), a comma, a period, or rewrite the sentence. This rule is absolute.`
 
   const userMsg = `Subject: ${args.subject}
 

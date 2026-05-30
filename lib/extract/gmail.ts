@@ -336,7 +336,7 @@ Schema:
 {
   "items": [
     {
-      "title": "string — the action item, in imperative form ('Reply to X about Y', 'Send the Z report')",
+      "title": "string. The action item, in imperative form ('Reply to X about Y', 'Send the Z report')",
       "tag": "action" | "reply" | "commit" | "fyi",
       "due_at": "ISO 8601 date or datetime, or null",
       "urgent": true | false,
@@ -348,50 +348,54 @@ Schema:
 ${WORK_ONLY_RULE}
 
 Rules:
-- The user is identified by their email address, given in the user message. Only extract items THEY own — a reply they owe, a task someone asked them to do, something they committed to.
+- The user is identified by their email address, given in the user message. Only extract items THEY own: a reply they owe, a task someone asked them to do, something they committed to.
 - Skip items owned by other people in the thread.
-- If the most recent message in the thread is FROM the user, they have likely already responded — only extract a task if they explicitly promised a further action in that message.
-- Skip newsletters, automated notifications, receipts, calendar invites, and marketing — these have no action item the user owns. Return an empty list for them.
+- If the most recent message in the thread is FROM the user, they have likely already responded. Only extract a task if they explicitly promised a further action in that message.
+- Skip newsletters, automated notifications, receipts, calendar invites, and marketing. These have no action item the user owns. Return an empty list for them.
 - Skip vague items with no concrete action.
 - ONLY extract tasks explicitly supported by the email text. Do not infer or invent tasks. An empty list is a correct, expected answer for a thread with nothing actionable.
 - If no qualifying items, return { "items": [] }.
 
 Deadlines (due_at):
 - Set due_at when the email states or clearly implies one ("by EOD", "before Friday", "need this today", "by the 20th").
-- Resolve relative dates against the date of the message that contains the ask — message dates are shown in the thread.
+- Resolve relative dates against the date of the message that contains the ask. Message dates are shown in the thread.
 - Use ISO 8601. Date-only is fine; include a time only if one is stated.
 - If no deadline is stated or implied, set due_at to null. Never guess.
 
 Urgency (urgent):
-- Set urgent: true only on real time pressure — explicit "urgent"/"ASAP", a same-day or next-day deadline, or a sender clearly blocked and waiting.
+- Set urgent: true only on real time pressure: explicit "urgent"/"ASAP", a same-day or next-day deadline, or a sender clearly blocked and waiting.
 - Otherwise urgent: false.
 
 How to choose the tag:
-- "reply" — a message the user owes back to someone (the most common case for email)
-- "action" — a concrete task to do beyond just replying (draft a doc, make a decision, send a file)
-- "commit" — an explicit promise the user made in the thread ("I'll get you the numbers Monday")
-- "fyi" — purely informational, no action required
+- "reply": a message the user owes back to someone (the most common case for email)
+- "action": a concrete task to do beyond just replying (draft a doc, make a decision, send a file)
+- "commit": an explicit promise the user made in the thread ("I'll get you the numbers Monday")
+- "fyi": purely informational, no action required
 
 Default to "reply" when the user simply owes a response; use "action" when there is concrete work beyond replying.
 
+STYLE RULE (absolute): NEVER use em-dashes (—) anywhere in the output. Use a
+regular hyphen with spaces ( - ), a colon, a comma, a period, or rewrite the
+sentence. The title field and every other string must be em-dash free.
+
 Examples:
 
-Example 1 — message dated 2026-05-12:
+Example 1. Message dated 2026-05-12:
 Thread subject: "Q2 bookkeeping questions"
-From pilot@pilot.com: "Hi Subash — we have 4 open questions on the Q2 books. Can you get us answers by Friday so we can close the month?"
+From pilot@pilot.com: "Hi Subash, we have 4 open questions on the Q2 books. Can you get us answers by Friday so we can close the month?"
 Output:
 { "items": [ { "title": "Answer Pilot's 4 Q2 bookkeeping questions", "tag": "reply", "due_at": "2026-05-16", "urgent": false, "sub_items": [] } ] }
 
-Example 2 — a newsletter:
+Example 2. A newsletter:
 Thread subject: "This week in AI"
 From newsletter@somelist.com: "The 10 biggest AI stories this week..."
 Output:
 { "items": [] }
-(A newsletter — nothing the user owns.)
+(A newsletter. Nothing the user owns.)
 
-Example 3 — message dated 2026-05-13, user is subash@sigiq.ai:
+Example 3. Message dated 2026-05-13, user is subash@sigiq.ai:
 Thread subject: "Re: Contract review"
-From subash@sigiq.ai (most recent message): "Thanks — I'll send the redlined contract back to you by tomorrow."
+From subash@sigiq.ai (most recent message): "Thanks, I'll send the redlined contract back to you by tomorrow."
 Output:
 { "items": [ { "title": "Send the redlined contract back", "tag": "commit", "due_at": "2026-05-14", "urgent": true, "sub_items": [] } ] }
 (The latest message is from the user, but they explicitly committed to a next action with a next-day deadline.)`

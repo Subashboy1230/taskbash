@@ -616,7 +616,7 @@ function CalendarStrip({
                 role="tooltip"
               >
                 <p className="m-0 mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
-                  {d.dayItems.length} item{d.dayItems.length === 1 ? '' : 's'} due — click to open
+                  {d.dayItems.length} item{d.dayItems.length === 1 ? '' : 's'} due. Click to open
                 </p>
                 <ul className="m-0 list-none space-y-0.5 p-0">
                   {d.dayItems.slice(0, 6).map(it => (
@@ -1091,7 +1091,7 @@ const SLOP_OPTIONS: Array<{ key: SlopReason; label: string; hint: string }> = [
   { key: 'spam', label: 'Spam / noise', hint: 'Marketing, automated, junk' },
   { key: 'low_signal', label: 'Low signal', hint: "Real, but doesn't need my attention" },
   { key: 'duplicate', label: 'Repeat', hint: 'Already exists as another task' },
-  { key: 'old_task', label: 'Old task', hint: 'Stale — no longer relevant' },
+  { key: 'old_task', label: 'Old task', hint: 'Stale, no longer relevant' },
   { key: 'misread_title', label: 'Misread', hint: 'Title or details are wrong' },
   { key: 'other', label: 'Other', hint: 'Just wrong' },
 ]
@@ -1118,7 +1118,7 @@ function SlopMenu({
         <DropdownMenuTrigger
           aria-label="Mark as slop (wrong / irrelevant)"
           disabled={busy}
-          title="This shouldn't be here — help the agent learn"
+          title="This shouldn't be here. Help the agent learn"
           className="flex size-6 items-center justify-center rounded-md border border-line bg-surface text-ink-faint outline-none hover:border-danger-fg hover:text-danger-fg disabled:opacity-40"
         >
           <Trash2 size={12} />
@@ -1386,8 +1386,8 @@ function PriorityChip({
         )}
         title={
           isAuto
-            ? `Auto-set to ${displayed} — click to override`
-            : `Priority ${displayed} — click to change`
+            ? `Auto-set to ${displayed}. Click to override`
+            : `Priority ${displayed}. Click to change`
         }
       >
         {displayed}
@@ -1627,7 +1627,7 @@ export function DetailPanel({
             {item.description || 'No brief generated for this task yet.'}
           </p>
           <p className="m-0 mt-1 text-[12px] text-ink-faint">
-            Brief pending — run the brief generator to synthesize context for this task.
+            Brief pending. Run the brief generator to synthesize context for this task.
           </p>
         </div>
       ) : null}
@@ -2393,7 +2393,7 @@ function PrepTab({
   return (
     <div className="mt-4">
       <p className="m-0 mb-2 text-[12px] text-ink-faint">
-        Briefs for upcoming meetings. Read them, then mark done — they don&apos;t
+        Briefs for upcoming meetings. Read them, then mark done. They don&apos;t
         clutter your Open list.
       </p>
       <ul className="list-none p-0 m-0 divide-y divide-line/70">
@@ -2428,7 +2428,7 @@ function ClearedTab({
       <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
         <p className="m-0 text-[15px] font-medium text-ink">Nothing cleared yet today</p>
         <p className="mt-1 text-[13px] text-ink-faint m-0">
-          Approve or check off items from the Open tab — they&apos;ll land here.
+          Approve or check off items from the Open tab. They&apos;ll land here.
         </p>
       </div>
     )

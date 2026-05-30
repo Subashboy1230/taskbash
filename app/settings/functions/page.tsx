@@ -35,7 +35,7 @@ export default async function FunctionsSettingsPage() {
             Functions
           </h1>
           <p className="m-0 text-[14px] text-ink-faint">
-            Your mental buckets for work — Product, People Ops, Hiring, etc.
+            Your mental buckets for work: Product, People Ops, Hiring, etc.
             Tag any task with one or more so you can filter and group by
             function on /today.
           </p>

@@ -30,17 +30,17 @@ interface ClassifyInput {
 
 const SYSTEM_PROMPT = `You assign FUNCTION TAGS to a user's tasks.
 
-A "function" is a high-level work area the user organizes their day around
-— e.g. "Product Management", "Hiring", "People Ops". The user has defined
+A "function" is a high-level work area the user organizes their day around,
+e.g. "Product Management", "Hiring", "People Ops". The user has defined
 their own set of functions. Your job: for each task, decide which
 function(s) it belongs to.
 
 RULES
 - Read the task title + context. Tag it with EVERY function that's a
   clear fit. A single task can belong to multiple functions (a hiring
-  task that's also a product task → tag both).
+  task that's also a product task: tag both).
 - BE CONSERVATIVE. If a task doesn't clearly fit any function, return an
-  empty list for it. Wrong tags are worse than no tags — the user will
+  empty list for it. Wrong tags are worse than no tags. The user will
   retag manually.
 - Return ONLY function IDs that appear in the FUNCTIONS list below.
   Never invent or paraphrase a function name.
@@ -50,7 +50,11 @@ Output STRICT JSON, no prose, no markdown fences:
 {"assignments": {"t0": ["<fid1>", "<fid2>"], "t1": [], "t2": ["<fid3>"], ...}}
 
 Every task key MUST appear in the assignments object, even when the
-list is empty. Use empty array, never null.`
+list is empty. Use empty array, never null.
+
+STYLE RULE (absolute): NEVER use em-dashes (—) in any string output. This
+classifier only emits IDs, but the rule is global to keep all prompts
+consistent.`
 
 function buildUserPrompt(
   functions: UserFunction[],

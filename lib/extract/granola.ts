@@ -244,7 +244,7 @@ Schema:
 {
   "items": [
     {
-      "title": "string — the action item, in imperative form ('Send X', 'Review Y')",
+      "title": "string. The action item, in imperative form ('Send X', 'Review Y')",
       "tag": "action" | "reply" | "commit" | "fyi",
       "due_at": "ISO 8601 date or datetime, or null",
       "urgent": true | false,
@@ -259,8 +259,8 @@ Rules:
 - Only include items the user themselves owns or committed to. Skip items owned by others unless the user explicitly agreed to take them on.
 - Skip vague items like "discuss further" or "follow up" with no concrete action.
 - Skip items that are clearly already done in the meeting itself.
-- Apply the WORK ONLY scope above — drop personal-life items even if the user owns them.
-- ONLY extract tasks that are explicitly supported by the text. Do not infer, assume, or invent tasks that "should" exist. If the summary is terse and has no clear action items, return an empty list — an empty list is a correct, expected answer.
+- Apply the WORK ONLY scope above. Drop personal-life items even if the user owns them.
+- ONLY extract tasks that are explicitly supported by the text. Do not infer, assume, or invent tasks that "should" exist. If the summary is terse and has no clear action items, return an empty list. An empty list is a correct, expected answer.
 - If no qualifying items, return { "items": [] }.
 
 Deadlines (due_at):
@@ -270,32 +270,36 @@ Deadlines (due_at):
 - If no deadline is stated or implied, set due_at to null. Never guess a date.
 
 Urgency (urgent):
-- Set urgent: true only on real time pressure — an explicit "urgent"/"ASAP", a same-day or next-day deadline, or someone visibly waiting or blocked on it.
+- Set urgent: true only on real time pressure: an explicit "urgent"/"ASAP", a same-day or next-day deadline, or someone visibly waiting or blocked on it.
 - Otherwise urgent: false.
 
 How to choose the tag:
-- "action" — concrete task to DO (research, draft, schedule, decide, build)
-- "reply" — message owed back to someone (email, Slack DM, text)
-- "commit" — explicit promise made in the meeting itself ("I'll send the deck by Friday")
-- "fyi" — purely informational, no action required (rare in meeting commitments)
+- "action": concrete task to DO (research, draft, schedule, decide, build)
+- "reply": message owed back to someone (email, Slack DM, text)
+- "commit": explicit promise made in the meeting itself ("I'll send the deck by Friday")
+- "fyi": purely informational, no action required (rare in meeting commitments)
 
 Default to "commit" only when the item is genuinely a meeting promise. Otherwise prefer "action".
 
+STYLE RULE (absolute): NEVER use em-dashes (—) anywhere in the output. Use a
+regular hyphen with spaces ( - ), a colon, a comma, a period, or rewrite the
+sentence. The title field and every other string must be em-dash free.
+
 Examples:
 
-Example 1 — meeting date 2026-05-12:
+Example 1. Meeting date 2026-05-12:
 Summary: "Subash agreed to send Matthew the three pain points doc by end of week. Matthew will loop in his Nummo team afterward."
 Output:
 { "items": [ { "title": "Send Matthew the three pain points doc", "tag": "commit", "due_at": "2026-05-16", "urgent": false, "sub_items": [] } ] }
-(Matthew's task is dropped — not owned by the user. "End of week" resolves to the Friday after the meeting.)
+(Matthew's task is dropped: not owned by the user. "End of week" resolves to the Friday after the meeting.)
 
-Example 2 — meeting date 2026-05-12:
+Example 2. Meeting date 2026-05-12:
 Summary: "Anna is waiting on Subash's sign-off on the Q3 OKRs before tomorrow's leadership sync. She's pinged twice. Team also chatted about offsite venues."
 Output:
 { "items": [ { "title": "Sign off on the Q3 OKRs for Anna", "tag": "action", "due_at": "2026-05-13", "urgent": true, "sub_items": [] } ] }
-(The offsite chat is dropped — no concrete action the user owns. urgent: true because of the next-day deadline and Anna actively waiting.)
+(The offsite chat is dropped: no concrete action the user owns. urgent: true because of the next-day deadline and Anna actively waiting.)
 
-Example 3 — meeting date 2026-05-12:
+Example 3. Meeting date 2026-05-12:
 Summary: "Quick sync. Mostly status updates, nothing decided. Subash mentioned he should book a dentist appointment soon."
 Output:
 { "items": [] }
