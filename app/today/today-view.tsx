@@ -48,6 +48,7 @@ import {
 } from '@/app/_components/ui/tabs'
 import { Button } from '@/app/_components/ui/button'
 import { Input } from '@/app/_components/ui/input'
+import { Card } from '@/app/_components/ui/card'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { Priority, ProposedAction, Source, Tag, TaskBrief, UserFunction } from '@/lib/types'
 import { functionColor } from '@/lib/function-color'
@@ -1542,35 +1543,28 @@ export function DetailPanel({
   allFunctions?: UserFunction[]
 }) {
   return (
-    <aside className="sticky top-0 max-h-screen w-[340px] shrink-0 overflow-y-auto border-l border-line bg-surface px-5 py-5">
-      <div className="mb-4 flex items-center justify-between">
+    <aside className="h-full w-full overflow-y-auto bg-surface px-5 py-5">
+      {/* Close button is provided by the parent Sheet. Header only carries
+          Edit + History, with right padding so they sit clear of Sheet's
+          built-in close button (top-4 right-4). onClose stays on the
+          props since the optimistic-complete flow in TodayShell needs it. */}
+      <div className="mb-4 flex items-center justify-end gap-1 pr-10">
         <Button
           variant="ghost"
           size="icon"
-          onClick={onClose}
-          aria-label="Close panel"
+          aria-label="Edit"
           className="h-8 w-8 text-ink-faint hover:text-ink"
         >
-          <X size={16} />
+          <Edit3 size={15} />
         </Button>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Edit"
-            className="h-8 w-8 text-ink-faint hover:text-ink"
-          >
-            <Edit3 size={15} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="History"
-            className="h-8 w-8 text-ink-faint hover:text-ink"
-          >
-            <History size={15} />
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="History"
+          className="h-8 w-8 text-ink-faint hover:text-ink"
+        >
+          <History size={15} />
+        </Button>
       </div>
 
       <div className="mb-3 flex items-start gap-2">
@@ -2086,7 +2080,7 @@ function FilterBar({
   // Hide the bar entirely when there's nothing to filter or group.
   if (orderedSources.length === 0 && orderedTags.length === 0 && functions.length === 0) return null
   return (
-    <div className="mt-4 space-y-2 rounded-xl border border-line bg-surface/40 p-4 shadow-sm">
+    <Card className="mt-4 space-y-2 bg-surface/40 p-4">
       {/* Row 1: Source chips + Group-by toggle (right-aligned) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -2182,7 +2176,7 @@ function FilterBar({
           </Link>
         </div>
       )}
-    </div>
+    </Card>
   )
 }
 
