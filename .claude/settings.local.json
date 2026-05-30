@@ -8,7 +8,8 @@
       "Bash(vercel link *)",
       "Bash(vercel deploy *)",
       "Bash(vercel env *)",
-      "Bash(lsof -i :3000 -sTCP:LISTEN)"
+      "Bash(lsof -i :3000 -sTCP:LISTEN)",
+      "Bash(npx tsc *)"
     ]
   }
 }

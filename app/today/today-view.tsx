@@ -66,6 +66,7 @@ import {
   snoozeItem,
   toggleSubtaskComplete,
   uncompleteItem,
+  updateItemDescription,
 } from './actions'
 
 // ─── Top-level layout ───────────────────────────────────────────────────
@@ -1571,6 +1572,36 @@ export function DetailPanel({
   onComplete: () => void
   allFunctions?: UserFunction[]
 }) {
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState(item.title)
+  const [editDesc, setEditDesc] = useState(item.description ?? '')
+  const [saving, setSaving] = useState(false)
+
+  function startEdit() {
+    setEditTitle(item.title)
+    setEditDesc(item.description ?? '')
+    setEditing(true)
+  }
+
+  async function saveEdit() {
+    setSaving(true)
+    try {
+      await updateItemDescription(item.id, {
+        title: editTitle,
+        description: editDesc,
+      })
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function cancelEdit() {
+    setEditing(false)
+    setEditTitle(item.title)
+    setEditDesc(item.description ?? '')
+  }
+
   return (
     <aside className="h-full w-full overflow-y-auto bg-surface px-5 py-5">
       {/* Close button is provided by the parent Sheet. Header only carries
@@ -1582,7 +1613,8 @@ export function DetailPanel({
           variant="ghost"
           size="icon"
           aria-label="Edit"
-          className="h-8 w-8 text-ink-faint hover:text-ink"
+          className={cn('h-8 w-8 hover:text-ink', editing ? 'text-ink' : 'text-ink-faint')}
+          onClick={editing ? cancelEdit : startEdit}
         >
           <Edit3 size={15} />
         </Button>
@@ -1596,10 +1628,45 @@ export function DetailPanel({
         </Button>
       </div>
 
-      <div className="mb-3 flex items-start gap-2">
-        <NummoLogo />
-        <h2 className="m-0 text-[18px] font-medium leading-snug text-ink">{item.title}</h2>
-      </div>
+      {editing ? (
+        <div className="mb-3">
+          <input
+            autoFocus
+            value={editTitle}
+            onChange={e => setEditTitle(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }}
+            className="mb-2 w-full rounded-md border border-line bg-surface-muted px-3 py-1.5 text-[18px] font-medium text-ink outline-none focus:ring-1 focus:ring-line"
+          />
+          <textarea
+            value={editDesc}
+            onChange={e => setEditDesc(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') cancelEdit() }}
+            rows={3}
+            placeholder="Description (optional)"
+            className="w-full resize-none rounded-md border border-line bg-surface-muted px-3 py-1.5 text-[13px] text-ink outline-none focus:ring-1 focus:ring-line"
+          />
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={saveEdit}
+              disabled={saving || !editTitle.trim()}
+              className="rounded-md bg-success-fg px-3 py-1 text-[13px] font-medium text-canvas hover:opacity-90 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={cancelEdit}
+              className="rounded-md border border-line px-3 py-1 text-[13px] font-medium text-ink hover:bg-surface-muted"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-3 flex items-start gap-2">
+          <NummoLogo />
+          <h2 className="m-0 text-[18px] font-medium leading-snug text-ink">{item.title}</h2>
+        </div>
+      )}
 
       <div className="mb-4 flex items-center gap-2">
         {item.detail_status && (

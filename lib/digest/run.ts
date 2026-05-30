@@ -53,15 +53,12 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     .lt('snooze_until', new Date().toISOString())
 
   // ─── Load items the user has touched recently for the diff ─────────
-  // We need OPEN items to compute carryover + auto-complete, and CLEARED
-  // items (completed / dismissed / snoozed) to suppress re-surfacing of
-  // tasks the user already dealt with. Lookback caps DB load. 60 days
-  // is conservative since most sources only look back ~7 days anyway,
-  // but Linear issues stay open indefinitely.
-  const lookbackDays = 60
-  const lookbackCutoff = new Date(
-    Date.now() - lookbackDays * 24 * 60 * 60 * 1000
-  ).toISOString()
+  // OPEN items drive carryover. CLEARED items (completed / dismissed /
+  // snoozed) drive suppression so a re-extracted task the user already
+  // dealt with does not resurface. We cap cleared to the 100 most recent
+  // — older than that, the user wouldn't realistically remember dealing
+  // with it, and re-surfacing as "new" is fine.
+  const CLEARED_LIMIT = 100
   const { data: openRows, error: openErr } = await supabase
     .from('items')
     .select('*')
@@ -73,7 +70,8 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     .select('*')
     .eq('user_id', userId)
     .in('status', ['completed', 'dismissed', 'snoozed'])
-    .gte('updated_at', lookbackCutoff)
+    .order('updated_at', { ascending: false })
+    .limit(CLEARED_LIMIT)
   if (clearedErr) throw new Error(`load cleared items: ${clearedErr.message}`)
   const currentItems = [
     ...((openRows ?? []) as Item[]),

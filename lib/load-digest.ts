@@ -28,7 +28,7 @@ export async function loadDigest(): Promise<MockDigestSummary> {
     .order('proposed_action', { ascending: false, nullsFirst: false })
     .order('due_at', { ascending: true, nullsFirst: false })
     .order('first_seen_at', { ascending: false })
-    .limit(50)
+    .limit(200)
   if (openErr) throw new Error(`loadDigest openItems failed: ${openErr.message}`)
 
   // Completed today (the cleared section)

@@ -452,6 +452,27 @@ export async function getEventsForDateAction(yyyymmdd: string) {
 }
 
 /**
+ * Update a task's title and/or description. Used by the inline edit UI in
+ * the detail panel.
+ */
+export async function updateItemDescription(
+  itemId: string,
+  args: { title?: string; description?: string }
+) {
+  const update: Record<string, string> = {}
+  if (args.title !== undefined) update.title = args.title.trim()
+  if (args.description !== undefined) update.description = args.description.trim()
+  if (Object.keys(update).length === 0) return
+  const { error } = await supabase
+    .from('items')
+    .update(update)
+    .eq('id', itemId)
+    .eq('user_id', await resolveUserId())
+  if (error) throw new Error(`updateItemDescription failed: ${error.message}`)
+  revalidatePath('/today')
+}
+
+/**
  * Create a manual top-level task (no parent). Same shape as addSubtask
  * but without a parent_id, so it shows up in the main Open list.
  * Optional due_at (ISO date string) and function_ids tag the new task.
