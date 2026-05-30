@@ -41,6 +41,12 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/app/_components/ui/dropdown-menu'
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from '@/app/_components/ui/tabs'
+import { Button } from '@/app/_components/ui/button'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { Priority, ProposedAction, Source, Tag, TaskBrief, UserFunction } from '@/lib/types'
 import { functionColor } from '@/lib/function-color'
@@ -309,44 +315,39 @@ export function TodayView({
           {/* CalendarStrip removed — month grid + today's events now live
               in the right-column TodayCalendarColumn. */}
 
-          {/* Tabs: Open / Cleared */}
-          <div className="mt-7 flex items-center justify-between border-b border-line">
-            <div className="flex gap-6">
-              <TabButton
-                active={tab === 'open'}
-                onClick={() => setTab('open')}
-                count={visibleOpen.length}
-              >
-                Open
-              </TabButton>
-              <TabButton
-                active={tab === 'prep'}
-                onClick={() => setTab('prep')}
-                count={visiblePrep.length}
-              >
-                Prep
-              </TabButton>
-              <TabButton
-                active={tab === 'cleared'}
-                onClick={() => setTab('cleared')}
-                count={digest.completed_today_count}
-              >
-                Cleared today
-              </TabButton>
-            </div>
-            <button
+          {/* Tabs: Open / Prep / Cleared — shadcn Tabs (pill segment) */}
+          <div className="mt-7 flex items-center justify-between">
+            <Tabs value={tab} onValueChange={v => setTab(v as 'open' | 'prep' | 'cleared')}>
+              <TabsList>
+                <TabsTrigger value="open">
+                  Open
+                  <TabCount active={tab === 'open'}>{visibleOpen.length}</TabCount>
+                </TabsTrigger>
+                <TabsTrigger value="prep">
+                  Prep
+                  <TabCount active={tab === 'prep'}>{visiblePrep.length}</TabCount>
+                </TabsTrigger>
+                <TabsTrigger value="cleared">
+                  Cleared today
+                  <TabCount active={tab === 'cleared'}>{digest.completed_today_count}</TabCount>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={handleRefresh}
               disabled={isRefreshing}
               aria-label="Refresh"
-              className="mb-1.5 rounded-full p-1.5 text-ink-faint transition-colors hover:bg-surface-muted hover:text-ink disabled:opacity-40"
               title="Re-pull latest items from your sources"
+              className="h-8 w-8 text-ink-faint hover:text-ink"
             >
               {isRefreshing ? (
                 <Loader2 size={14} className="animate-spin" />
               ) : (
                 <RefreshCw size={14} />
               )}
-            </button>
+            </Button>
           </div>
 
           {refreshError && (
@@ -1017,18 +1018,6 @@ function ActionButton({
 // Calls onSnooze(hours) which the parent persists via snoozeItem().
 
 function SnoozeMenu({ onSnooze }: { onSnooze: (hours: number) => void }) {
-  const [open, setOpen] = useState(false)
-  useEffect(() => {
-    if (!open) return
-    function onDoc(e: MouseEvent) {
-      if (!(e.target as HTMLElement).closest('[data-snooze-menu]')) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [open])
-
   // Hours-until-tomorrow-9am, computed at click time so it's correct
   // regardless of when the user opens the menu.
   function hoursUntilTomorrow9am(): number {
@@ -1054,41 +1043,29 @@ function SnoozeMenu({ onSnooze }: { onSnooze: (hours: number) => void }) {
     { label: 'Until next week', hours: hoursUntilNextMonday9am, hint: 'Monday at 9am' },
   ]
 
-  function pick(h: number, e: React.MouseEvent) {
-    e.stopPropagation()
-    setOpen(false)
-    onSnooze(h)
-  }
-
   return (
-    <div className="relative" data-snooze-menu onClick={e => e.stopPropagation()}>
-      <button
-        type="button"
-        aria-label="Snooze"
-        onClick={e => {
-          e.stopPropagation()
-          setOpen(o => !o)
-        }}
-        className="flex size-6 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-line-strong hover:text-ink"
-        title="Snooze for later"
-      >
-        <Clock size={12} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-44 rounded-md border border-line bg-surface py-1 shadow-md">
+    <div onClick={e => e.stopPropagation()}>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Snooze"
+          title="Snooze for later"
+          className="flex size-6 items-center justify-center rounded-md border border-line bg-surface text-ink-faint outline-none hover:border-line-strong hover:text-ink"
+        >
+          <Clock size={12} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
           {options.map(o => (
-            <button
+            <DropdownMenuItem
               key={o.label}
-              type="button"
-              onClick={e => pick(o.hours(), e)}
-              className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-[12px] text-ink hover:bg-surface-muted"
+              onSelect={() => onSnooze(o.hours())}
+              className="flex items-center justify-between gap-2 text-[12px]"
             >
-              <span>{o.label}</span>
+              <span className="text-ink">{o.label}</span>
               <span className="text-[11px] text-ink-faint">{o.hint}</span>
-            </button>
+            </DropdownMenuItem>
           ))}
-        </div>
-      )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
@@ -1565,26 +1542,32 @@ export function DetailPanel({
   return (
     <aside className="sticky top-0 max-h-screen w-[340px] shrink-0 overflow-y-auto border-l border-line bg-surface px-5 py-5">
       <div className="mb-4 flex items-center justify-between">
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={onClose}
-          className="rounded-md p-1.5 text-ink-faint hover:bg-surface-muted hover:text-ink"
           aria-label="Close panel"
+          className="h-8 w-8 text-ink-faint hover:text-ink"
         >
           <X size={16} />
-        </button>
+        </Button>
         <div className="flex items-center gap-1">
-          <button
-            className="rounded-md p-1.5 text-ink-faint hover:bg-surface-muted hover:text-ink"
+          <Button
+            variant="ghost"
+            size="icon"
             aria-label="Edit"
+            className="h-8 w-8 text-ink-faint hover:text-ink"
           >
             <Edit3 size={15} />
-          </button>
-          <button
-            className="rounded-md p-1.5 text-ink-faint hover:bg-surface-muted hover:text-ink"
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             aria-label="History"
+            className="h-8 w-8 text-ink-faint hover:text-ink"
           >
             <History size={15} />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -2046,45 +2029,21 @@ function EmptyState() {
 }
 
 // ─── Tabs ───────────────────────────────────────────────────────────────
+// Small count pill that sits to the right of a tab label, e.g. "Open · 49".
+// Active tab → success-green pill; inactive → muted pill.
 
-function TabButton({
-  active,
-  onClick,
-  count,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  count?: number
-  children: React.ReactNode
-}) {
+function TabCount({ active, children }: { active: boolean; children: React.ReactNode }) {
   return (
-    <button
-      onClick={onClick}
+    <span
       className={cn(
-        '-mb-px flex items-center gap-2 border-b-2 px-1 py-2.5 text-[14px] font-medium transition-colors',
-        active
-          ? 'border-ink text-ink'
-          : 'border-transparent text-ink-faint hover:text-ink-muted'
+        'ml-2 rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
+        active ? 'bg-success-bg text-success-fg' : 'bg-surface-muted text-ink-faint'
       )}
     >
       {children}
-      {typeof count === 'number' && (
-        <span
-          className={cn(
-            'rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
-            active ? 'bg-success-bg text-success-fg' : 'bg-surface-muted text-ink-faint'
-          )}
-        >
-          {count}
-        </span>
-      )}
-    </button>
+    </span>
   )
 }
-
-// First tab in the row gets no left margin; subsequent tabs get a gap.
-// Done with sibling-margin in the parent flex to keep this component simple.
 
 // ─── Filter bar ─────────────────────────────────────────────────────────
 
@@ -2277,29 +2236,18 @@ function GroupToggle({
   value: 'none' | 'source' | 'due' | 'function'
   onChange: (g: 'none' | 'source' | 'due' | 'function') => void
 }) {
-  const options: Array<{ key: 'none' | 'source' | 'due' | 'function'; label: string }> = [
-    { key: 'none', label: 'None' },
-    { key: 'source', label: 'Source' },
-    { key: 'due', label: 'Due' },
-    { key: 'function', label: 'Function' },
-  ]
   return (
-    <div className="inline-flex rounded-md border border-line bg-surface p-0.5">
-      {options.map(o => (
-        <button
-          key={o.key}
-          onClick={() => onChange(o.key)}
-          className={cn(
-            'rounded px-2 py-0.5 text-[12px] font-medium transition-colors',
-            value === o.key
-              ? 'bg-ink text-canvas'
-              : 'text-ink-muted hover:text-ink'
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
+    <Tabs
+      value={value}
+      onValueChange={v => onChange(v as 'none' | 'source' | 'due' | 'function')}
+    >
+      <TabsList className="h-7 p-0.5">
+        <TabsTrigger value="none" className="h-6 px-2 text-[12px]">None</TabsTrigger>
+        <TabsTrigger value="source" className="h-6 px-2 text-[12px]">Source</TabsTrigger>
+        <TabsTrigger value="due" className="h-6 px-2 text-[12px]">Due</TabsTrigger>
+        <TabsTrigger value="function" className="h-6 px-2 text-[12px]">Function</TabsTrigger>
+      </TabsList>
+    </Tabs>
   )
 }
 
