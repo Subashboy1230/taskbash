@@ -26,6 +26,7 @@ import {
   CardTitle,
 } from '@/app/_components/ui/card'
 import type { DayEvent } from '@/lib/load-day-events'
+import { getEventsForDateAction } from './actions'
 
 export interface CalendarColumnItem {
   id: string
@@ -264,32 +265,85 @@ function SelectedDaySection({
   selectedIso: string
   dayItems: CalendarColumnItem[]
 }) {
-  // We only have today's calendar events fetched server-side. For other
-  // days, show the items DUE on that day (from the digest) so the click
-  // still surfaces something useful. If neither is available, explain.
-  if (dayItems.length === 0) {
-    return (
-      <p className="m-0 rounded-md border border-dashed border-line bg-canvas/60 px-3 py-3 text-[12px] text-ink-faint">
-        No tasks due on this day. Calendar events for past or future days
-        aren&apos;t fetched yet.
-      </p>
-    )
-  }
+  // Fetch Google Calendar events for the picked day on demand. The
+  // server action wraps loadEventsForDate, which uses the same Nango
+  // proxy as the today loader. Errors are swallowed there, so we just
+  // see an empty list.
+  const [dayEvents, setDayEvents] = useState<DayEvent[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setDayEvents([])
+    getEventsForDateAction(selectedIso)
+      .then(evts => {
+        if (cancelled) return
+        setDayEvents(evts)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setDayEvents([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedIso])
+
+  const hasEvents = dayEvents.length > 0
+  const hasTasks = dayItems.length > 0
+
   return (
-    <ul className="m-0 list-none space-y-1 p-0">
-      {dayItems.map(it => (
-        <li
-          key={it.id}
-          className="truncate rounded-md border border-line/60 bg-canvas/60 px-2.5 py-1.5 text-[12px] text-ink"
-          title={it.title}
-        >
-          {it.title}
-        </li>
-      ))}
-      <li className="mt-2 text-[10px] text-ink-faint">
-        Selected: {selectedIso}
-      </li>
-    </ul>
+    <div className="space-y-3">
+      {/* Events for the selected day (top). */}
+      <section>
+        <p className="m-0 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+          Events
+        </p>
+        {loading ? (
+          <p className="m-0 rounded-md border border-dashed border-line bg-canvas/60 px-3 py-3 text-[12px] text-ink-faint">
+            Loading events...
+          </p>
+        ) : hasEvents ? (
+          <ul className="m-0 list-none space-y-2 p-0">
+            {dayEvents.map(e => (
+              <EventCard key={e.id} event={e} />
+            ))}
+          </ul>
+        ) : (
+          <p className="m-0 rounded-md border border-dashed border-line bg-canvas/60 px-3 py-3 text-[12px] text-ink-faint">
+            No calendar events on this day.
+          </p>
+        )}
+      </section>
+
+      {/* Tasks due on the selected day (bottom). */}
+      <section>
+        <p className="m-0 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+          Tasks due
+        </p>
+        {hasTasks ? (
+          <ul className="m-0 list-none space-y-1 p-0">
+            {dayItems.map(it => (
+              <li
+                key={it.id}
+                className="truncate rounded-md border border-line/60 bg-canvas/60 px-2.5 py-1.5 text-[12px] text-ink"
+                title={it.title}
+              >
+                {it.title}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="m-0 rounded-md border border-dashed border-line bg-canvas/60 px-3 py-3 text-[12px] text-ink-faint">
+            No tasks due on this day.
+          </p>
+        )}
+      </section>
+    </div>
   )
 }
 

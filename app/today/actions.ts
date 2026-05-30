@@ -430,3 +430,13 @@ export async function requestRefresh(): Promise<
     }
   }
 }
+
+/**
+ * Server action wrapper around loadEventsForDate so the client-side
+ * calendar column can fetch events for any day the user clicks. Returns
+ * an empty list on failure (the loader already swallows errors).
+ */
+export async function getEventsForDateAction(yyyymmdd: string) {
+  const { loadEventsForDate } = await import('@/lib/load-day-events')
+  return loadEventsForDate(yyyymmdd)
+}

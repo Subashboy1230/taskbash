@@ -27,22 +27,34 @@ export interface DayEvent {
 const CALENDAR_API = '/calendar/v3/calendars/primary/events'
 
 /**
- * Fetch today's events (00:00 → 23:59 in the server's TZ). Returns []
- * if Calendar isn't connected. Failures are swallowed — never let
+ * Fetch today's events (00:00 -> 23:59 in the server's TZ). Returns []
+ * if Calendar isn't connected. Failures are swallowed: never let
  * the right-column widget block the main /today view.
  */
 export async function loadTodayEvents(): Promise<DayEvent[]> {
+  const today = new Date()
+  const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  return loadEventsForDate(iso)
+}
+
+/**
+ * Fetch events for any YYYY-MM-DD day in the user's primary Google Calendar.
+ * Used by the right-column widget when the user clicks a non-today date.
+ * Same best-effort semantics as loadTodayEvents.
+ */
+export async function loadEventsForDate(yyyymmdd: string): Promise<DayEvent[]> {
   try {
     const conn = await getActiveConnection('calendar')
     if (!conn?.nango_connection_id) return []
     const providerConfigKey = NANGO_PROVIDER_KEY.calendar
     if (!providerConfigKey) return []
 
-    const now = new Date()
-    const start = new Date(now)
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(now)
-    end.setHours(23, 59, 59, 999)
+    // Parse the day in the local server TZ. We DON'T want UTC midnight
+    // because Calendar treats date boundaries in the user's TZ.
+    const [y, m, d] = yyyymmdd.split('-').map(Number)
+    if (!y || !m || !d) return []
+    const start = new Date(y, m - 1, d, 0, 0, 0, 0)
+    const end = new Date(y, m - 1, d, 23, 59, 59, 999)
 
     interface RawEvent {
       id: string
@@ -103,7 +115,7 @@ export async function loadTodayEvents(): Promise<DayEvent[]> {
         }
       })
   } catch (err) {
-    console.error('[loadTodayEvents] failed:', err)
+    console.error('[loadEventsForDate] failed:', err)
     return []
   }
 }
