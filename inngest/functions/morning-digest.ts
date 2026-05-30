@@ -74,15 +74,31 @@ export const morningDigest = inngest.createFunction(
       if (error) throw error
     })
 
-    // ─── 2. Load current open items ───────────────────────────────────
+    // ─── 2. Load items the user has touched recently ──────────────────
+    // OPEN: drives carryover + auto-complete. CLEARED (completed /
+    // dismissed / snoozed within the last 60 days): drives suppression
+    // so a re-extracted task the user already dealt with does not
+    // resurface. See diff.ts for the matching contract.
     const currentItems = (await step.run('load-current-items', async () => {
-      const { data, error } = await supabase
-        .from('items')
-        .select('*')
-        .eq('user_id', USER_ID)
-        .in('status', ['open', 'in_progress'])
-      if (error) throw error
-      return data ?? []
+      const lookbackCutoff = new Date(
+        Date.now() - 60 * 24 * 60 * 60 * 1000
+      ).toISOString()
+      const [openRes, clearedRes] = await Promise.all([
+        supabase
+          .from('items')
+          .select('*')
+          .eq('user_id', USER_ID)
+          .in('status', ['open', 'in_progress']),
+        supabase
+          .from('items')
+          .select('*')
+          .eq('user_id', USER_ID)
+          .in('status', ['completed', 'dismissed', 'snoozed'])
+          .gte('updated_at', lookbackCutoff),
+      ])
+      if (openRes.error) throw openRes.error
+      if (clearedRes.error) throw clearedRes.error
+      return [...(openRes.data ?? []), ...(clearedRes.data ?? [])]
     })) as Item[]
 
     // ─── 3. Run extractors ────────────────────────────────────────────

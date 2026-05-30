@@ -27,6 +27,8 @@ export interface DigestRunSummary {
   new: number
   carryover: number
   completed: number
+  /** Fresh items skipped because the user already cleared the same task. */
+  suppressed: number
   durationMs: number
 }
 
@@ -50,14 +52,33 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     .eq('status', 'snoozed')
     .lt('snooze_until', new Date().toISOString())
 
-  // ─── Load currently-open items for the diff ──────────────────────────
+  // ─── Load items the user has touched recently for the diff ─────────
+  // We need OPEN items to compute carryover + auto-complete, and CLEARED
+  // items (completed / dismissed / snoozed) to suppress re-surfacing of
+  // tasks the user already dealt with. Lookback caps DB load. 60 days
+  // is conservative since most sources only look back ~7 days anyway,
+  // but Linear issues stay open indefinitely.
+  const lookbackDays = 60
+  const lookbackCutoff = new Date(
+    Date.now() - lookbackDays * 24 * 60 * 60 * 1000
+  ).toISOString()
   const { data: openRows, error: openErr } = await supabase
     .from('items')
     .select('*')
     .eq('user_id', userId)
     .in('status', ['open', 'in_progress'])
   if (openErr) throw new Error(`load open items: ${openErr.message}`)
-  const currentItems = (openRows ?? []) as Item[]
+  const { data: clearedRows, error: clearedErr } = await supabase
+    .from('items')
+    .select('*')
+    .eq('user_id', userId)
+    .in('status', ['completed', 'dismissed', 'snoozed'])
+    .gte('updated_at', lookbackCutoff)
+  if (clearedErr) throw new Error(`load cleared items: ${clearedErr.message}`)
+  const currentItems = [
+    ...((openRows ?? []) as Item[]),
+    ...((clearedRows ?? []) as Item[]),
+  ]
 
   // ─── Run every connected source extractor ────────────────────────────
   // Gate each source on connection state so a disconnected source neither
@@ -125,6 +146,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   let newCount = 0
   let carryoverCount = 0
   let completedCount = 0
+  let suppressedCount = 0
 
   // Buckets new item ids by the llm_call that produced them — used at
   // the end of the loop to tag llm_calls.produced_item_ids so per-prompt
@@ -205,6 +227,13 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
       carryoverCount += carryoverIds.length
     }
 
+    // Suppressed = fresh items the user already cleared (completed,
+    // dismissed, or snoozed). We do nothing here: the existing cleared
+    // row stays cleared, the fresh item is dropped on the floor. This
+    // is the fix for the bug where re-running the digest resurfaced
+    // tasks the user had marked done or slop.
+    suppressedCount += result.suppressed.length
+
     // Auto-complete vanished items
     const completedIds = result.completed.map(c => c.id)
     if (completedIds.length > 0) {
@@ -240,6 +269,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     new: newCount,
     carryover: carryoverCount,
     completed: completedCount,
+    suppressed: suppressedCount,
     durationMs: Date.now() - t0,
   }
 }

@@ -404,7 +404,16 @@ export async function executeProposedAction(
  *   - No step.run() durability — a partial failure just retries on next click
  */
 export async function requestRefresh(): Promise<
-  | { ok: true; summary: { new: number; carryover: number; completed: number; sources: string[] } }
+  | {
+      ok: true
+      summary: {
+        new: number
+        carryover: number
+        completed: number
+        suppressed: number
+        sources: string[]
+      }
+    }
   | { ok: false; error: string }
 > {
   try {
@@ -419,6 +428,7 @@ export async function requestRefresh(): Promise<
         new: summary.new,
         carryover: summary.carryover,
         completed: summary.completed,
+        suppressed: summary.suppressed,
         sources: summary.sources_run,
       },
     }
