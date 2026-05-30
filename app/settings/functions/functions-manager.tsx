@@ -8,6 +8,8 @@ import { Check, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { functionColor } from '@/lib/function-color'
 import type { UserFunction } from '@/lib/types'
+import { Button } from '@/app/_components/ui/button'
+import { Input } from '@/app/_components/ui/input'
 import {
   createFunction,
   deleteFunction,
@@ -103,14 +105,10 @@ export function FunctionsManager({ initial }: { initial: UserFunction[] }) {
           <p className="mt-1 text-[13px] text-ink-faint m-0">
             Add a function below, or seed the defaults to get started fast.
           </p>
-          <button
-            onClick={handleSeed}
-            disabled={busy}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-success-fg px-3 py-1.5 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
-          >
+          <Button onClick={handleSeed} disabled={busy} size="sm" className="mt-3">
             {busy && <Loader2 size={12} className="animate-spin" />}
             Seed defaults ({DEFAULT_FUNCTIONS.join(', ')})
-          </button>
+          </Button>
         </div>
       ) : (
         <ul className="list-none p-0 m-0 space-y-2">
@@ -127,22 +125,18 @@ export function FunctionsManager({ initial }: { initial: UserFunction[] }) {
       )}
 
       <form onSubmit={handleAdd} className="flex items-center gap-2">
-        <input
+        <Input
           type="text"
           value={draft}
           onChange={e => setDraft(e.target.value)}
           placeholder="Add a function (e.g. Fundraising)"
           disabled={busy}
-          className="flex-1 rounded-md border border-line bg-surface px-3 py-2 text-[14px] text-ink placeholder:text-ink-faint focus:border-success-fg focus:outline-none disabled:opacity-50"
+          className="flex-1"
         />
-        <button
-          type="submit"
-          disabled={busy || !draft.trim()}
-          className="inline-flex items-center gap-1.5 rounded-md bg-success-fg px-3 py-2 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
-        >
+        <Button type="submit" disabled={busy || !draft.trim()}>
           {busy ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
           Add
-        </button>
+        </Button>
       </form>
 
       {error && (
@@ -207,7 +201,7 @@ function FunctionRow({
         title="Change color"
       />
       {editing ? (
-        <input
+        <Input
           autoFocus
           type="text"
           value={name}
@@ -220,7 +214,7 @@ function FunctionRow({
               setEditing(false)
             }
           }}
-          className="flex-1 rounded-md border border-line bg-surface px-2 py-1 text-[14px] text-ink focus:border-success-fg focus:outline-none"
+          className="flex-1 h-7 text-[14px]"
         />
       ) : (
         <span
@@ -230,24 +224,28 @@ function FunctionRow({
           {fn.name}
         </span>
       )}
-      <button
+      <Button
+        variant="ghost"
+        size="icon"
         type="button"
         onClick={() => setEditing(true)}
         disabled={busy || editing}
         aria-label="Rename"
-        className="rounded p-1 text-ink-faint hover:bg-surface-muted hover:text-ink disabled:opacity-40"
+        className="h-7 w-7 text-ink-faint hover:text-ink"
       >
         <Pencil size={13} />
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
         type="button"
         onClick={onDelete}
         disabled={busy}
         aria-label={`Delete ${fn.name}`}
-        className="rounded p-1 text-ink-faint hover:bg-danger-bg hover:text-danger-fg disabled:opacity-40"
+        className="h-7 w-7 text-ink-faint hover:bg-danger-bg hover:text-danger-fg"
       >
         <Trash2 size={13} />
-      </button>
+      </Button>
 
       {pickingColor && (
         <div className="absolute z-10 mt-12 ml-0 flex gap-1 rounded-md border border-line bg-surface p-1.5 shadow-md">

@@ -47,6 +47,7 @@ import {
   TabsTrigger,
 } from '@/app/_components/ui/tabs'
 import { Button } from '@/app/_components/ui/button'
+import { Input } from '@/app/_components/ui/input'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { Priority, ProposedAction, Source, Tag, TaskBrief, UserFunction } from '@/lib/types'
 import { functionColor } from '@/lib/function-color'
@@ -1990,22 +1991,18 @@ function SubtasksSection({
 
       <form onSubmit={handleAdd} className="mt-2 flex items-center gap-2 px-1">
         <span className="text-[14px] text-ink-faint">+</span>
-        <input
+        <Input
           type="text"
           value={draft}
           onChange={e => setDraft(e.target.value)}
           placeholder="Add a subtask"
           disabled={busy}
-          className="flex-1 border-0 bg-transparent text-[14px] text-ink placeholder:text-ink-faint focus:outline-none disabled:opacity-50"
+          className="h-7 flex-1 border-0 bg-transparent px-0 text-[14px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
         />
         {draft && (
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-md bg-success-fg px-2.5 py-0.5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
-          >
+          <Button type="submit" disabled={busy} size="sm" className="h-7 px-2.5">
             Add
-          </button>
+          </Button>
         )}
       </form>
     </div>
