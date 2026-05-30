@@ -34,6 +34,13 @@ import { cn } from '@/lib/utils'
 import { AppHeader } from '@/app/_components/app-header'
 import { BrandLogo } from '@/app/_components/brand-logo'
 import { StatusPill, type StatusPillKind } from '@/app/_components/status-pill'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/app/_components/ui/dropdown-menu'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { Priority, ProposedAction, Source, Tag, TaskBrief, UserFunction } from '@/lib/types'
 import { functionColor } from '@/lib/function-color'
@@ -1118,62 +1125,40 @@ function SlopMenu({
   itemId: string
   onMarked: () => void
 }) {
-  const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    if (!open) return
-    function onDoc(e: MouseEvent) {
-      if (!(e.target as HTMLElement).closest('[data-slop-menu]')) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [open])
-
-  function pick(reason: SlopReason, e: React.MouseEvent) {
-    e.stopPropagation()
+  function pick(reason: SlopReason) {
     setBusy(true)
-    setOpen(false)
     markItemSlop(itemId, reason)
       .then(() => onMarked())
       .catch(() => setBusy(false))
   }
 
   return (
-    <div className="relative" data-slop-menu onClick={e => e.stopPropagation()}>
-      <button
-        type="button"
-        aria-label="Mark as slop (wrong / irrelevant)"
-        disabled={busy}
-        onClick={e => {
-          e.stopPropagation()
-          setOpen(o => !o)
-        }}
-        className="flex size-6 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-danger-fg hover:text-danger-fg disabled:opacity-40"
-        title="This shouldn't be here — help the agent learn"
-      >
-        <Trash2 size={12} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-md border border-line bg-surface py-1 shadow-md">
-          <p className="m-0 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
-            Why is this slop?
-          </p>
+    <div onClick={e => e.stopPropagation()}>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Mark as slop (wrong / irrelevant)"
+          disabled={busy}
+          title="This shouldn't be here — help the agent learn"
+          className="flex size-6 items-center justify-center rounded-md border border-line bg-surface text-ink-faint outline-none hover:border-danger-fg hover:text-danger-fg disabled:opacity-40"
+        >
+          <Trash2 size={12} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel>Why is this slop?</DropdownMenuLabel>
           {SLOP_OPTIONS.map(o => (
-            <button
+            <DropdownMenuItem
               key={o.key}
-              type="button"
-              onClick={e => pick(o.key, e)}
-              className="block w-full px-3 py-1.5 text-left hover:bg-surface-muted"
+              onSelect={() => pick(o.key)}
+              className="flex flex-col items-start gap-0.5"
             >
-              <p className="m-0 text-[12px] font-medium text-ink">{o.label}</p>
-              <p className="m-0 text-[11px] text-ink-faint">{o.hint}</p>
-            </button>
+              <span className="text-[12px] font-medium text-ink">{o.label}</span>
+              <span className="text-[11px] text-ink-faint">{o.hint}</span>
+            </DropdownMenuItem>
           ))}
-        </div>
-      )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
