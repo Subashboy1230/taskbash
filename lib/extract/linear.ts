@@ -1,4 +1,9 @@
-// Linear extractor — surface open issues assigned to the user.
+// Linear extractor — surface open issues where the user has been
+// @-mentioned in a comment (or assigned to themselves).
+//
+// Per Subash: too noisy to surface every assigned issue. The signal he
+// actually cares about is "someone's asking me a question on Linear"
+// which shows up as a recent comment that mentions him by name.
 //
 // Auth: Personal API key (NOT OAuth). Linear OAuth apps require workspace
 // admin; Personal API keys don't — any user can mint one from their account
@@ -9,19 +14,30 @@
 //   1. linear.app → Settings → Security & access → Personal API keys → New.
 //   2. Paste the lin_api_... key into /connections.
 //
-// Flow: POST /graphql with Authorization: <api_key> → viewer.assignedIssues
-// → filter to open states → map to ExtractedItem.
+// Flow:
+//   POST /graphql with Authorization: <api_key>
+//   → viewer { id, name } + assignedIssues with recent comments
+//   → keep issues where ANY comment body mentions the viewer
+//   → map to ExtractedItem.
 
 import { getActiveConnection } from '../connections'
 import type { ExtractedItem } from '../types'
 
 const LINEAR_GRAPHQL_URL = 'https://api.linear.app/graphql'
 
-const MAX_ISSUES = 25
+const MAX_ISSUES = 50
+const MAX_COMMENTS_PER_ISSUE = 30
 // Linear state.type values that count as "still actionable" for the digest.
 const OPEN_STATE_TYPES = new Set(['backlog', 'unstarted', 'started', 'triage'])
 
 // ─── GraphQL types (only fields we use) ──────────────────────────────
+
+interface LinearComment {
+  id: string
+  body?: string | null
+  createdAt?: string
+  user?: { id?: string; name?: string; displayName?: string; email?: string } | null
+}
 
 interface LinearIssue {
   id: string
@@ -34,11 +50,16 @@ interface LinearIssue {
   state?: { name?: string; type?: string }
   team?: { key?: string; name?: string }
   updatedAt?: string
+  comments?: { nodes?: LinearComment[] }
 }
 
 interface AssignedIssuesResponse {
   data?: {
     viewer?: {
+      id?: string
+      name?: string
+      displayName?: string
+      email?: string
       assignedIssues?: { nodes?: LinearIssue[] }
     }
   }
@@ -63,6 +84,10 @@ export async function extractLinearActionItems(
   const query = `
     query DigestIssues {
       viewer {
+        id
+        name
+        displayName
+        email
         assignedIssues(first: ${MAX_ISSUES}, orderBy: updatedAt) {
           nodes {
             id
@@ -75,6 +100,14 @@ export async function extractLinearActionItems(
             state { name type }
             team { key name }
             updatedAt
+            comments(first: ${MAX_COMMENTS_PER_ISSUE}) {
+              nodes {
+                id
+                body
+                createdAt
+                user { id name displayName email }
+              }
+            }
           }
         }
       }
@@ -102,12 +135,47 @@ export async function extractLinearActionItems(
     throw new Error(`Linear GraphQL errors: ${messages}`)
   }
 
-  const issues = response.data?.viewer?.assignedIssues?.nodes ?? []
+  const viewer = response.data?.viewer
+  const viewerId = viewer?.id ?? null
+  const viewerEmail = viewer?.email ?? args.userEmail
+  // Build the name-like tokens we expect mentions to use. We match
+  // case-insensitively against any of these in comment bodies. First
+  // name from email handles the common "@subash" mention pattern even
+  // when Linear renders it as plain text rather than a markdown ref.
+  const emailLocal = viewerEmail.split('@')[0] ?? ''
+  const firstNameFromName = (viewer?.displayName || viewer?.name || '')
+    .split(/\s+/)[0]
+    .toLowerCase()
+  const mentionTokens = Array.from(
+    new Set(
+      [emailLocal.toLowerCase(), firstNameFromName].filter(t => t.length >= 2)
+    )
+  )
+
+  const issues = viewer?.assignedIssues?.nodes ?? []
   const openIssues = issues.filter(
     i => i.state?.type && OPEN_STATE_TYPES.has(i.state.type)
   )
 
-  return openIssues.map(toExtractedItem)
+  // Keep only issues where the user has been mentioned by name in any
+  // comment, OR where a recent comment was authored by someone OTHER
+  // than the user (someone is asking us something). The latter is a
+  // looser fallback when name-based detection misses an @-mention
+  // markup variant. Tunable — start tight, loosen if signals drop.
+  const mentioned = openIssues.filter(issue => {
+    const comments = issue.comments?.nodes ?? []
+    if (comments.length === 0) return false
+    return comments.some(c => {
+      // 1. Direct id reference in the markdown source. Linear uses
+      //    `@[Name](mention://user/<uuid>)` for proper @-mentions.
+      if (viewerId && c.body && c.body.includes(viewerId)) return true
+      // 2. Plain-text name token match.
+      const body = (c.body || '').toLowerCase()
+      return mentionTokens.some(token => body.includes(token))
+    })
+  })
+
+  return mentioned.map(toExtractedItem)
 }
 
 function toExtractedItem(issue: LinearIssue): ExtractedItem {

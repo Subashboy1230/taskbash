@@ -341,9 +341,14 @@ export const morningDigest = inngest.createFunction(
         carryoverCount += carryoverIds.length
       }
 
-      // ─── 5c. Auto-complete vanished items ──────────────────────────
-      const completedIds = result.completed.map(c => c.id)
-      if (completedIds.length > 0) {
+      // ─── 5c. Auto-complete vanished items ─ DISABLED ───────────────
+      // Extractors only see a recent window per source. An OPEN task
+      // outside that window would be marked complete every cron run.
+      // Tasks now only close when the user explicitly clears them.
+      // The diff still computes result.completed but we leave it alone.
+      void result.completed
+      if (false) {
+        const completedIds = result.completed.map(c => c.id)
         await step.run(`auto-complete-${source}`, async () => {
           const { error } = await supabase
             .from('items')

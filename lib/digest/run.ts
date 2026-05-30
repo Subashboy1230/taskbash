@@ -234,19 +234,15 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     // tasks the user had marked done or slop.
     suppressedCount += result.suppressed.length
 
-    // Auto-complete vanished items
-    const completedIds = result.completed.map(c => c.id)
-    if (completedIds.length > 0) {
-      await supabase
-        .from('items')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          auto_completed_reason: 'source_signal_gone',
-        })
-        .in('id', completedIds)
-      completedCount += completedIds.length
-    }
+    // DISABLED — auto-complete-vanished was too aggressive. Extractors
+    // only look at a recent window (Gmail 7d, Granola 7d, Linear all-time
+    // but capped at maxResults). An OPEN task outside that window would
+    // be absent from "fresh" and incorrectly auto-closed every digest.
+    // A task is now only completed when the user explicitly clears it
+    // (mark done, mark slop, snooze past due, or the source's own
+    // status transition — e.g. a Linear issue moving to Done). The
+    // diff still produces result.completed but we leave it untouched.
+    completedCount += 0
   }
 
   // Tag each LLM call with the items it actually produced. Fire-and-
