@@ -264,16 +264,8 @@ export function TodayView({
             {digest.greeting}
           </h1>
 
-          <CalendarStrip
-            dateIso={digest.date_iso}
-            items={digest.open_items}
-            onSelectItem={item => {
-              // If the item is a prep brief, switch to the Prep tab so the
-              // user sees the row highlighted in the right place too.
-              setTab(isPrep(item) ? 'prep' : 'open')
-              setSelectedItem(item)
-            }}
-          />
+          {/* CalendarStrip removed — month grid + today's events now live
+              in the right-column TodayCalendarColumn. */}
 
           {/* Tabs: Open / Cleared */}
           <div className="mt-7 flex items-center justify-between border-b border-line">
