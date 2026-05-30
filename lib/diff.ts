@@ -43,7 +43,13 @@ function sourceRefKey(source: Source, ref: SourceRef | null | undefined): string
   if (!ref) return null
   switch (source) {
     case 'gmail':
-      return ref.gmail_thread_id ? `gmail:${ref.gmail_thread_id}` : null
+      // CRITICAL: thread_id alone collapses every message in a long thread
+      // into one dedup bucket. Today's new reply on a thread the user
+      // already cleared would get suppressed. Include the latest
+      // message_id so each message gets its own slot.
+      return ref.gmail_thread_id
+        ? `gmail:${ref.gmail_thread_id}:${ref.gmail_message_id ?? ''}`
+        : null
     case 'granola':
       return ref.granola_meeting_id ? `granola:${ref.granola_meeting_id}` : null
     case 'calendar':
@@ -92,9 +98,15 @@ export function diff(currentItems: Item[], freshItems: ExtractedItem[]): DiffRes
       fresh.title
     )
 
+    // Lookup precedence:
+    //   1. semantic_hash — most specific (per-item identity)
+    //   2. source_ref   — fallback for LLM title variation across runs
+    // Doing it in this order avoids collapsing multi-item containers
+    // (a Granola meeting with 3 action items shares a source_ref but
+    // each item has its own semantic_hash).
     const existing =
-      (refKey ? currentByRef.get(refKey) : undefined) ??
-      currentByHash.get(freshHash)
+      currentByHash.get(freshHash) ??
+      (refKey ? currentByRef.get(refKey) : undefined)
 
     if (!existing) {
       newItems.push(fresh)
