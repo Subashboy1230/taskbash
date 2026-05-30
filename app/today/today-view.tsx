@@ -59,6 +59,11 @@ export function TodayView({
   userEmail,
   functions = [],
   hideHeader = false,
+  hideDetailPanel = false,
+  onSelectItem,
+  externalSelectedItemId,
+  dayFilter,
+  onClearDayFilter,
 }: {
   digest: MockDigestSummary
   userEmail?: string
@@ -66,8 +71,35 @@ export function TodayView({
   // When true (server page renders sidebar separately), don't render the
   // top AppHeader. Kept default false so existing callers don't break.
   hideHeader?: boolean
+  // When true, this TodayView is being used inside the 3-column shell —
+  // the shell owns the right-slot rendering, so we skip our internal
+  // DetailPanel render and emit selection up via onSelectItem.
+  hideDetailPanel?: boolean
+  // Notify the parent shell when the user picks a row (or closes one).
+  onSelectItem?: (item: MockItem | null) => void
+  // Lets the parent control which row is highlighted (e.g. when the
+  // shell already had a selected item from URL state).
+  externalSelectedItemId?: string | null
+  // YYYY-MM-DD — when set, filter the open list to items due that day.
+  dayFilter?: string | null
+  onClearDayFilter?: () => void
 }) {
-  const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
+  const [selectedItemInternal, setSelectedItemInternal] = useState<MockItem | null>(null)
+  // When the parent shell provides an externalSelectedItemId, resolve
+  // it to the actual item from the digest. Otherwise use our internal
+  // state. Either way, the row-highlight comes from `selectedItem`.
+  const externalSelectedItem =
+    externalSelectedItemId
+      ? digest.open_items.find(i => i.id === externalSelectedItemId) ?? null
+      : null
+  const selectedItem = externalSelectedItem ?? selectedItemInternal
+  // Wrapped setter that BOTH updates local state AND notifies the
+  // parent shell. The shell needs the full item object to render its
+  // own DetailPanel.
+  const setSelectedItem = (item: MockItem | null) => {
+    setSelectedItemInternal(item)
+    onSelectItem?.(item)
+  }
   const [tab, setTab] = useState<'open' | 'prep' | 'cleared'>('open')
   // Filter chips — null = "All". Persist in localStorage so the user's
   // filter survives a reload.
@@ -211,7 +243,7 @@ export function TodayView({
     return Array.from(set)
   }, [digest.open_items])
 
-  // Apply source+tag+function filter to the open list. Cleared tab is
+  // Apply source+tag+function+day filter to the open list. Cleared tab is
   // unfiltered for now (small enough that it doesn't need it).
   const filteredOpen = useMemo(() => {
     let out = visibleOpen
@@ -220,8 +252,11 @@ export function TodayView({
     if (functionFilter.size > 0) {
       out = out.filter(i => (i.function_ids ?? []).some(fid => functionFilter.has(fid)))
     }
+    if (dayFilter) {
+      out = out.filter(i => i.due_at && (i.due_at as string).slice(0, 10) === dayFilter)
+    }
     return out
-  }, [visibleOpen, sourceFilter, tagFilter, functionFilter])
+  }, [visibleOpen, sourceFilter, tagFilter, functionFilter, dayFilter])
 
   // Fast lookup map for chip rendering and the multi-select editor.
   const functionsById = useMemo(() => {
@@ -348,6 +383,22 @@ export function TodayView({
                 onGroupByChange={setGroupBy}
               />
 
+              {dayFilter && (
+                <div className="mt-3 flex items-center justify-between rounded-md border border-line bg-surface-muted/40 px-3 py-2 text-[12px]">
+                  <span className="text-ink">
+                    Showing tasks due{' '}
+                    <strong>{new Date(dayFilter + 'T12:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onClearDayFilter?.()}
+                    className="rounded px-2 py-0.5 text-[11px] text-ink-faint hover:bg-surface-muted hover:text-ink"
+                  >
+                    Clear ×
+                  </button>
+                </div>
+              )}
+
               {filteredOpen.length === 0 ? (
                 sourceFilter || tagFilter || functionFilter.size > 0 ? (
                   <FilterEmpty
@@ -403,7 +454,7 @@ export function TodayView({
           )}
         </main>
 
-        {selectedItem && (
+        {!hideDetailPanel && selectedItem && (
           <DetailPanel
             item={selectedItem}
             onClose={() => setSelectedItem(null)}
@@ -1515,7 +1566,7 @@ function BriefSection({
 
 // ─── Detail panel ───────────────────────────────────────────────────────
 
-function DetailPanel({
+export function DetailPanel({
   item,
   onClose,
   onComplete,
@@ -1527,7 +1578,7 @@ function DetailPanel({
   allFunctions?: UserFunction[]
 }) {
   return (
-    <aside className="sticky top-0 max-h-screen w-[480px] shrink-0 overflow-y-auto border-l border-line bg-surface px-6 py-6">
+    <aside className="sticky top-0 max-h-screen w-[340px] shrink-0 overflow-y-auto border-l border-line bg-surface px-5 py-5">
       <div className="mb-4 flex items-center justify-between">
         <button
           onClick={onClose}
