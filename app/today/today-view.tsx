@@ -36,7 +36,7 @@ import { BrandLogo } from '@/app/_components/brand-logo'
 import { StatusPill, type StatusPillKind } from '@/app/_components/status-pill'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { Priority, ProposedAction, Source, Tag, TaskBrief, UserFunction } from '@/lib/types'
-import { functionColor } from '@/lib/load-functions'
+import { functionColor } from '@/lib/function-color'
 import { setItemFunctions } from '@/app/settings/functions/actions'
 import {
   addSubtask,

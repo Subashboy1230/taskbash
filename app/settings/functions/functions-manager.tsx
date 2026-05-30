@@ -6,7 +6,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { functionColor } from '@/lib/load-functions'
+import { functionColor } from '@/lib/function-color'
 import type { UserFunction } from '@/lib/types'
 import {
   createFunction,
