@@ -1042,12 +1042,21 @@ function SnoozeMenu({ onSnooze }: { onSnooze: (hours: number) => void }) {
 // so it leaves the list. Future extraction prompt iterations can replay
 // against the slop corpus to verify they would have correctly skipped it.
 
-type SlopReason = 'irrelevant' | 'spam' | 'low_signal' | 'misread_title' | 'other'
+type SlopReason =
+  | 'irrelevant'
+  | 'spam'
+  | 'low_signal'
+  | 'misread_title'
+  | 'duplicate'
+  | 'old_task'
+  | 'other'
 
 const SLOP_OPTIONS: Array<{ key: SlopReason; label: string; hint: string }> = [
   { key: 'irrelevant', label: 'Irrelevant', hint: "Don't extract this kind of thing" },
   { key: 'spam', label: 'Spam / noise', hint: 'Marketing, automated, junk' },
   { key: 'low_signal', label: 'Low signal', hint: "Real, but doesn't need my attention" },
+  { key: 'duplicate', label: 'Repeat', hint: 'Already exists as another task' },
+  { key: 'old_task', label: 'Old task', hint: 'Stale — no longer relevant' },
   { key: 'misread_title', label: 'Misread', hint: 'Title or details are wrong' },
   { key: 'other', label: 'Other', hint: 'Just wrong' },
 ]

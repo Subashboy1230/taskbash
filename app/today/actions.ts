@@ -26,7 +26,14 @@ import type { Priority } from '@/lib/types'
  */
 export async function markItemSlop(
   itemId: string,
-  reason: 'irrelevant' | 'spam' | 'low_signal' | 'misread_title' | 'other',
+  reason:
+    | 'irrelevant'
+    | 'spam'
+    | 'low_signal'
+    | 'misread_title'
+    | 'duplicate'
+    | 'old_task'
+    | 'other',
   note?: string
 ) {
   const userId = await resolveUserId()
