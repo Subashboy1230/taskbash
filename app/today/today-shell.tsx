@@ -7,14 +7,17 @@
 // backdrop. The calendar stays present underneath so the user can see their
 // agenda even while reading a task brief.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AppSidebar } from '@/app/_components/app-sidebar'
 import { TodayView, DetailPanel } from './today-view'
 import { TodayCalendarColumn } from './today-calendar-column'
+import { AddTaskPanel } from './add-task-panel'
 import { Sheet, SheetContent } from '@/app/_components/ui/sheet'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { UserFunction } from '@/lib/types'
 import type { DayEvent } from '@/lib/load-day-events'
+
+const CALENDAR_COLLAPSED_KEY = 'taskbash:calendarCollapsed'
 
 export function TodayShell({
   digest,
@@ -31,6 +34,26 @@ export function TodayShell({
 }) {
   const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
   const [dayFilter, setDayFilter] = useState<string | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
+
+  // Lift calendar collapsed state so the main column can claim the freed
+  // width when it's collapsed.
+  const [calendarCollapsed, setCalendarCollapsed] = useState(false)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(CALENDAR_COLLAPSED_KEY)
+      if (saved === '1') setCalendarCollapsed(true)
+    } catch {
+      /* localStorage unavailable */
+    }
+  }, [])
+  useEffect(() => {
+    try {
+      localStorage.setItem(CALENDAR_COLLAPSED_KEY, calendarCollapsed ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [calendarCollapsed])
 
   const closeDetail = () => setSelectedItem(null)
 
@@ -51,10 +74,13 @@ export function TodayShell({
           externalSelectedItemId={selectedItem?.id ?? null}
           dayFilter={dayFilter}
           onClearDayFilter={() => setDayFilter(null)}
+          onAddTask={() => setAddOpen(true)}
+          mainExpanded={calendarCollapsed}
         />
       </main>
 
-      {/* Calendar column is always present so the user can see their agenda. */}
+      {/* Calendar column is always present so the user can see their agenda.
+          Controlled collapse state lives in the shell. */}
       <TodayCalendarColumn
         events={events}
         items={digest.open_items.map(i => ({
@@ -65,10 +91,12 @@ export function TodayShell({
         calendarConnected={calendarConnected}
         selectedDay={dayFilter}
         onSelectDay={setDayFilter}
+        collapsed={calendarCollapsed}
+        onToggleCollapsed={() => setCalendarCollapsed(c => !c)}
       />
 
-      {/* Task detail slides over from the right with a backdrop. Escape or
-          backdrop-click closes the sheet. */}
+      {/* Task detail slides over from the right. The Sheet's overlay is
+          transparent (see ui/sheet) so the task list stays fully visible. */}
       <Sheet open={!!selectedItem} onOpenChange={open => !open && closeDetail()}>
         <SheetContent
           side="right"
@@ -82,6 +110,19 @@ export function TodayShell({
               allFunctions={functions}
             />
           )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Add-task panel uses the same slide-over pattern. */}
+      <Sheet open={addOpen} onOpenChange={setAddOpen}>
+        <SheetContent
+          side="right"
+          className="w-full overflow-y-auto p-0 sm:max-w-md md:max-w-lg"
+        >
+          <AddTaskPanel
+            allFunctions={functions}
+            onClose={() => setAddOpen(false)}
+          />
         </SheetContent>
       </Sheet>
     </div>

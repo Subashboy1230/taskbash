@@ -26,6 +26,7 @@ import {
   History,
   Layers,
   Loader2,
+  Plus,
   RefreshCw,
   Trash2,
   X,
@@ -79,6 +80,8 @@ export function TodayView({
   externalSelectedItemId,
   dayFilter,
   onClearDayFilter,
+  onAddTask,
+  mainExpanded = false,
 }: {
   digest: MockDigestSummary
   userEmail?: string
@@ -98,6 +101,11 @@ export function TodayView({
   // YYYY-MM-DD — when set, filter the open list to items due that day.
   dayFilter?: string | null
   onClearDayFilter?: () => void
+  // Open the add-task panel (controlled by the shell).
+  onAddTask?: () => void
+  // When the calendar column is collapsed, give the main column more
+  // breathing room. Removes the 820px content cap.
+  mainExpanded?: boolean
 }) {
   const [selectedItemInternal, setSelectedItemInternal] = useState<MockItem | null>(null)
   // When the parent shell provides an externalSelectedItemId, resolve
@@ -307,7 +315,13 @@ export function TodayView({
           className={cn(
             'transition-all duration-200',
             hideHeader ? '' : 'mx-auto px-8 pt-4 pb-16',
-            selectedItem ? 'max-w-[680px]' : hideHeader ? 'max-w-[820px] w-full' : 'max-w-[920px] flex-1'
+            selectedItem
+              ? 'max-w-[680px]'
+              : hideHeader
+              ? mainExpanded
+                ? 'w-full max-w-none'
+                : 'max-w-[820px] w-full'
+              : 'max-w-[920px] flex-1'
           )}
         >
           <h1 className="m-0 mb-4 text-[30px] font-semibold tracking-tight text-ink">
@@ -335,22 +349,37 @@ export function TodayView({
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              aria-label="Re-run tasks"
-              title="Re-pull latest items from your sources"
-              className="gap-1.5"
-            >
-              {isRefreshing ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <RefreshCw size={14} />
+            <div className="flex items-center gap-2">
+              {onAddTask && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={onAddTask}
+                  aria-label="Add task"
+                  title="Add a manual task"
+                  className="gap-1.5"
+                >
+                  <Plus size={14} />
+                  Add task
+                </Button>
               )}
-              Re-run tasks
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                aria-label="Re-run tasks"
+                title="Re-pull latest items from your sources"
+                className="gap-1.5"
+              >
+                {isRefreshing ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={14} />
+                )}
+                Re-run tasks
+              </Button>
+            </div>
           </div>
 
           {refreshError && (

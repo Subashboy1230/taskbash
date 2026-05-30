@@ -42,6 +42,8 @@ export function TodayCalendarColumn({
   calendarConnected = true,
   selectedDay = null,
   onSelectDay,
+  collapsed: collapsedProp,
+  onToggleCollapsed,
 }: {
   events: DayEvent[]
   // Open items with due dates — drives the dot under each day and the
@@ -51,6 +53,10 @@ export function TodayCalendarColumn({
   // YYYY-MM-DD of the currently active day filter (or null).
   selectedDay?: string | null
   onSelectDay?: (iso: string | null) => void
+  // Controlled collapse state. When the shell controls collapse it can
+  // expand the main task column to fill the freed space.
+  collapsed?: boolean
+  onToggleCollapsed?: () => void
 }) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -58,22 +64,36 @@ export function TodayCalendarColumn({
   const [viewMonth, setViewMonth] = useState(new Date(today))
 
   // Collapse/expand. Default expanded; hydrate from localStorage on mount.
-  const [collapsed, setCollapsed] = useState(false)
+  // When `collapsed` prop is passed we treat this component as controlled
+  // and skip the internal state. Persistence to localStorage is owned by
+  // whichever side actually holds the state.
+  const [collapsedInternal, setCollapsedInternal] = useState(false)
+  const isControlled = typeof collapsedProp === 'boolean'
+  const collapsed = isControlled ? collapsedProp : collapsedInternal
+  const setCollapsed = (next: boolean) => {
+    if (isControlled) {
+      onToggleCollapsed?.()
+    } else {
+      setCollapsedInternal(next)
+    }
+  }
   useEffect(() => {
+    if (isControlled) return
     try {
       const saved = localStorage.getItem(COLLAPSED_KEY)
-      if (saved === '1') setCollapsed(true)
+      if (saved === '1') setCollapsedInternal(true)
     } catch {
       /* localStorage unavailable */
     }
-  }, [])
+  }, [isControlled])
   useEffect(() => {
+    if (isControlled) return
     try {
-      localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0')
+      localStorage.setItem(COLLAPSED_KEY, collapsedInternal ? '1' : '0')
     } catch {
       /* ignore */
     }
-  }, [collapsed])
+  }, [collapsedInternal, isControlled])
 
   // Bucket items by their due-date day key.
   const itemsByDay = useMemo(() => {
@@ -150,7 +170,7 @@ export function TodayCalendarColumn({
   }
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-[300px] shrink-0 flex-col overflow-y-auto border-l border-line bg-canvas px-5 py-6 lg:flex">
+    <aside className="sticky top-0 hidden h-screen w-[300px] shrink-0 flex-col border-l border-line bg-canvas px-5 py-6 lg:flex">
       {/* Month grid */}
       <header className="mb-3 flex items-center justify-between">
         <h2 className="m-0 text-[15px] font-semibold text-ink">
@@ -390,7 +410,7 @@ function DayCell({
       {/* Hover preview popover — appears below the cell when there are items */}
       {hasItems && (
         <div
-          className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 w-56 -translate-x-1/2 rounded-md border border-line/70 bg-surface px-3 py-2 text-left text-[12px] leading-snug text-ink shadow-lg opacity-0 transition-opacity group-hover:opacity-100"
+          className="pointer-events-none absolute left-1/2 top-full z-[60] mt-1 w-56 -translate-x-1/2 rounded-md border border-line bg-surface px-3 py-2 text-left text-[12px] leading-snug text-ink shadow-2xl opacity-0 transition-opacity group-hover:opacity-100"
           role="tooltip"
         >
           <p className="m-0 mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">

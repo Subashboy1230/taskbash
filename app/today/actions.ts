@@ -440,3 +440,43 @@ export async function getEventsForDateAction(yyyymmdd: string) {
   const { loadEventsForDate } = await import('@/lib/load-day-events')
   return loadEventsForDate(yyyymmdd)
 }
+
+/**
+ * Create a manual top-level task (no parent). Same shape as addSubtask
+ * but without a parent_id, so it shows up in the main Open list.
+ * Optional due_at (ISO date string) and function_ids tag the new task.
+ */
+export async function addManualTask(args: {
+  title: string
+  dueAt?: string | null
+  functionIds?: string[]
+}) {
+  const trimmed = args.title.trim()
+  if (!trimmed) throw new Error('Task title is empty.')
+  const userId = await resolveUserId()
+  const semantic_hash = createHash('sha256')
+    .update(`manual|${userId}|${trimmed}|${Date.now()}`)
+    .digest('hex')
+    .slice(0, 16)
+  const { data, error } = await supabase
+    .from('items')
+    .insert({
+      user_id: userId,
+      title: trimmed,
+      task_type: 'manual',
+      tag: 'action',
+      source: 'manual',
+      source_ref: { manual_task: true },
+      semantic_hash,
+      status: 'open',
+      due_at: args.dueAt ?? null,
+      function_ids: args.functionIds && args.functionIds.length > 0
+        ? args.functionIds
+        : null,
+    })
+    .select('id, title, status')
+    .single()
+  if (error) throw new Error(`addManualTask failed: ${error.message}`)
+  revalidatePath('/today')
+  return data
+}

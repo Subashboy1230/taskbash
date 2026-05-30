@@ -18,15 +18,15 @@ import {
   setFunctionColor,
 } from './actions'
 
-// Subash's starter set. The "Seed defaults" button inserts these so he
-// doesn't have to type them in one by one. Hiring belongs to multiple
-// functions in practice — he can multi-tag those tasks later.
+// Subash's starter set. Short names so the chips don't wrap on
+// task rows. Hand-tuned colors come from lib/function-color name
+// overrides so the chips read with distinct hues.
 const DEFAULT_FUNCTIONS = [
-  'Product Management',
-  'Marketing',
-  'People Ops',
+  'Product',
+  'Ops',
   'QA',
   'Hiring',
+  'GTM',
 ]
 
 // Pre-baked palette for the swatch picker. Matches load-functions
