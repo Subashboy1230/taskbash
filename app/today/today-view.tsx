@@ -58,10 +58,14 @@ export function TodayView({
   digest,
   userEmail,
   functions = [],
+  hideHeader = false,
 }: {
   digest: MockDigestSummary
   userEmail?: string
   functions?: UserFunction[]
+  // When true (server page renders sidebar separately), don't render the
+  // top AppHeader. Kept default false so existing callers don't break.
+  hideHeader?: boolean
 }) {
   const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
   const [tab, setTab] = useState<'open' | 'prep' | 'cleared'>('open')
@@ -240,17 +244,20 @@ export function TodayView({
   }, [])
 
   return (
-    <div className="min-h-screen bg-canvas">
-      <AppHeader
-        userInitial={digest.user_initials.charAt(0)}
-        userEmail={userEmail}
-      />
+    <div className={hideHeader ? '' : 'min-h-screen bg-canvas'}>
+      {!hideHeader && (
+        <AppHeader
+          userInitial={digest.user_initials.charAt(0)}
+          userEmail={userEmail}
+        />
+      )}
 
       <div className="flex">
         <main
           className={cn(
-            'mx-auto px-8 pt-4 pb-16 transition-all duration-200',
-            selectedItem ? 'max-w-[680px]' : 'max-w-[920px] flex-1'
+            'transition-all duration-200',
+            hideHeader ? '' : 'mx-auto px-8 pt-4 pb-16',
+            selectedItem ? 'max-w-[680px]' : hideHeader ? 'max-w-[820px] w-full' : 'max-w-[920px] flex-1'
           )}
         >
           <h1 className="m-0 mb-4 text-[28px] font-semibold tracking-tight text-ink">
