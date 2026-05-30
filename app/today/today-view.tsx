@@ -845,7 +845,7 @@ function TaskRow({
           type="button"
           aria-label="Complete"
           onClick={handleCompleteClick}
-          className="flex size-6 items-center justify-center rounded-md border border-success-fg/40 bg-success-bg text-success-fg hover:bg-success-fg hover:text-white"
+          className="flex size-6 items-center justify-center rounded-md border border-success-fg/40 bg-success-bg text-success-fg hover:bg-success-fg hover:text-canvas"
         >
           <Check size={12} />
         </button>
@@ -915,7 +915,7 @@ function TaskRow({
                       className={cn(
                         'flex size-4 shrink-0 items-center justify-center rounded border transition-colors',
                         isDone
-                          ? 'border-success-fg bg-success-fg text-white'
+                          ? 'border-success-fg bg-success-fg text-canvas'
                           : 'border-line-strong bg-surface hover:border-success-fg'
                       )}
                     >
@@ -1004,8 +1004,8 @@ function ActionButton({
       aria-label={label}
       className={cn(
         'flex size-6 items-center justify-center rounded-md border transition-colors',
-        variant === 'primary' && 'border-success-fg/40 bg-success-bg text-success-fg hover:bg-success-fg hover:text-white',
-        variant === 'completed' && 'border-success-fg bg-success-fg text-white hover:opacity-80',
+        variant === 'primary' && 'border-success-fg/40 bg-success-bg text-success-fg hover:bg-success-fg hover:text-canvas',
+        variant === 'completed' && 'border-success-fg bg-success-fg text-canvas hover:opacity-80',
         variant === 'default' && 'border-line bg-surface text-ink-faint hover:border-line-strong hover:text-ink'
       )}
     >
@@ -1273,9 +1273,9 @@ function TagPill({ tag }: { tag: NonNullable<Tag> }) {
 type PrioritySet = 'P0' | 'P1' | 'P2' | 'P3'
 
 const PRIORITY_STYLE: Record<PrioritySet, string> = {
-  P0: 'bg-danger-fg text-white border-danger-fg',
-  P1: 'bg-tag-action-fg text-white border-tag-action-fg',
-  P2: 'bg-tag-reply-fg text-white border-tag-reply-fg',
+  P0: 'bg-danger-fg text-canvas border-danger-fg',
+  P1: 'bg-tag-action-fg text-canvas border-tag-action-fg',
+  P2: 'bg-tag-reply-fg text-canvas border-tag-reply-fg',
   P3: 'bg-surface-muted text-ink-muted border-line-strong',
 }
 
@@ -1677,7 +1677,7 @@ export function DetailPanel({
             onComplete()
             onClose()
           }}
-          className="flex-1 rounded-md bg-success-fg px-4 py-2 text-[14px] font-medium text-white hover:opacity-90"
+          className="flex-1 rounded-md bg-success-fg px-4 py-2 text-[14px] font-medium text-canvas hover:opacity-90"
         >
           <Check size={14} className="-mt-0.5 mr-1 inline" />
           Mark as Done
@@ -1804,7 +1804,7 @@ function DraftCard({
           type="button"
           disabled={busy}
           onClick={() => handleAction(true)}
-          className="inline-flex items-center gap-1.5 rounded-md bg-success-fg px-3 py-1.5 text-[13px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-md bg-success-fg px-3 py-1.5 text-[13px] font-semibold text-canvas hover:opacity-90 disabled:opacity-50"
           title="Send via Gmail API immediately"
         >
           {busy && busyMode === 'send' ? (
@@ -2220,9 +2220,9 @@ function FilterChip({
 // palette so a "Replies" chip in its active state visually anchors to the
 // blue reply rows below.
 const TAG_CHIP_ACTIVE: Record<NonNullable<Tag>, string> = {
-  reply: 'border-tag-reply-fg bg-tag-reply-fg text-white',
-  action: 'border-tag-action-fg bg-tag-action-fg text-white',
-  commit: 'border-tag-commit-fg bg-tag-commit-fg text-white',
+  reply: 'border-tag-reply-fg bg-tag-reply-fg text-canvas',
+  action: 'border-tag-action-fg bg-tag-action-fg text-canvas',
+  commit: 'border-tag-commit-fg bg-tag-commit-fg text-canvas',
   fyi: 'border-ink-muted bg-ink-muted text-canvas',
 }
 

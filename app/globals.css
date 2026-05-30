@@ -1,61 +1,64 @@
 @import "tailwindcss";
 
-/* ----- Design tokens — Nummo-inspired: forest green on cream, peach calendar ----- */
+/* ─────────────────────────────────────────────────────────────────────────
+   Design tokens — Vercel-style dark dashboard.
+   Near-black canvas, slightly raised cards, white/gray text, light-on-dark
+   accent buttons. Tag tones desaturated to fit dark mode.
+   ───────────────────────────────────────────────────────────────────────── */
 @theme {
-  /* Surface — soft cream base */
-  --color-canvas: #f4f1ea;
-  --color-surface: #ffffff;
-  --color-surface-muted: #ece8de;
+  /* Surfaces */
+  --color-canvas: #0a0a0a;            /* near-black background */
+  --color-surface: #141414;           /* cards, raised panels */
+  --color-surface-muted: #1c1c1c;     /* inputs, hover, secondary */
 
   /* Text */
-  --color-ink: #14211f;
-  --color-ink-muted: #5a6562;
-  --color-ink-faint: #8b948f;
+  --color-ink: #fafafa;               /* primary white */
+  --color-ink-muted: #a3a3a3;         /* gray secondary */
+  --color-ink-faint: #6b6b6b;         /* faint tertiary */
 
   /* Borders */
-  --color-line: #e3dfd2;
-  --color-line-strong: #cdc8b7;
+  --color-line: #262626;              /* subtle hairline */
+  --color-line-strong: #404040;       /* stronger separator */
 
-  /* Primary accent — deep forest green */
-  --color-accent: #14523d;
-  --color-accent-soft: #d8ebe1;
-  --color-accent-strong: #0e3d2c;
+  /* Accent — light on dark (button bg = white, fg = black) */
+  --color-accent: #fafafa;
+  --color-accent-soft: rgba(250, 250, 250, 0.08);
+  --color-accent-strong: #ffffff;
 
-  /* Tag palette (categorical) — desaturated to fit cream/green system */
-  --color-tag-reply-bg: #e6f1fb;
-  --color-tag-reply-fg: #0c447c;
-  --color-tag-action-bg: #fbe9d9;
-  --color-tag-action-fg: #8e4a14;
-  --color-tag-commit-bg: #d8ebe1;
-  --color-tag-commit-fg: #14523d;
-  --color-tag-fyi-bg: #ece8de;
-  --color-tag-fyi-fg: #5a6562;
+  /* Tag palette — saturated foreground on translucent background.
+     Reads cleanly on near-black without screaming. */
+  --color-tag-reply-bg: rgba(96, 165, 250, 0.12);
+  --color-tag-reply-fg: #93c5fd;
+  --color-tag-action-bg: rgba(251, 146, 60, 0.12);
+  --color-tag-action-fg: #fdba74;
+  --color-tag-commit-bg: rgba(74, 222, 128, 0.12);
+  --color-tag-commit-fg: #86efac;
+  --color-tag-fyi-bg: rgba(163, 163, 163, 0.12);
+  --color-tag-fyi-fg: #a3a3a3;
 
   /* Semantic */
-  --color-danger-bg: #fbeef0;
-  --color-danger-fg: #b8364a;
-  --color-danger-border: #f3d6db;
-  --color-success-bg: #d8ebe1;
-  --color-success-fg: #14523d;
+  --color-danger-bg: rgba(248, 113, 113, 0.12);
+  --color-danger-fg: #fca5a5;
+  --color-danger-border: rgba(248, 113, 113, 0.25);
+  --color-success-bg: rgba(74, 222, 128, 0.12);
+  --color-success-fg: #86efac;
 
-  /* Calendar strip — warm peach gradient (Nummo signature) */
-  --color-cal-strip-from: #ffd6a8;
-  --color-cal-strip-to: #ffe8cf;
-  --color-cal-strip-text: #5c3a18;
-  --color-cal-strip-text-faint: #8c6a48;
-  --color-cal-strip-active: #14523d;
+  /* Calendar — kept subtle; no more peach gradient */
+  --color-cal-strip-from: rgba(255, 255, 255, 0.03);
+  --color-cal-strip-to: rgba(255, 255, 255, 0.06);
+  --color-cal-strip-text: #a3a3a3;
+  --color-cal-strip-text-faint: #6b6b6b;
+  --color-cal-strip-active: #fafafa;
 
-  /* Avatar — solid magenta circle */
-  --color-avatar-bg: #b0185a;
+  /* Avatar — keep magenta as the lone identity color */
+  --color-avatar-bg: #ec4899;
   --color-avatar-fg: #ffffff;
 
   /* Typography */
   --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
 
-  /* ----- shadcn/ui tokens, mapped to the Nummo palette above -----
-     shadcn components import these via bg-background, text-foreground,
-     border-border, etc. Mapping them to our existing tokens keeps the
-     forest-green-on-cream identity instead of imposing shadcn defaults. */
+  /* ─── shadcn/ui tokens mapped to the dark palette above ───
+     Components imported from app/_components/ui automatically pick these up. */
   --color-background: var(--color-canvas);
   --color-foreground: var(--color-ink);
   --color-card: var(--color-surface);
@@ -63,32 +66,42 @@
   --color-popover: var(--color-surface);
   --color-popover-foreground: var(--color-ink);
   --color-primary: var(--color-accent);
-  --color-primary-foreground: #ffffff;
+  --color-primary-foreground: #0a0a0a;        /* dark text on light button */
   --color-secondary: var(--color-surface-muted);
   --color-secondary-foreground: var(--color-ink);
   --color-muted: var(--color-surface-muted);
   --color-muted-foreground: var(--color-ink-muted);
-  --color-accent-foreground: #ffffff;
+  --color-accent-foreground: #0a0a0a;
   --color-destructive: var(--color-danger-fg);
-  --color-destructive-foreground: #ffffff;
+  --color-destructive-foreground: #0a0a0a;
   --color-border: var(--color-line);
   --color-input: var(--color-line);
-  --color-ring: var(--color-accent);
+  --color-ring: var(--color-ink);              /* white focus ring on dark */
 
-  --radius: 0.5rem;
+  --radius: 0.75rem;                            /* larger card corners */
 }
 
-/* ----- Base ----- */
+/* ─── Base ─── */
 html, body {
   margin: 0;
   padding: 0;
   font-family: var(--font-sans);
   background: var(--color-canvas);
   color: var(--color-ink);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
 }
+
+/* Scrollbar — dark, slim */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover { background: #525252; }
 
 details > summary {
   list-style: none;
@@ -96,4 +109,10 @@ details > summary {
 }
 details > summary::-webkit-details-marker {
   display: none;
+}
+
+/* Selection — light highlight on dark */
+::selection {
+  background: rgba(250, 250, 250, 0.15);
+  color: var(--color-ink);
 }
