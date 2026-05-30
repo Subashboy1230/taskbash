@@ -3,15 +3,18 @@
 // next/headers via supabase-server) so 'use client' components can
 // import it without Next refusing to bundle the chain.
 
+// Dark-mode brightened palette — the previous mid-saturation hues read
+// as muddy on a near-black canvas. These are picked to stay legible at
+// 12px on #0a0a0a while keeping the families visually distinct.
 const FALLBACK_COLORS = [
-  '#7B68EE', // purple
-  '#1D9E75', // teal
-  '#D85A30', // coral
-  '#0C447C', // blue
-  '#993556', // pink
-  '#854F0B', // amber
-  '#3B6D11', // green
-  '#A32D2D', // red
+  '#a78bfa', // purple
+  '#5eead4', // teal
+  '#fb923c', // coral
+  '#60a5fa', // blue
+  '#f472b6', // pink
+  '#fcd34d', // amber
+  '#86efac', // green
+  '#fca5a5', // red
 ] as const
 
 /**

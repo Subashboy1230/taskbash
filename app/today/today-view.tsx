@@ -215,7 +215,7 @@ export function TodayView({
     startRefresh(async () => {
       const result = await requestRefresh()
       if (!result.ok) {
-        setRefreshError(result.error || 'Refresh failed')
+        setRefreshError(result.error || 'Re-run failed')
         return
       }
       // Server already revalidated /today; trigger a client re-fetch.
@@ -309,7 +309,7 @@ export function TodayView({
             selectedItem ? 'max-w-[680px]' : hideHeader ? 'max-w-[820px] w-full' : 'max-w-[920px] flex-1'
           )}
         >
-          <h1 className="m-0 mb-4 text-[28px] font-semibold tracking-tight text-ink">
+          <h1 className="m-0 mb-4 text-[30px] font-semibold tracking-tight text-ink">
             {digest.greeting}
           </h1>
 
@@ -335,25 +335,26 @@ export function TodayView({
               </TabsList>
             </Tabs>
             <Button
-              variant="ghost"
-              size="icon"
+              variant="outline"
+              size="sm"
               onClick={handleRefresh}
               disabled={isRefreshing}
-              aria-label="Refresh"
+              aria-label="Re-run tasks"
               title="Re-pull latest items from your sources"
-              className="h-8 w-8 text-ink-faint hover:text-ink"
+              className="gap-1.5"
             >
               {isRefreshing ? (
                 <Loader2 size={14} className="animate-spin" />
               ) : (
                 <RefreshCw size={14} />
               )}
+              Re-run tasks
             </Button>
           </div>
 
           {refreshError && (
             <div className="mt-3 rounded-md border border-danger-border bg-danger-bg px-3 py-2 text-[13px] text-danger-fg">
-              Refresh failed: {refreshError}
+              Re-run failed: {refreshError}
             </div>
           )}
 
@@ -2085,7 +2086,7 @@ function FilterBar({
   // Hide the bar entirely when there's nothing to filter or group.
   if (orderedSources.length === 0 && orderedTags.length === 0 && functions.length === 0) return null
   return (
-    <div className="mt-4 space-y-2">
+    <div className="mt-4 space-y-2 rounded-xl border border-line bg-surface/40 p-4 shadow-sm">
       {/* Row 1: Source chips + Group-by toggle (right-aligned) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">

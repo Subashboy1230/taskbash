@@ -8,27 +8,34 @@
 
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
-import { AppHeader } from '@/app/_components/app-header'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { loadObservability } from '@/lib/load-observability'
+import { loadTodayEvents } from '@/lib/load-day-events'
+import { getActiveConnection } from '@/lib/connections'
+import { PageShell } from '@/app/_components/page-shell'
 import { RecentCallsTable } from './recent-calls-table'
 
 export const dynamic = 'force-dynamic'
 
 export default async function ObservabilityPage() {
-  const data = await loadObservability()
-  const supabase = await createSupabaseServerClient()
+  const [data, events, calConn, supabase] = await Promise.all([
+    loadObservability(),
+    loadTodayEvents().catch(() => []),
+    getActiveConnection('calendar').catch(() => null),
+    createSupabaseServerClient(),
+  ])
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   return (
-    <div className="min-h-screen bg-canvas">
-      <AppHeader
-        userInitial={(user?.email ?? 'U').charAt(0).toUpperCase()}
-        userEmail={user?.email ?? undefined}
-      />
-      <main className="mx-auto max-w-[1100px] px-8 pt-4 pb-16">
+    <PageShell
+      userEmail={user?.email ?? undefined}
+      userInitial={(user?.email ?? 'U').charAt(0).toUpperCase()}
+      events={events}
+      calendarConnected={!!calConn?.nango_connection_id}
+    >
+      <div className="mx-auto max-w-[1100px]">
         <header className="mb-8">
           <Link
             href="/today"
@@ -41,7 +48,7 @@ export default async function ObservabilityPage() {
             Observability
           </h1>
           <p className="m-0 text-[14px] text-ink-faint">
-            Trace of every Claude call ToDoo makes. Slop rate per prompt
+            Trace of every Claude call taskbash makes. Slop rate per prompt
             version is the headline metric. Keep it dropping.
           </p>
         </header>
@@ -171,8 +178,8 @@ export default async function ObservabilityPage() {
             datasetSuggestions={data.dataset_suggestions}
           />
         </section>
-      </main>
-    </div>
+      </div>
+    </PageShell>
   )
 }
 

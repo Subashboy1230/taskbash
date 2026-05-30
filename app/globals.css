@@ -26,15 +26,16 @@
   --color-accent-strong: #ffffff;
 
   /* Tag palette — saturated foreground on translucent background.
-     Reads cleanly on near-black without screaming. */
-  --color-tag-reply-bg: rgba(96, 165, 250, 0.12);
-  --color-tag-reply-fg: #93c5fd;
-  --color-tag-action-bg: rgba(251, 146, 60, 0.12);
-  --color-tag-action-fg: #fdba74;
-  --color-tag-commit-bg: rgba(74, 222, 128, 0.12);
-  --color-tag-commit-fg: #86efac;
-  --color-tag-fyi-bg: rgba(163, 163, 163, 0.12);
-  --color-tag-fyi-fg: #a3a3a3;
+     Bumped from 12% → 18% so chips actually register on near-black
+     without losing the soft "tinted" feel. */
+  --color-tag-reply-bg: rgba(96, 165, 250, 0.18);
+  --color-tag-reply-fg: #bfdbfe;
+  --color-tag-action-bg: rgba(251, 146, 60, 0.18);
+  --color-tag-action-fg: #fed7aa;
+  --color-tag-commit-bg: rgba(74, 222, 128, 0.18);
+  --color-tag-commit-fg: #bbf7d0;
+  --color-tag-fyi-bg: rgba(163, 163, 163, 0.18);
+  --color-tag-fyi-fg: #d4d4d4;
 
   /* Semantic */
   --color-danger-bg: rgba(248, 113, 113, 0.12);

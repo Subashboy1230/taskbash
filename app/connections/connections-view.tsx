@@ -19,7 +19,6 @@ import {
   Loader2,
 } from 'lucide-react'
 import type { Connection, ConnectionProvider } from '@/lib/types'
-import { AppHeader } from '@/app/_components/app-header'
 import { BrandLogo } from '@/app/_components/brand-logo'
 import {
   createNangoConnectSession,
@@ -79,45 +78,42 @@ const SOURCES: Source[] = [
 
 export function ConnectionsView({
   connections,
-  userInitial,
-  userEmail,
 }: {
   connections: Connection[]
+  // userInitial/userEmail kept for backward compat but no longer used here —
+  // the surrounding PageShell renders the sidebar with that info.
   userInitial?: string
   userEmail?: string
 }) {
   const byProvider = new Map(connections.map(c => [c.provider, c]))
   return (
-    <div className="min-h-screen bg-canvas">
-      <AppHeader userInitial={userInitial ?? 'U'} userEmail={userEmail} />
-      <main className="mx-auto max-w-[920px] px-8 pt-4 pb-16">
-        <header className="mb-8">
-          <Link
-            href="/today"
-            className="inline-flex items-center gap-1.5 text-[13px] text-ink-faint hover:text-ink"
-          >
-            <ChevronLeft size={14} />
-            Back to today
-          </Link>
-          <h1 className="mt-2 mb-1 text-[28px] font-semibold tracking-tight text-ink">
-            Connections
-          </h1>
-          <p className="m-0 text-[14px] text-ink-faint">
-            Sources ToDoo pulls action items from. Connect what you use; the
-            morning digest reads from anything that's active here.
-          </p>
-        </header>
+    <div className="mx-auto max-w-[920px]">
+      <header className="mb-8">
+        <Link
+          href="/today"
+          className="inline-flex items-center gap-1.5 text-[13px] text-ink-faint hover:text-ink"
+        >
+          <ChevronLeft size={14} />
+          Back to today
+        </Link>
+        <h1 className="mt-2 mb-1 text-[28px] font-semibold tracking-tight text-ink">
+          Connections
+        </h1>
+        <p className="m-0 text-[14px] text-ink-faint">
+          Sources taskbash pulls action items from. Connect what you use; the
+          morning digest reads from anything that&apos;s active here.
+        </p>
+      </header>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {SOURCES.map(source => (
-            <ConnectionCard
-              key={source.provider}
-              source={source}
-              connection={byProvider.get(source.provider) ?? null}
-            />
-          ))}
-        </div>
-      </main>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {SOURCES.map(source => (
+          <ConnectionCard
+            key={source.provider}
+            source={source}
+            connection={byProvider.get(source.provider) ?? null}
+          />
+        ))}
+      </div>
     </div>
   )
 }

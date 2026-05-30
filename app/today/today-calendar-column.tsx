@@ -3,13 +3,28 @@
 // Right-column calendar widget: month grid above, today's events below.
 // Interactive:
 //   - Hover any day with a dot → popover lists up to 5 task titles
-//   - Click a day → calls onSelectDay(YYYY-MM-DD), shell filters main
+//   - Click any day → calls onSelectDay(YYYY-MM-DD); shell filters main
 //     list to that day's tasks (and shows a banner with Clear button)
+//   - Collapsible via the chevron in the header. Persisted in
+//     localStorage under `taskbash:calendarCollapsed`.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Plug, Video } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Plug,
+  Video,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/app/_components/ui/card'
 import type { DayEvent } from '@/lib/load-day-events'
 
 export interface CalendarColumnItem {
@@ -17,6 +32,8 @@ export interface CalendarColumnItem {
   title: string
   due_at?: string | null
 }
+
+const COLLAPSED_KEY = 'taskbash:calendarCollapsed'
 
 export function TodayCalendarColumn({
   events,
@@ -36,7 +53,26 @@ export function TodayCalendarColumn({
 }) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
+  const todayIso = isoDay(today)
   const [viewMonth, setViewMonth] = useState(new Date(today))
+
+  // Collapse/expand. Default expanded; hydrate from localStorage on mount.
+  const [collapsed, setCollapsed] = useState(false)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(COLLAPSED_KEY)
+      if (saved === '1') setCollapsed(true)
+    } catch {
+      /* localStorage unavailable */
+    }
+  }, [])
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [collapsed])
 
   // Bucket items by their due-date day key.
   const itemsByDay = useMemo(() => {
@@ -70,7 +106,7 @@ export function TodayCalendarColumn({
       date: d,
       iso,
       inMonth: d.getMonth() === viewMonth.getMonth(),
-      isToday: iso === isoDay(today),
+      isToday: iso === todayIso,
       dayItems: itemsByDay.get(iso) ?? [],
     })
   }
@@ -80,18 +116,50 @@ export function TodayCalendarColumn({
     year: 'numeric',
   })
 
+  // Header for the events section. Shows "TODAY" by default; switches
+  // to the selected day's short label when the user picks a date.
+  const eventsHeader = useMemo(() => {
+    if (!selectedDay || selectedDay === todayIso) return 'Today'
+    const [y, m, d] = selectedDay.split('-').map(Number)
+    const sel = new Date(y, m - 1, d)
+    return sel.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    })
+  }, [selectedDay, todayIso])
+
+  const isShowingToday = !selectedDay || selectedDay === todayIso
+
+  // Collapsed rail — just a thin column with an expand chevron.
+  if (collapsed) {
+    return (
+      <aside className="sticky top-0 hidden h-screen w-9 shrink-0 flex-col items-center border-l border-line bg-canvas py-4 lg:flex">
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          aria-label="Expand calendar"
+          title="Expand calendar"
+          className="rounded-md p-1 text-ink-faint hover:bg-surface-muted hover:text-ink"
+        >
+          <ChevronsLeft size={14} />
+        </button>
+      </aside>
+    )
+  }
+
   return (
-    <aside className="sticky top-0 hidden h-screen w-[280px] shrink-0 flex-col overflow-y-auto border-l border-line bg-canvas px-5 py-6 lg:flex">
+    <aside className="sticky top-0 hidden h-screen w-[300px] shrink-0 flex-col overflow-y-auto border-l border-line bg-canvas px-5 py-6 lg:flex">
       {/* Month grid */}
       <header className="mb-3 flex items-center justify-between">
         <h2 className="m-0 text-[15px] font-semibold text-ink">
           {monthLabel.split(' ').map((part, i) => (
-            <span key={i} className={i === 0 ? 'text-ink' : 'ml-1.5 text-accent'}>
+            <span key={i} className={i === 0 ? 'text-ink' : 'ml-1.5 text-ink-muted'}>
               {part}
             </span>
           ))}
         </h2>
-        <div className="flex items-center gap-1 text-ink-faint">
+        <div className="flex items-center gap-0.5 text-ink-faint">
           <button
             aria-label="Previous month"
             onClick={() =>
@@ -114,6 +182,15 @@ export function TodayCalendarColumn({
           >
             <ChevronRight size={14} />
           </button>
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            aria-label="Collapse calendar"
+            title="Collapse calendar"
+            className="ml-1 rounded p-1 hover:bg-surface-muted hover:text-ink"
+          >
+            <ChevronsRight size={14} />
+          </button>
         </div>
       </header>
 
@@ -130,19 +207,21 @@ export function TodayCalendarColumn({
             selected={c.iso === selectedDay}
             onClick={() => {
               // Toggle: clicking the same day clears the filter.
-              if (c.dayItems.length === 0) return
+              // Allow clicking ANY in-month day — the events section
+              // below reflects the selection even if no tasks are due.
               onSelectDay?.(c.iso === selectedDay ? null : c.iso)
             }}
           />
         ))}
       </div>
 
-      {/* Today's agenda */}
-      <section className="mt-6">
-        <div className="mb-2 flex items-center justify-between">
-          <p className="m-0 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
-            Today
-          </p>
+      {/* Day-specific events panel.
+          Wrapped in a Card to visually separate it from the grid. */}
+      <Card className="mt-6 bg-surface/40">
+        <CardHeader className="flex-row items-center justify-between space-y-0 p-4 pb-2">
+          <CardTitle className="m-0 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
+            {eventsHeader}
+          </CardTitle>
           {!calendarConnected && (
             <Link
               href="/connections"
@@ -152,22 +231,65 @@ export function TodayCalendarColumn({
               Connect Calendar
             </Link>
           )}
-        </div>
-        {events.length === 0 ? (
-          <p className="m-0 rounded-md border border-dashed border-line bg-surface px-3 py-3 text-[12px] text-ink-faint">
-            {calendarConnected
-              ? 'No events scheduled today.'
-              : 'Connect Google Calendar to see your schedule here.'}
-          </p>
-        ) : (
-          <ul className="m-0 list-none space-y-2 p-0">
-            {events.map(e => (
-              <EventCard key={e.id} event={e} />
-            ))}
-          </ul>
-        )}
-      </section>
+        </CardHeader>
+        <CardContent className="p-4 pt-1">
+          {!isShowingToday ? (
+            <SelectedDaySection
+              selectedIso={selectedDay!}
+              dayItems={itemsByDay.get(selectedDay!) ?? []}
+            />
+          ) : events.length === 0 ? (
+            <p className="m-0 rounded-md border border-dashed border-line bg-canvas/60 px-3 py-3 text-[12px] text-ink-faint">
+              {calendarConnected
+                ? 'No events scheduled today.'
+                : 'Connect Google Calendar to see your schedule here.'}
+            </p>
+          ) : (
+            <ul className="m-0 list-none space-y-2 p-0">
+              {events.map(e => (
+                <EventCard key={e.id} event={e} />
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </aside>
+  )
+}
+
+function SelectedDaySection({
+  selectedIso,
+  dayItems,
+}: {
+  selectedIso: string
+  dayItems: CalendarColumnItem[]
+}) {
+  // We only have today's calendar events fetched server-side. For other
+  // days, show the items DUE on that day (from the digest) so the click
+  // still surfaces something useful. If neither is available, explain.
+  if (dayItems.length === 0) {
+    return (
+      <p className="m-0 rounded-md border border-dashed border-line bg-canvas/60 px-3 py-3 text-[12px] text-ink-faint">
+        No tasks due on this day. Calendar events for past or future days
+        aren&apos;t fetched yet.
+      </p>
+    )
+  }
+  return (
+    <ul className="m-0 list-none space-y-1 p-0">
+      {dayItems.map(it => (
+        <li
+          key={it.id}
+          className="truncate rounded-md border border-line/60 bg-canvas/60 px-2.5 py-1.5 text-[12px] text-ink"
+          title={it.title}
+        >
+          {it.title}
+        </li>
+      ))}
+      <li className="mt-2 text-[10px] text-ink-faint">
+        Selected: {selectedIso}
+      </li>
+    </ul>
   )
 }
 
@@ -186,15 +308,17 @@ function DayCell({
       <button
         type="button"
         onClick={onClick}
-        disabled={!hasItems}
         className={cn(
           'flex size-7 items-center justify-center rounded-full text-[12px] transition-colors',
-          cell.isToday && !selected && 'bg-accent text-white font-semibold',
-          selected && 'bg-ink text-canvas font-semibold',
+          // Today (not selected) — solid white circle with DARK text so the number reads.
+          cell.isToday && !selected && 'bg-accent text-canvas font-semibold',
+          // Selected (not today) — outlined ring, transparent bg, number stays visible.
+          selected && !cell.isToday && 'ring-2 ring-ink ring-inset text-ink font-semibold',
+          // Today AND selected — solid white circle + outer ring so both states read.
+          selected && cell.isToday && 'bg-accent text-canvas font-semibold ring-2 ring-ink ring-offset-1 ring-offset-canvas',
           !cell.isToday && !selected && cell.inMonth && 'text-ink',
           !cell.isToday && !selected && !cell.inMonth && 'text-ink-faint',
-          hasItems && !cell.isToday && !selected && 'hover:bg-surface-muted cursor-pointer',
-          !hasItems && 'cursor-default'
+          !cell.isToday && !selected && 'hover:bg-surface-muted cursor-pointer'
         )}
       >
         {cell.date.getDate()}

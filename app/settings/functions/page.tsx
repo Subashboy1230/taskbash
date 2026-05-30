@@ -2,27 +2,34 @@
 
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
-import { AppHeader } from '@/app/_components/app-header'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { loadUserFunctions } from '@/lib/load-functions'
+import { loadTodayEvents } from '@/lib/load-day-events'
+import { getActiveConnection } from '@/lib/connections'
+import { PageShell } from '@/app/_components/page-shell'
 import { FunctionsManager } from './functions-manager'
 
 export const dynamic = 'force-dynamic'
 
 export default async function FunctionsSettingsPage() {
-  const functions = await loadUserFunctions()
-  const supabase = await createSupabaseServerClient()
+  const [functions, events, calConn, supabase] = await Promise.all([
+    loadUserFunctions(),
+    loadTodayEvents().catch(() => []),
+    getActiveConnection('calendar').catch(() => null),
+    createSupabaseServerClient(),
+  ])
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   return (
-    <div className="min-h-screen bg-canvas">
-      <AppHeader
-        userInitial={(user?.email ?? 'U').charAt(0).toUpperCase()}
-        userEmail={user?.email ?? undefined}
-      />
-      <main className="mx-auto max-w-[700px] px-8 pt-4 pb-16">
+    <PageShell
+      userEmail={user?.email ?? undefined}
+      userInitial={(user?.email ?? 'U').charAt(0).toUpperCase()}
+      events={events}
+      calendarConnected={!!calConn?.nango_connection_id}
+    >
+      <div className="mx-auto max-w-[700px]">
         <header className="mb-8">
           <Link
             href="/today"
@@ -42,7 +49,7 @@ export default async function FunctionsSettingsPage() {
         </header>
 
         <FunctionsManager initial={functions} />
-      </main>
-    </div>
+      </div>
+    </PageShell>
   )
 }

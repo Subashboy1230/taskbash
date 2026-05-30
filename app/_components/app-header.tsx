@@ -37,10 +37,10 @@ export function AppHeader({
     <header className="flex items-center justify-between gap-3 px-6 py-3">
       <Link
         href="/today"
-        aria-label="ToDoo home"
+        aria-label="taskbash home"
         className="text-[15px] font-semibold tracking-tight text-ink hover:opacity-80"
       >
-        ToDoo
+        taskbash
       </Link>
 
       <div className="relative" ref={menuRef}>

@@ -40,7 +40,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-canvas flex items-center justify-center px-6">
       <div className="w-full max-w-[400px] text-center">
         <h1 className="m-0 text-[34px] font-semibold tracking-tight text-ink">
-          ToDoo
+          taskbash
         </h1>
         <p className="mt-2 text-[15px] text-ink-muted">
           Your morning digest, from every source.
@@ -60,7 +60,7 @@ export default function LoginPage() {
         )}
 
         <p className="mt-8 text-[12px] text-ink-faint">
-          By signing in, you allow ToDoo to read items from the sources
+          By signing in, you allow taskbash to read items from the sources
           you connect (Gmail, Calendar, Granola, Linear).
         </p>
       </div>
