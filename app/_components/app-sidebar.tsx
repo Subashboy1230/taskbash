@@ -1,13 +1,17 @@
 'use client'
 
 // Persistent left sidebar — nav between /today, /profile, /connections,
-// /activity, /network. Plus user identity at the bottom.
+// /activity, /network. Collapsible: click the chevron at the top right
+// to flip between full-width (icons + labels) and rail (icons only).
+// Choice persists in localStorage.
 
-import { useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   Activity,
+  ChevronsLeft,
+  ChevronsRight,
   Home,
   LogOut,
   Network,
@@ -16,6 +20,10 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { signOut } from '@/app/auth/actions'
+
+// Widths tuned for a compact CoS shell.
+const WIDTH_EXPANDED = 180
+const WIDTH_COLLAPSED = 56
 
 const NAV: Array<{
   href: string
@@ -41,19 +49,57 @@ export function AppSidebar({
 }) {
   const pathname = usePathname() ?? '/'
   const [busy, startTransition] = useTransition()
+  // Default expanded — but hydrate from localStorage on first render so
+  // the choice survives navigations + reloads.
+  const [collapsed, setCollapsed] = useState(false)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('taskbash:sidebarCollapsed')
+      if (saved === '1') setCollapsed(true)
+    } catch {
+      /* localStorage unavailable */
+    }
+  }, [])
+  useEffect(() => {
+    try {
+      localStorage.setItem('taskbash:sidebarCollapsed', collapsed ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [collapsed])
 
   return (
-    <aside className="sticky top-0 flex h-screen w-[220px] shrink-0 flex-col justify-between border-r border-line bg-canvas px-5 py-6">
-      <div>
-        {/* Wordmark — small, calm */}
-        <Link
-          href="/today"
-          className="mb-10 block text-[15px] font-semibold tracking-tight text-ink hover:opacity-80"
-          aria-label="taskbash home"
-        >
-          taskbash
-        </Link>
-        <nav className="space-y-1">
+    <aside
+      className="sticky top-0 flex h-screen shrink-0 flex-col justify-between border-r border-line bg-canvas transition-[width] duration-200"
+      style={{ width: collapsed ? WIDTH_COLLAPSED : WIDTH_EXPANDED }}
+    >
+      <div className={cn(collapsed ? 'px-2 pt-5' : 'px-4 pt-5')}>
+        {/* Wordmark + collapse toggle in the same row */}
+        <div className="mb-8 flex items-center justify-between">
+          {!collapsed && (
+            <Link
+              href="/today"
+              className="text-[14px] font-semibold tracking-tight text-ink hover:opacity-80"
+              aria-label="taskbash home"
+            >
+              taskbash
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => setCollapsed(c => !c)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? 'Expand' : 'Collapse'}
+            className={cn(
+              'rounded-md p-1 text-ink-faint hover:bg-surface-muted hover:text-ink',
+              collapsed && 'mx-auto'
+            )}
+          >
+            {collapsed ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}
+          </button>
+        </div>
+
+        <nav className="space-y-0.5">
           {NAV.map(item => {
             const active = item.match(pathname)
             const Icon = item.icon
@@ -61,15 +107,19 @@ export function AppSidebar({
               <Link
                 key={item.href}
                 href={item.href}
+                title={collapsed ? item.label : undefined}
                 className={cn(
-                  'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[14px] transition-colors',
+                  'flex items-center gap-2.5 rounded-md text-[13px] transition-colors',
+                  collapsed
+                    ? 'h-9 w-9 mx-auto justify-center px-0'
+                    : 'px-2 py-1.5',
                   active
                     ? 'bg-surface-muted/60 font-medium text-ink'
                     : 'text-ink-muted hover:bg-surface-muted/30 hover:text-ink'
                 )}
               >
                 <Icon size={15} className={active ? 'text-ink' : 'text-ink-faint'} />
-                {item.label}
+                {!collapsed && <span>{item.label}</span>}
               </Link>
             )
           })}
@@ -77,10 +127,21 @@ export function AppSidebar({
       </div>
 
       {/* User identity + sign out */}
-      <div className="space-y-2 border-t border-line/60 pt-3">
-        <div className="flex items-center gap-2.5 px-1">
+      <div
+        className={cn(
+          'space-y-1.5 border-t border-line/60 pt-3 pb-4',
+          collapsed ? 'px-2' : 'px-3'
+        )}
+      >
+        <div
+          className={cn(
+            'flex items-center',
+            collapsed ? 'justify-center' : 'gap-2.5 px-1'
+          )}
+          title={collapsed ? (userEmail ?? undefined) : undefined}
+        >
           <div
-            className="flex size-9 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold uppercase"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold uppercase"
             style={{
               backgroundColor: 'var(--color-avatar-bg)',
               color: 'var(--color-avatar-fg)',
@@ -88,23 +149,32 @@ export function AppSidebar({
           >
             {userInitial ?? (userEmail ?? 'U').charAt(0).toUpperCase()}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="m-0 truncate text-[13px] font-medium text-ink">
-              {userName ?? formatNameFromEmail(userEmail) ?? 'You'}
-            </p>
-            <p className="m-0 truncate text-[11px] text-ink-faint">
-              {userEmail ?? '—'}
-            </p>
-          </div>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="m-0 truncate text-[12px] font-medium text-ink">
+                {userName ?? formatNameFromEmail(userEmail) ?? 'You'}
+              </p>
+              <p className="m-0 truncate text-[10px] text-ink-faint">
+                {userEmail ?? '—'}
+              </p>
+            </div>
+          )}
         </div>
         <button
           type="button"
           disabled={busy}
           onClick={() => startTransition(() => signOut())}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-ink-faint hover:bg-surface-muted/40 hover:text-ink disabled:opacity-50"
+          aria-label="Sign out"
+          title={collapsed ? 'Sign out' : undefined}
+          className={cn(
+            'flex items-center rounded-md text-[11px] text-ink-faint hover:bg-surface-muted/40 hover:text-ink disabled:opacity-50',
+            collapsed
+              ? 'mx-auto size-8 justify-center'
+              : 'w-full gap-2 px-2 py-1'
+          )}
         >
           <LogOut size={12} />
-          {busy ? 'Signing out…' : 'Sign out'}
+          {!collapsed && <span>{busy ? 'Signing out…' : 'Sign out'}</span>}
         </button>
       </div>
     </aside>
@@ -114,7 +184,6 @@ export function AppSidebar({
 function formatNameFromEmail(email?: string | null): string | null {
   if (!email) return null
   const local = email.split('@')[0] ?? ''
-  // "subash.rajaseelan" / "subash-raj" → "Subash Rajaseelan"
   return local
     .split(/[._-]/)
     .filter(Boolean)
