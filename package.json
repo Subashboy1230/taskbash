@@ -13,7 +13,7 @@
     "test:gmail": "tsx scripts/test-gmail.ts",
     "test:sources": "tsx scripts/test-sources.ts",
     "digest": "tsx scripts/trigger-digest.ts",
-    "analyze:soul": "tsx scripts/analyze-soul.ts",
+    "analyze:voice": "tsx scripts/analyze-voice.ts",
     "backfill:followups": "tsx scripts/backfill-followups.ts",
     "backfill:tags": "tsx scripts/backfill-tags.ts",
     "backfill:briefs": "tsx scripts/backfill-briefs.ts",
@@ -48,6 +48,7 @@
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "recharts": "^3.8.1",
     "tailwind-merge": "^2.5.4",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.23.8"

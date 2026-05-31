@@ -18,7 +18,7 @@ import { extractJsonObject } from '../extract/parse'
 
 const USER_ID = process.env.APP_USER_ID!
 
-const DEFAULT_SOUL = `You write direct, concise emails. Open with "Hi <First>,"
+const DEFAULT_VOICE = `You write direct, concise emails. Open with "Hi <First>,"
 and close with "Best regards,". Keep paragraphs short and action-oriented.`
 
 interface DraftArgs {
@@ -48,7 +48,7 @@ export async function draftFollowup(args: DraftArgs): Promise<ProposedAction | n
   )
   if (candidates.length === 0) return null // No external attendees, internal task
 
-  const soul = await loadSoul()
+  const voice = await loadVoice()
 
   const system = `You decide whether a meeting commitment warrants a pre-drafted
 follow-up email, and if so, draft it in the user's voice.
@@ -78,8 +78,8 @@ OUTCOME B. No draft. Pick this when:
 
 Bias toward B when in doubt. A stale or wrong draft is worse than no draft.
 
-User communication style:
-${soul}
+Voice:
+${voice}
 
 Output STRICT JSON:
 { "outcome": "A" | "B",
@@ -153,11 +153,11 @@ Decide and output JSON.`
   }
 }
 
-async function loadSoul(): Promise<string> {
+async function loadVoice(): Promise<string> {
   const { data } = await supabase
     .from('users')
     .select('communication_style')
     .eq('id', USER_ID)
     .maybeSingle()
-  return (data?.communication_style as string | null) || DEFAULT_SOUL
+  return (data?.communication_style as string | null) || DEFAULT_VOICE
 }

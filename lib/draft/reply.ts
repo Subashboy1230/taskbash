@@ -1,7 +1,7 @@
 // Reply drafting — given an email thread the user owes a reply to, produce
 // a draft that sounds like the user. Pulls the user's communication-style
-// profile (Soul) from the users table; falls back to a sensible default
-// when Soul hasn't been generated yet.
+// profile (Voice) from the users table; falls back to a sensible default
+// when Voice hasn't been generated yet.
 //
 // The drafted text is what shows up in the approval queue's detail panel.
 // The user can edit, copy, or hit Send.
@@ -13,7 +13,7 @@ import type { ProposedAction } from '../types'
 
 const USER_ID = process.env.APP_USER_ID!
 
-const DEFAULT_SOUL = `You write in a direct, concise, professional style.
+const DEFAULT_VOICE = `You write in a direct, concise, professional style.
 Emails are usually short and action-oriented, with a clear ask or next step.
 Open with "Hi [Name]," and close with "Best regards,". Keep paragraphs short.`
 
@@ -36,15 +36,15 @@ interface DraftArgs {
  * persist on the item row.
  */
 export async function draftReply(args: DraftArgs): Promise<ProposedAction> {
-  const soul = await loadSoul()
+  const voice = await loadVoice()
 
   const system = `You draft email replies on behalf of a user.
 You will be given the user's communication style profile and the email
 thread that needs a reply. Produce ONE reply body. No subject line, no
 salutation header (just "Hi <name>,"), no signature except a sign-off line.
 
-Communication style:
-${soul}
+Voice:
+${voice}
 
 Rules:
 - Sound like the user. Match their tone, brevity, formatting habits.
@@ -110,12 +110,12 @@ Draft the reply.`
  * Load the user's communication style profile from the DB. Falls back
  * to the default when it's not yet been generated.
  */
-async function loadSoul(): Promise<string> {
+async function loadVoice(): Promise<string> {
   const { data, error } = await supabase
     .from('users')
     .select('communication_style')
     .eq('id', USER_ID)
     .maybeSingle()
-  if (error) return DEFAULT_SOUL
-  return (data?.communication_style as string | null) || DEFAULT_SOUL
+  if (error) return DEFAULT_VOICE
+  return (data?.communication_style as string | null) || DEFAULT_VOICE
 }

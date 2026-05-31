@@ -1,4 +1,4 @@
-// Soul analyzer — reads the user's recent SENT emails via Gmail and asks
+// Voice analyzer -- reads the user's recent SENT emails via Gmail and asks
 // Claude to write a markdown profile of how the user communicates: tone,
 // formatting habits, common openings/closings, working preferences.
 //
@@ -7,7 +7,7 @@
 // (lib/draft/reply.ts today; brief generation later).
 //
 // Run with:
-//   cd ~/Desktop/ToDoo/cos-app-v1 && npm run analyze:soul
+//   cd ~/Desktop/cos-app-v1 && npm run analyze:voice
 //
 // One-shot for now. Long-term this becomes a nightly workflow.
 
@@ -26,7 +26,6 @@ async function main() {
     process.exit(1)
   }
 
-  // Dynamic imports after dotenv loads.
   const { anthropic, MODELS } = await import('../lib/anthropic')
   const { nangoProxy } = await import('../lib/nango')
   const { getActiveConnection, NANGO_PROVIDER_KEY } = await import('../lib/connections')
@@ -34,13 +33,13 @@ async function main() {
 
   const conn = await getActiveConnection('gmail')
   if (!conn || !conn.nango_connection_id) {
-    console.error('Gmail not connected — visit /connections to set it up.')
+    console.error('Gmail not connected. Visit /connections to set it up.')
     process.exit(1)
   }
   const providerConfigKey = NANGO_PROVIDER_KEY.gmail!
   const connectionId = conn.nango_connection_id
 
-  console.log(`Reading last ${MAX_SENT_THREADS} sent emails…`)
+  console.log(`Reading last ${MAX_SENT_THREADS} sent emails...`)
 
   const list = await nangoProxy<{
     messages?: Array<{ id: string; threadId: string }>
@@ -58,8 +57,6 @@ async function main() {
     process.exit(1)
   }
 
-  // Pull the bodies. Concurrent-but-bounded; Gmail's per-second limits are
-  // generous enough for ~50 at once but we go serial to keep it simple.
   const corpus: string[] = []
   for (let i = 0; i < refs.length; i++) {
     const ref = refs[i]
@@ -97,22 +94,22 @@ async function main() {
   console.log(`\nCorpus: ${corpus.length} messages.`)
 
   if (corpus.length < 5) {
-    console.error('Too few sent messages to build a reliable Soul profile.')
+    console.error('Too few sent messages to build a reliable voice profile.')
     process.exit(1)
   }
 
-  console.log('Asking Claude to write the Soul profile…')
+  console.log('Asking Claude to write the voice profile...')
   const system = `You analyze a user's sent emails and produce a concise
 profile of how they write. The profile will be used as a system prompt for
 an AI drafting replies on the user's behalf.
 
 Write the profile in markdown. Sections:
-- ## Communication Style — tone, register, common openings/closings, length
-- ## Formatting Habits — paragraphing, bullet usage, how they structure replies
-- ## Working Preferences — patterns in how they push for action, follow up, delegate
+- ## Communication Style -- tone, register, common openings/closings, length
+- ## Formatting Habits -- paragraphing, bullet usage, how they structure replies
+- ## Working Preferences -- patterns in how they push for action, follow up, delegate
 
 Be specific. Quote real opening/closing phrases. Note recurring phrases.
-Length: ~250–400 words. Plain markdown only, no code fences.`
+Length: ~250-400 words. Plain markdown only, no code fences.`
 
   const response = await anthropic.messages.create({
     model: MODELS.synthesis,
@@ -121,7 +118,7 @@ Length: ~250–400 words. Plain markdown only, no code fences.`
     messages: [
       {
         role: 'user',
-        content: `Here are the user's recent sent emails. Produce the profile.\n\n${corpus.join('\n\n')}`,
+        content: `Here are the user's recent sent emails. Produce the voice profile.\n\n${corpus.join('\n\n')}`,
       },
     ],
   })
@@ -132,11 +129,11 @@ Length: ~250–400 words. Plain markdown only, no code fences.`
     .join('\n')
     .trim()
 
-  console.log('\n--- Soul profile ---')
+  console.log('\n--- Voice profile ---')
   console.log(profile)
-  console.log('--------------------\n')
+  console.log('---------------------\n')
 
-  console.log('Writing to users.communication_style…')
+  console.log('Writing to users.communication_style...')
   const { error } = await supabase
     .from('users')
     .update({ communication_style: profile })
@@ -145,7 +142,7 @@ Length: ~250–400 words. Plain markdown only, no code fences.`
     console.error('Failed to save:', error.message)
     process.exit(1)
   }
-  console.log('Soul saved. Future drafts will use this profile.')
+  console.log('Voice saved. Future drafts will use this profile.')
 }
 
 function headerValue(
@@ -201,9 +198,6 @@ function stripHtml(html: string): string {
 
 main().catch(err => {
   console.error('\nFATAL:', err instanceof Error ? err.message : err)
-  // Dig into the underlying HTTP error so we know whether Nango or Gmail
-  // is the one rejecting (and why). 424 from Nango means the underlying
-  // provider call failed — the body has Google's actual error message.
   const e = err as {
     response?: { status?: number; data?: unknown }
     config?: { url?: string; baseURL?: string; params?: unknown }
