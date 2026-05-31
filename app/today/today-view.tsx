@@ -2630,9 +2630,11 @@ function UnreadTab({
       if (result.ok) {
         onSelectItem(result.item)
       } else {
+        console.error('[UnreadTab] openUnreadThread error:', result.error)
         setErrorId(thread.id)
       }
-    } catch {
+    } catch (err) {
+      console.error('[UnreadTab] openUnreadThread threw:', err)
       setErrorId(thread.id)
     } finally {
       setLoadingId(null)

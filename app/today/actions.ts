@@ -570,28 +570,30 @@ export async function openUnreadThread(args: {
       .digest('hex')
       .slice(0, 16)
 
-    // Check if this item already exists (same thread, we already extracted it)
+    // Check if this item already exists (any status — semantic_hash is unique)
     const { data: existing } = await supabase
       .from('items')
       .select('*')
       .eq('user_id', userId)
-      .contains('source_ref', { gmail_thread_id: args.threadId })
-      .in('status', ['open', 'in_progress'])
+      .eq('semantic_hash', semantic_hash)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
     let itemRow: Record<string, unknown>
     if (existing) {
-      // Already exists — just update proposed_action if we got a fresher draft
-      if (proposedAction) {
-        await supabase
-          .from('items')
-          .update({ proposed_action: proposedAction, source_excerpt: sourceExcerpt })
-          .eq('id', existing.id)
-          .eq('user_id', userId)
+      // Already exists — re-open if it was cleared, update draft
+      const updates: Record<string, unknown> = { source_excerpt: sourceExcerpt }
+      if (proposedAction) updates.proposed_action = proposedAction
+      if (existing.status !== 'open' && existing.status !== 'in_progress') {
+        updates.status = 'open'
       }
-      itemRow = existing as Record<string, unknown>
+      await supabase
+        .from('items')
+        .update(updates)
+        .eq('id', existing.id)
+        .eq('user_id', userId)
+      itemRow = { ...existing, ...updates }
     } else {
       const subjectLabel = args.subject && args.subject !== '(no subject)' ? ` re: ${args.subject}` : ''
       const title = `Reply to ${args.fromName || args.fromEmail || 'sender'}${subjectLabel}`
@@ -617,7 +619,10 @@ export async function openUnreadThread(args: {
         })
         .select('*')
         .single()
-      if (insertErr) return { ok: false, error: insertErr.message }
+      if (insertErr) {
+        console.error('[openUnreadThread] insert failed:', insertErr)
+        return { ok: false, error: insertErr.message }
+      }
       itemRow = inserted as Record<string, unknown>
     }
 
