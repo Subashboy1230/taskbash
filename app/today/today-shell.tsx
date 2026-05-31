@@ -7,7 +7,8 @@
 // backdrop. The calendar stays present underneath so the user can see their
 // agenda even while reading a task brief.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { AppSidebar } from '@/app/_components/app-sidebar'
 import { TodayView, DetailPanel } from './today-view'
 import { completeItem } from './actions'
@@ -43,6 +44,8 @@ export function TodayShell({
 }) {
   const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+  const router = useRouter()
+  const [, startTransition] = useTransition()
 
   // Lift calendar collapsed state so the main column can claim the freed
   // width when it's collapsed.
@@ -120,8 +123,12 @@ export function TodayShell({
               item={selectedItem}
               onClose={closeDetail}
               onComplete={() => {
-                completeItem(selectedItem.id).catch(() => {})
+                const id = selectedItem.id
                 closeDetail()
+                startTransition(async () => {
+                  await completeItem(id)
+                  router.refresh()
+                })
               }}
               allFunctions={functions}
             />
