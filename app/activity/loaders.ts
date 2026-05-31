@@ -69,6 +69,58 @@ export async function loadRuns(userId: string, limit = 50, before?: string): Pro
 
 // ─── Task events ─────────────────────────────────────────────────────────────
 
+async function loadTaskEventsFallback(userId: string, limit: number, before?: string): Promise<ActivityRow[]> {
+  // Derive lifecycle events directly from items when task_events table doesn't exist
+  let q = supabase
+    .from('items')
+    .select('id, title, source, created_at, completed_at, updated_at, status')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+    .limit(limit)
+
+  if (before) q = q.lt('updated_at', before)
+
+  const { data, error } = await q
+  if (error || !data) return []
+
+  const rows: ActivityRow[] = []
+  for (const item of data as {
+    id: string; title: string; source: string
+    created_at: string; completed_at: string | null
+    updated_at: string; status: string
+  }[]) {
+    if (item.status === 'completed' && item.completed_at) {
+      rows.push({
+        id: `${item.id}-completed`,
+        event_at: item.completed_at,
+        kind: 'completed',
+        source: item.source,
+        icon: 'check',
+        label: item.title,
+      })
+    } else if (item.status === 'dismissed') {
+      rows.push({
+        id: `${item.id}-dismissed`,
+        event_at: item.updated_at,
+        kind: 'rejected',
+        source: item.source,
+        icon: 'trash',
+        label: item.title,
+      })
+    } else {
+      rows.push({
+        id: `${item.id}-created`,
+        event_at: item.created_at,
+        kind: null,
+        source: item.source,
+        icon: 'database',
+        label: `Found "${item.title}"`,
+      })
+    }
+  }
+  return rows.sort((a, b) => b.event_at.localeCompare(a.event_at)).slice(0, limit)
+}
+
 export async function loadTaskEvents(userId: string, limit = 50, before?: string): Promise<ActivityRow[]> {
   let q = supabase
     .from('task_events')
@@ -80,7 +132,7 @@ export async function loadTaskEvents(userId: string, limit = 50, before?: string
   if (before) q = q.lt('created_at', before)
 
   const { data, error } = await q
-  if (error || !data) return []
+  if (error || !data || data.length === 0) return loadTaskEventsFallback(userId, limit, before)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data as any[]).map((e: {
@@ -137,9 +189,10 @@ export async function loadTaskEvents(userId: string, limit = 50, before?: string
 // ─── Data source syncs ────────────────────────────────────────────────────────
 
 export async function loadDataSourceSyncs(userId: string, limit = 100, before?: string): Promise<ActivityRow[]> {
+  // sources_failed may not exist yet (migration 024) — select only stable columns
   let q = supabase
     .from('runs')
-    .select('id, started_at, sources_run, sources_failed, status')
+    .select('id, started_at, completed_at, sources_run, status')
     .eq('user_id', userId)
     .order('started_at', { ascending: false })
     .limit(Math.ceil(limit / 4))
@@ -154,16 +207,17 @@ export async function loadDataSourceSyncs(userId: string, limit = 100, before?: 
     const run = r as {
       id: string
       started_at: string
+      completed_at: string | null
       sources_run: string[] | null
-      sources_failed: string[] | null
       status: string
     }
+    // Use completed_at for the timestamp so it reflects when the sync finished
+    const eventAt = run.completed_at ?? run.started_at
     for (const src of (run.sources_run ?? [])) {
-      const failed = (run.sources_failed ?? []).includes(src)
       rows.push({
         id: `${run.id}-${src}`,
-        event_at: run.started_at,
-        kind: failed ? 'failed' : run.status === 'succeeded' ? 'synced' : 'failed',
+        event_at: eventAt,
+        kind: run.status === 'succeeded' ? 'synced' : 'failed',
         source: src,
         icon: 'refresh',
         label: sourceLabel(src),

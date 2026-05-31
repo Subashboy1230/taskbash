@@ -21,17 +21,25 @@ create policy "service role write task events"
   on task_events for insert
   with check (true);
 
--- Backfill from existing items
+-- Backfill from existing items using real event timestamps
+
+-- 'created' events: use items.created_at (when the extractor first found it)
 insert into task_events (user_id, item_id, kind, created_at)
-select user_id, id, 'created', created_at from items
+select user_id, id, 'created', created_at
+from items
 on conflict do nothing;
 
+-- 'completed' events: use items.completed_at (when user marked it done)
 insert into task_events (user_id, item_id, kind, created_at)
 select user_id, id, 'completed', completed_at
-from items where status = 'completed' and completed_at is not null
+from items
+where status = 'completed' and completed_at is not null
 on conflict do nothing;
 
+-- 'dismissed' events: use items.updated_at as best proxy for when user dismissed
+-- (items.completed_at is null for dismissed; updated_at reflects the last status change)
 insert into task_events (user_id, item_id, kind, created_at)
 select user_id, id, 'dismissed', updated_at
-from items where status = 'dismissed'
+from items
+where status = 'dismissed'
 on conflict do nothing;
