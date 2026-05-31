@@ -101,63 +101,52 @@ export function TodayShell({
         userInitial={digest.user_initials.charAt(0)}
       />
 
-      {/* Task list + detail panel — flex row inside a flex-1 main so the
-          calendar column is never displaced. Task list shrinks; detail panel
-          slides in to its right within the same container. */}
-      <main className="flex flex-1 min-w-0 overflow-hidden">
-        <div className={cn(
-          'min-w-0 pl-8 pr-4 pt-4 pb-16 overflow-y-auto transition-all duration-200',
-          selectedItem ? 'flex-[0_0_380px]' : 'flex-1'
-        )}>
-          <TodayView
-            digest={filteredDigest}
-            userEmail={userEmail}
-            functions={functions}
-            hideHeader
-            hideDetailPanel
-            onSelectItem={setSelectedItem}
-            externalSelectedItemId={selectedItem?.id ?? null}
-            onAddTask={() => setAddOpen(true)}
-            mainExpanded={calendarCollapsed}
-            unreadThreads={filteredUnread}
-          />
-        </div>
-
-        {/* Detail panel — grows in from the right, compresses task list */}
-        <div className={cn(
-          'flex-shrink-0 border-l border-line bg-canvas overflow-y-auto transition-all duration-200',
-          selectedItem ? 'w-[420px] opacity-100' : 'w-0 opacity-0'
-        )}>
-          {selectedItem && (
-            <DetailPanel
-              item={selectedItem}
-              onClose={closeDetail}
-              onComplete={() => {
-                const id = selectedItem.id
-                setShellHiddenIds(s => new Set(s).add(id))
-                closeDetail()
-                completeItem(id).then(() => router.refresh()).catch(() => {
-                  setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
-                })
-              }}
-              allFunctions={functions}
-            />
-          )}
-        </div>
+      {/* Task list — always full width, never resizes */}
+      <main className="flex-1 min-w-0 pl-8 pr-0 pt-4 pb-16 overflow-y-auto">
+        <TodayView
+          digest={filteredDigest}
+          userEmail={userEmail}
+          functions={functions}
+          hideHeader
+          hideDetailPanel
+          onSelectItem={setSelectedItem}
+          externalSelectedItemId={selectedItem?.id ?? null}
+          onAddTask={() => setAddOpen(true)}
+          mainExpanded={calendarCollapsed || !!selectedItem}
+          unreadThreads={filteredUnread}
+        />
       </main>
 
-      {/* Calendar column — always at far right, unaffected by detail panel */}
-      <TodayCalendarColumn
-        events={events}
-        items={digest.open_items.map(i => ({
-          id: i.id,
-          title: i.title,
-          due_at: i.due_at,
-        }))}
-        calendarConnected={calendarConnected}
-        collapsed={calendarCollapsed}
-        onToggleCollapsed={() => setCalendarCollapsed(c => !c)}
-      />
+      {/* Right column — detail panel replaces calendar when a task is open */}
+      {selectedItem ? (
+        <div className="sticky top-0 h-screen w-[300px] shrink-0 border-l border-line bg-canvas overflow-y-auto">
+          <DetailPanel
+            item={selectedItem}
+            onClose={closeDetail}
+            onComplete={() => {
+              const id = selectedItem.id
+              setShellHiddenIds(s => new Set(s).add(id))
+              closeDetail()
+              completeItem(id).then(() => router.refresh()).catch(() => {
+                setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
+              })
+            }}
+            allFunctions={functions}
+          />
+        </div>
+      ) : (
+        <TodayCalendarColumn
+          events={events}
+          items={digest.open_items.map(i => ({
+            id: i.id,
+            title: i.title,
+            due_at: i.due_at,
+          }))}
+          calendarConnected={calendarConnected}
+          collapsed={calendarCollapsed}
+          onToggleCollapsed={() => setCalendarCollapsed(c => !c)}
+        />
+      )}
 
       {/* Add-task panel — still uses Sheet overlay */}
       <Sheet open={addOpen} onOpenChange={setAddOpen}>
