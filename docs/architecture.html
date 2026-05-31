@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>taskbash · architecture</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --surface-2: #1c1c1c;
+    --ink: #fafafa;
+    --ink-muted: #a3a3a3;
+    --ink-faint: #6b6b6b;
+    --line: #262626;
+    --line-strong: #404040;
+    --accent: #86efac;
+    --accent-warm: #fef3c7;
+    --accent-cool: #93c5fd;
+    --accent-hot: #fdba74;
+    --gray-fill: rgba(163,163,163,0.08);
+    --gray-stroke: #404040;
+    --purple-fill: rgba(167,139,250,0.10);
+    --purple-stroke: #7c6cdb;
+    --teal-fill: rgba(94,234,212,0.10);
+    --teal-stroke: #2dd4bf;
+    --coral: #fb923c;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; color-scheme: dark; }
+  body { padding: 48px 24px 80px; }
+  .container { max-width: 1080px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+  .logo { width: 38px; height: 38px; }
+  h1 { font-size: 28px; font-weight: 500; letter-spacing: -0.5px; margin: 0; }
+  .sub { font-size: 14px; color: var(--ink-muted); max-width: 720px; line-height: 1.6; margin: 0 0 32px; }
+  .diagram { background: var(--surface); border: 0.5px solid var(--line); border-radius: 12px; padding: 28px; overflow-x: auto; }
+  .diagram svg { display: block; width: 100%; height: auto; min-width: 920px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; padding: 14px 18px; background: var(--surface); border: 0.5px solid var(--line); border-radius: 10px; font-size: 12px; color: var(--ink-muted); }
+  .legend-item { display: inline-flex; align-items: center; gap: 8px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; border-width: 1px; border-style: solid; }
+  .stack { margin-top: 40px; }
+  .stack h2 { font-size: 16px; font-weight: 500; margin: 0 0 14px; color: var(--ink); }
+  .stack-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .stack-card { background: var(--surface); border: 0.5px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .stack-card .row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .stack-card .name { font-size: 14px; font-weight: 500; color: var(--ink); }
+  .stack-card .role { font-size: 12px; color: var(--ink-muted); line-height: 1.5; }
+  .pill { font-size: 10px; padding: 2px 7px; border-radius: 999px; font-weight: 500; }
+  .pill.host { background: rgba(252,165,165,0.12); color: #fca5a5; }
+  .pill.db { background: rgba(94,234,212,0.12); color: #5eead4; }
+  .pill.cron { background: rgba(167,139,250,0.12); color: #a78bfa; }
+  .pill.gw { background: rgba(253,186,116,0.12); color: #fdba74; }
+  .pill.llm { background: rgba(244,114,182,0.12); color: #f472b6; }
+  .pill.obs { background: rgba(147,197,253,0.12); color: #93c5fd; }
+  .pill.src { background: rgba(163,163,163,0.12); color: #a3a3a3; }
+  .footer { margin-top: 40px; font-size: 12px; color: var(--ink-faint); text-align: center; }
+
+  text { font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif; fill: var(--ink); }
+  .th { font-size: 13px; font-weight: 500; }
+  .ts { font-size: 11px; fill: var(--ink-muted); }
+  .tag { font-size: 10px; fill: var(--ink-faint); text-transform: uppercase; letter-spacing: 1.2px; }
+  .box-gray { fill: var(--gray-fill); stroke: var(--gray-stroke); stroke-width: 0.5; }
+  .box-purple { fill: var(--purple-fill); stroke: var(--purple-stroke); stroke-width: 0.5; }
+  .box-teal { fill: var(--teal-fill); stroke: var(--teal-stroke); stroke-width: 0.5; }
+  .arrow { stroke: #5f5e5a; stroke-width: 0.8; fill: none; }
+  .arrow-dashed { stroke: #5f5e5a; stroke-width: 0.8; fill: none; stroke-dasharray: 4 4; }
+  .arrow-loop { stroke: var(--coral); stroke-width: 1; fill: none; stroke-dasharray: 5 4; }
+  .loop-label { font-size: 11px; fill: var(--coral); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <svg class="logo" viewBox="0 0 320 320" aria-hidden="true">
+    <rect x="20" y="20" width="160" height="160" rx="80" fill="#fafafa"/>
+    <rect x="160" y="160" width="160" height="160" rx="80" fill="#fafafa"/>
+    <rect x="40" y="40" width="70" height="70" rx="10" fill="#0a0a0a"/>
+    <rect x="230" y="230" width="70" height="70" rx="10" fill="#0a0a0a"/>
+    <rect x="110" y="110" width="60" height="60" fill="#0a0a0a"/>
+    <rect x="170" y="170" width="60" height="60" fill="#0a0a0a"/>
+    <rect x="140" y="140" width="30" height="30" fill="#fafafa"/>
+    <rect x="170" y="170" width="30" height="30" fill="#fafafa"/>
+  </svg>
+  <h1>taskbash · architecture</h1>
+</header>
+
+<p class="sub">
+  Personal chief-of-staff agent. Reads Gmail, Granola, Linear, and Calendar every morning, extracts action items via Claude, deduplicates against what you have already cleared, drafts replies in your voice, and serves the result through a Next.js app on Vercel backed by Supabase Postgres and an Inngest cron.
+</p>
+
+<div class="diagram">
+<svg viewBox="0 0 920 1020" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="taskbash architecture, layered diagram">
+<defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<text class="tag" x="20" y="24">Hosting</text>
+<rect class="box-gray" x="20" y="34" width="880" height="56" rx="6"/>
+<text class="th" x="36" y="60">Vercel · global edge + serverless functions</text>
+<text class="ts" x="36" y="78">Hosts the Next.js 15 App Router build · auto-deploys from main · preview URLs per dev branch · custom domain taskbash.app</text>
+
+<text class="tag" x="20" y="118">External sources</text>
+<g>
+  <rect class="box-gray" x="20" y="130" width="208" height="64" rx="6"/>
+  <text class="th" x="36" y="156">Gmail</text>
+  <text class="ts" x="36" y="174">Threads · sent · drafts</text>
+  <text class="ts" x="36" y="190" fill="#fdba74">via Nango OAuth</text>
+</g>
+<g>
+  <rect class="box-gray" x="240" y="130" width="208" height="64" rx="6"/>
+  <text class="th" x="256" y="156">Google Calendar</text>
+  <text class="ts" x="256" y="174">Events for prep briefs</text>
+  <text class="ts" x="256" y="190" fill="#fdba74">via Nango OAuth</text>
+</g>
+<g>
+  <rect class="box-gray" x="460" y="130" width="208" height="64" rx="6"/>
+  <text class="th" x="476" y="156">Granola</text>
+  <text class="ts" x="476" y="174">Meeting notes + transcript</text>
+  <text class="ts" x="476" y="190" fill="#a3a3a3">Direct API key</text>
+</g>
+<g>
+  <rect class="box-gray" x="680" y="130" width="220" height="64" rx="6"/>
+  <text class="th" x="696" y="156">Linear</text>
+  <text class="ts" x="696" y="174">Issues with at-mentions of you</text>
+  <text class="ts" x="696" y="190" fill="#a3a3a3">Personal API key (GraphQL)</text>
+</g>
+
+<text class="tag" x="20" y="222">Auth + transport layer</text>
+<g>
+  <rect class="box-gray" x="20" y="234" width="428" height="48" rx="6"/>
+  <text class="th" x="36" y="258">Nango</text>
+  <text class="ts" x="36" y="274">OAuth proxy · token refresh · per-user connection_id stored in connections table</text>
+</g>
+<g>
+  <rect class="box-gray" x="460" y="234" width="440" height="48" rx="6"/>
+  <text class="th" x="476" y="258">Direct fetch</text>
+  <text class="ts" x="476" y="274">API key stored in connections.api_key · service-role read only · server-side calls</text>
+</g>
+
+<line class="arrow" x1="124" y1="282" x2="124" y2="320" marker-end="url(#ah)"/>
+<line class="arrow" x1="344" y1="282" x2="344" y2="320" marker-end="url(#ah)"/>
+<line class="arrow" x1="564" y1="282" x2="564" y2="320" marker-end="url(#ah)"/>
+<line class="arrow" x1="790" y1="282" x2="790" y2="320" marker-end="url(#ah)"/>
+
+<text class="tag" x="20" y="316">Per-source extractors · lib/extract/*.ts</text>
+<g>
+  <rect class="box-purple" x="20" y="328" width="208" height="64" rx="6"/>
+  <text class="th" x="36" y="354">extract/gmail.ts</text>
+  <text class="ts" x="36" y="372">Thread → ExtractedItem[]</text>
+  <text class="ts" x="36" y="388" fill="#a78bfa">tracedMessage → Claude</text>
+</g>
+<g>
+  <rect class="box-purple" x="240" y="328" width="208" height="64" rx="6"/>
+  <text class="th" x="256" y="354">extract/calendar.ts</text>
+  <text class="ts" x="256" y="372">Event → prep brief item</text>
+  <text class="ts" x="256" y="388" fill="#a78bfa">tracedMessage → Claude</text>
+</g>
+<g>
+  <rect class="box-purple" x="460" y="328" width="208" height="64" rx="6"/>
+  <text class="th" x="476" y="354">extract/granola.ts</text>
+  <text class="ts" x="476" y="372">Meeting → action items</text>
+  <text class="ts" x="476" y="388" fill="#a78bfa">tracedMessage → Claude</text>
+</g>
+<g>
+  <rect class="box-purple" x="680" y="328" width="220" height="64" rx="6"/>
+  <text class="th" x="696" y="354">extract/linear.ts</text>
+  <text class="ts" x="696" y="372">Issues filtered by mentions</text>
+  <text class="ts" x="696" y="388" fill="#a3a3a3">No LLM call (heuristic)</text>
+</g>
+
+<line class="arrow" x1="124" y1="392" x2="124" y2="430" marker-end="url(#ah)"/>
+<line class="arrow" x1="344" y1="392" x2="344" y2="430" marker-end="url(#ah)"/>
+<line class="arrow" x1="564" y1="392" x2="564" y2="430" marker-end="url(#ah)"/>
+<line class="arrow" x1="790" y1="392" x2="790" y2="430" marker-end="url(#ah)"/>
+
+<text class="tag" x="20" y="426">Orchestrator</text>
+<g>
+  <rect class="box-purple" x="20" y="438" width="880" height="68" rx="6"/>
+  <text class="th" x="36" y="464">lib/digest/run.ts · runDigestForUser</text>
+  <text class="ts" x="36" y="482">Load open items + 100 most-recent cleared items · fan out to extractors · batched function classifier (Claude)</text>
+  <text class="ts" x="36" y="498">Run diff per source · insert newItems · bump carryover.last_seen_at · suppressed bucket dropped silently</text>
+</g>
+
+<line class="arrow" x1="460" y1="506" x2="460" y2="540" marker-end="url(#ah)"/>
+
+<text class="tag" x="20" y="538">Diff engine</text>
+<g>
+  <rect class="box-purple" x="20" y="550" width="880" height="80" rx="6"/>
+  <text class="th" x="36" y="576">lib/diff.ts · diffSingleSource</text>
+  <text class="ts" x="36" y="594">Lookup: semantic_hash first (per-item identity) → fallback to sourceRefKey (Gmail thread+message, Granola meeting, Linear issue)</text>
+  <text class="ts" x="36" y="610">Four buckets: newItems · carryover · suppressed (matched a cleared row) · completed (currently no-op, user-clear only)</text>
+  <text class="ts" x="36" y="624" fill="#86efac">This is the load-bearing piece. Most recent critical bugs were here.</text>
+</g>
+
+<line class="arrow" x1="460" y1="630" x2="460" y2="668" marker-end="url(#ah)"/>
+
+<text class="tag" x="20" y="664">Persistence · Supabase Postgres (RLS, Auth, Realtime)</text>
+<g>
+  <rect class="box-teal" x="20" y="676" width="168" height="64" rx="6"/>
+  <text class="th" x="32" y="702">items</text>
+  <text class="ts" x="32" y="720">Tasks · status · brief · proposed_action</text>
+</g>
+<g>
+  <rect class="box-teal" x="200" y="676" width="168" height="64" rx="6"/>
+  <text class="th" x="212" y="702">llm_calls</text>
+  <text class="ts" x="212" y="720">Every Claude call · cost · slop_rate join</text>
+</g>
+<g>
+  <rect class="box-teal" x="380" y="676" width="168" height="64" rx="6"/>
+  <text class="th" x="392" y="702">item_feedback</text>
+  <text class="ts" x="392" y="720">Slop signals · training corpus</text>
+</g>
+<g>
+  <rect class="box-teal" x="560" y="676" width="168" height="64" rx="6"/>
+  <text class="th" x="572" y="702">runs</text>
+  <text class="ts" x="572" y="720">Cron audit · sources_run · sources_failed</text>
+</g>
+<g>
+  <rect class="box-teal" x="740" y="676" width="160" height="64" rx="6"/>
+  <text class="th" x="752" y="702">user_functions</text>
+  <text class="ts" x="752" y="720">Work areas · per-user CRUD</text>
+</g>
+
+<line class="arrow" x1="460" y1="740" x2="460" y2="778" marker-start="url(#ah)" marker-end="url(#ah)"/>
+
+<text class="tag" x="20" y="774">Application · Next.js 15 App Router on Vercel</text>
+<g>
+  <rect class="box-purple" x="20" y="786" width="436" height="68" rx="6"/>
+  <text class="th" x="36" y="812">Server Actions · app/today/actions.ts</text>
+  <text class="ts" x="36" y="830">requestRefresh · completeItem · dismissItem · snoozeItem</text>
+  <text class="ts" x="36" y="846">markItemSlop · addManualTask · sendDraft (to Gmail)</text>
+</g>
+<g>
+  <rect class="box-teal" x="468" y="786" width="432" height="68" rx="6"/>
+  <text class="th" x="484" y="812">RSC pages · app/*</text>
+  <text class="ts" x="484" y="830">/today · /profile · /activity · /handled · /connections</text>
+  <text class="ts" x="484" y="846">/observability · /settings/functions · /onboarding · /login</text>
+</g>
+
+<text class="tag" x="20" y="884">Background + sidecars</text>
+<g>
+  <rect class="box-gray" x="20" y="896" width="285" height="64" rx="6"/>
+  <text class="th" x="36" y="922">Inngest</text>
+  <text class="ts" x="36" y="940">Cron · morning-digest at 8 AM local</text>
+  <text class="ts" x="36" y="956">Durable step.run blocks for retries</text>
+</g>
+<g>
+  <rect class="box-gray" x="317" y="896" width="285" height="64" rx="6"/>
+  <text class="th" x="333" y="922">Anthropic API</text>
+  <text class="ts" x="333" y="940">Sonnet for briefs · Haiku elsewhere</text>
+  <text class="ts" x="333" y="956">Wrapped by lib/llm-trace.ts</text>
+</g>
+<g>
+  <rect class="box-gray" x="614" y="896" width="286" height="64" rx="6"/>
+  <text class="th" x="630" y="922">Langfuse</text>
+  <text class="ts" x="630" y="940">LLM trace fan-in · fire-and-forget</text>
+  <text class="ts" x="630" y="956">Per-prompt slop_rate dashboard</text>
+</g>
+
+<path class="arrow-dashed" d="M 162 896 Q 162 870 460 870 Q 460 824 460 824" marker-end="url(#ah)"/>
+<text class="ts" x="172" y="864" fill="#5f5e5a">cron fires runDigestForUser</text>
+
+<path class="arrow-dashed" d="M 460 960 Q 460 990 220 990 Q 124 990 124 392" marker-end="url(#ah)"/>
+<text class="ts" x="220" y="1004" fill="#5f5e5a">tracedMessage hits Anthropic from any extractor</text>
+
+<path class="arrow-dashed" d="M 757 896 Q 757 866 757 740 Q 757 720 284 720" marker-end="url(#ah)"/>
+<text class="ts" x="650" y="864" fill="#5f5e5a">traces stream to Langfuse</text>
+
+<path class="arrow-loop" d="M 124 854 Q 124 866 124 884 Q 124 990 800 990 Q 870 990 870 600 Q 870 580 720 580" marker-end="url(#ah)"/>
+<text class="loop-label" x="460" y="1018" text-anchor="middle">Slop feedback loop · markItemSlop writes item_feedback → future runs suppress same source_ref + train next prompt version</text>
+
+</svg>
+</div>
+
+<div class="legend">
+  <span class="legend-item"><span class="legend-dot" style="background: var(--gray-fill); border-color: var(--gray-stroke);"></span>External / third-party</span>
+  <span class="legend-item"><span class="legend-dot" style="background: var(--purple-fill); border-color: var(--purple-stroke);"></span>App code · extractors, orchestrator, actions</span>
+  <span class="legend-item"><span class="legend-dot" style="background: var(--teal-fill); border-color: var(--teal-stroke);"></span>Persistence + read surfaces</span>
+  <span class="legend-item"><span class="legend-dot" style="background: transparent; border-color: var(--coral);"></span>Slop feedback loop</span>
+  <span class="legend-item"><span class="legend-dot" style="background: transparent; border-color: #5f5e5a; border-style: dashed;"></span>Sidecar (cron, LLM call, trace stream)</span>
+</div>
+
+<div class="stack">
+  <h2>Tech stack</h2>
+  <div class="stack-grid">
+    <div class="stack-card">
+      <div class="row"><span class="name">Vercel</span><span class="pill host">Hosting</span></div>
+      <div class="role">Next.js 15 App Router. Auto-deploys from main, preview URLs per dev branch. Custom domain taskbash.app via GoDaddy DNS.</div>
+    </div>
+    <div class="stack-card">
+      <div class="row"><span class="name">Supabase</span><span class="pill db">Postgres + Auth</span></div>
+      <div class="role">Postgres for all data (items, llm_calls, item_feedback, runs, user_functions). Auth via Google SSO with RLS on every table. Service-role client for server actions.</div>
+    </div>
+    <div class="stack-card">
+      <div class="row"><span class="name">Inngest</span><span class="pill cron">Cron + durable steps</span></div>
+      <div class="role">Morning-digest cron at 8 AM local. Each step.run block is durable so a partial failure retries from the last checkpoint instead of replaying the whole pipeline.</div>
+    </div>
+    <div class="stack-card">
+      <div class="row"><span class="name">Nango</span><span class="pill gw">OAuth proxy</span></div>
+      <div class="role">Handles Gmail + Google Calendar OAuth and proxies every API call. Stores per-user connection_id, refreshes tokens, never exposes the access token to our code.</div>
+    </div>
+    <div class="stack-card">
+      <div class="row"><span class="name">Anthropic</span><span class="pill llm">LLM</span></div>
+      <div class="role">Claude Sonnet for brief synthesis (the moat) and reply drafting. Claude Haiku for extraction, classification, follow-up decisions. Every call wrapped by tracedMessage.</div>
+    </div>
+    <div class="stack-card">
+      <div class="row"><span class="name">Langfuse</span><span class="pill obs">Observability</span></div>
+      <div class="role">Fire-and-forget LLM trace stream. Powers per-prompt-version slop_rate on /observability and gives ad-hoc inspection of any call by prompt_id.</div>
+    </div>
+    <div class="stack-card">
+      <div class="row"><span class="name">Granola</span><span class="pill src">Source</span></div>
+      <div class="role">Meeting notes API, direct key. Extractor pulls the last 7 days of notes and feeds them to Claude for action-item synthesis.</div>
+    </div>
+    <div class="stack-card">
+      <div class="row"><span class="name">Linear</span><span class="pill src">Source</span></div>
+      <div class="role">GraphQL with a Personal API key. Filtered to issues where the user is mentioned in recent comments. No LLM call — pure heuristic.</div>
+    </div>
+  </div>
+</div>
+
+<p class="footer">Architecture as of May 31, 2026 · diff engine version 4 · taskbash.app</p>
+
+</div>
+</body>
+</html>

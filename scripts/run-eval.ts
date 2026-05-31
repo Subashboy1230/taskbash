@@ -1,31 +1,9 @@
-// scripts/run-eval.ts — Regression-test a prompt against a dataset.
+// scripts/run-eval.ts — CLI wrapper around lib/eval/run-dataset.ts.
 //
-// Each `eval_cases` row stores the EXACT Anthropic request that was
-// used to extract a piece of data the user later promoted as a "gold"
-// case. This runner:
-//
-//   1. Pulls every case in the requested dataset
-//   2. Re-sends each request_payload to Claude
-//   3. Compares the response against expected_output per expected_behavior
-//        exact          — string-equal (after trim)
-//        contains       — expected appears as substring in output
-//        empty          — output should be empty (slop case — the
-//                         prompt should now SKIP this input)
-//        manual_review  — record output, mark not_scored (no pass/fail)
-//   4. Writes an eval_runs row + per-case eval_case_results rows
-//   5. Prints a summary
-//
-// Caveat: this re-sends the SAVED request, which includes the prompt
-// that was in effect when the case was created. To true-test a NEW
-// prompt, you need to:
-//   a. ship the new prompt
-//   b. trigger a fresh extraction (morning digest, or a /today refresh)
-//   c. promote those new calls into the dataset (or replace existing
-//      cases)
-//   d. re-run this eval
-// Phase B2 will add per-extractor replay functions so we can test the
-// CURRENT codebase prompt against the case's INPUT — not just replay
-// the saved request.
+// The actual scoring logic lives in lib/eval/run-dataset.ts so it can
+// be shared between this CLI and the eval-cron Inngest function. This
+// file is now just a thin wrapper that resolves a dataset by name and
+// prints a summary.
 //
 // Run:
 //   npm run eval -- --dataset gold-extract.gmail

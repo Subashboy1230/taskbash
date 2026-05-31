@@ -10,4 +10,5 @@ export const EVENTS = {
   digestRequested: 'digest/requested',      // manual trigger
   granolaExtracted: 'granola/extracted',    // upstream signal for chained flows later
   gmailPollRequested: 'gmail/poll.requested',
+  evalsRequested: 'evals/requested',        // manual eval-cron trigger
 } as const

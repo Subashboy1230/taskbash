@@ -9,9 +9,10 @@ import { serve } from 'inngest/next'
 import { inngest } from '@/inngest/client'
 import { morningDigest } from '@/inngest/functions/morning-digest'
 import { gmailPoll } from '@/inngest/functions/gmail-poll'
+import { evalCron } from '@/inngest/functions/eval-cron'
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [morningDigest, gmailPoll],
+  functions: [morningDigest, gmailPoll, evalCron],
   signingKey: process.env.INNGEST_SIGNING_KEY,
 })
