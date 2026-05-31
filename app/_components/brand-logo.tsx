@@ -15,73 +15,89 @@ type Brand =
   | 'manual'
 
 function GmailLogo({ size }: { size: number }) {
+  // Gmail M-envelope: white bg, red top bar, blue left panel, green right panel, yellow envelope flaps
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
-      <path
-        d="M2 6.5a2.5 2.5 0 0 1 4-2L12 9l6-4.5a2.5 2.5 0 0 1 4 2v11A2.5 2.5 0 0 1 19.5 20H17V11.6l-5 3.75-5-3.75V20H4.5A2.5 2.5 0 0 1 2 17.5v-11Z"
-        fill="#EA4335"
-      />
-      <path d="M4 20h3V11.6L4 9.35V17.5A2.5 2.5 0 0 0 6.5 20H4Z" fill="#4285F4" />
-      <path d="M17 20h2.5a2.5 2.5 0 0 0 2.5-2.5V9.35L17 11.6V20Z" fill="#34A853" />
-      <path d="M17 4.5 12 9 7 4.5l5 3.75 5-3.75Z" fill="#C5221F" />
-      <path
-        d="M7 11.6V20H4.5A2.5 2.5 0 0 1 2 17.5V6.55l5 5.05Z"
-        fill="#4285F4"
-        opacity=".0"
-      />
+      <rect width="24" height="24" rx="3" fill="#fff" />
+      {/* left blue panel */}
+      <path d="M2 6.5v11A1.5 1.5 0 0 0 3.5 19H6V10.5L2 7.2V6.5Z" fill="#4285F4" />
+      {/* right green panel */}
+      <path d="M22 6.5v11a1.5 1.5 0 0 1-1.5 1.5H18V10.5l4-3.3V6.5Z" fill="#34A853" />
+      {/* envelope body (white) */}
+      <path d="M6 10.5V19h12V10.5L12 14.5 6 10.5Z" fill="#EA4335" />
+      {/* M flaps */}
+      <path d="M2 6.5C2 5.67 2.67 5 3.5 5h17c.83 0 1.5.67 1.5 1.5L12 14.5 2 6.5Z" fill="#EA4335" />
+      <path d="M2 6.5 12 14.5l10-8L12 11 2 6.5Z" fill="#C5221F" />
     </svg>
   )
 }
 
 function CalendarLogo({ size }: { size: number }) {
+  // Google Calendar 2020 icon: rounded square, blue header, white body with blue "31",
+  // yellow top-right corner, green bottom-left corner, red bottom-right folded corner.
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
-      <rect x="3" y="4" width="18" height="17" rx="2.5" fill="#fff" stroke="#DADCE0" strokeWidth="1.2" />
-      <rect x="3" y="4" width="18" height="4.5" rx="2.5" fill="#fff" />
-      <path d="M7 2v4M17 2v4" stroke="#5F6368" strokeWidth="1.6" strokeLinecap="round" />
-      <text
-        x="12"
-        y="17.5"
-        textAnchor="middle"
-        fontSize="8.5"
-        fontWeight="700"
-        fontFamily="Roboto, system-ui, sans-serif"
-        fill="#1A73E8"
-      >
-        28
-      </text>
+      <defs>
+        <clipPath id="cal-clip"><rect width="24" height="24" rx="4" /></clipPath>
+      </defs>
+      <g clipPath="url(#cal-clip)">
+        {/* white base */}
+        <rect width="24" height="24" fill="#fff" />
+        {/* blue top strip */}
+        <rect width="24" height="9" fill="#4285F4" />
+        {/* yellow top-right */}
+        <rect x="15" y="0" width="9" height="9" fill="#FBBC04" />
+        {/* green bottom-left */}
+        <rect x="0" y="15" width="9" height="9" fill="#34A853" />
+        {/* red bottom-right corner fold */}
+        <path d="M24 19 L24 24 L19 24 Z" fill="#EA4335" />
+        {/* white calendar body */}
+        <rect x="2" y="9" width="20" height="13" fill="#fff" />
+        {/* date */}
+        <text x="12" y="19.5" textAnchor="middle" fontSize="8.5" fontWeight="700" fontFamily="system-ui, sans-serif" fill="#1A73E8">31</text>
+      </g>
     </svg>
   )
 }
 
 function GranolaLogo({ size }: { size: number }) {
-  // Granola's mark is a stylized G. We render the wordmark glyph in
-  // their signature warm cream over deep ink.
+  // Granola rebrand icon: lime/yellow-green background with a dark spiral mark
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
-      <rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="#1A1614" />
+      <rect width="24" height="24" rx="5" fill="#B5C832" />
+      {/* Spiral approximation using a path */}
       <path
-        d="M16.5 11.4v4.1c-1.2.95-2.75 1.5-4.5 1.5-3.6 0-6.2-2.45-6.2-5.55s2.6-5.55 6.2-5.55c1.95 0 3.55.7 4.55 1.85l-1.95 1.95c-.6-.6-1.45-1-2.6-1-2 0-3.45 1.35-3.45 2.75s1.45 2.75 3.45 2.75c1.2 0 2.1-.4 2.7-.95v-.6h-2.55V11.4h4.35Z"
-        fill="#F4E9D9"
+        d="M12 4.5
+           C16.5 4.5 19.5 7.5 19.5 12
+           C19.5 16.5 16 19 12 19
+           C8.5 19 6 16.5 6 13.5
+           C6 10.5 8 8.5 10.5 8.5
+           C12.5 8.5 14 9.8 14 11.5
+           C14 13 13 14 11.5 14
+           C10.5 14 10 13.5 10 12.5"
+        fill="none"
+        stroke="#1A1A1A"
+        strokeWidth="2"
+        strokeLinecap="round"
       />
     </svg>
   )
 }
 
 function LinearLogo({ size }: { size: number }) {
+  // Linear icon: solid periwinkle/cornflower blue circle with 3 diagonal white stripes
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
       <defs>
-        <linearGradient id="linearGrad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#7B68EE" />
-          <stop offset="1" stopColor="#5E6AD2" />
-        </linearGradient>
+        <clipPath id="linear-clip"><circle cx="12" cy="12" r="10" /></clipPath>
       </defs>
-      <rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="url(#linearGrad)" />
-      <path
-        d="M5.6 13.8c.45 2.5 2.4 4.45 4.9 4.9L5.6 13.8Zm-.1-3.05 7.95 7.95c.55-.05 1.1-.15 1.6-.3L5.5 9.15c-.15.5-.25 1.05-.3 1.6Zm.9-2.9 9.95 9.95c.4-.2.8-.45 1.15-.7L7.1 6.7c-.25.35-.5.75-.7 1.15Zm1.6-2.1c1.55-1.65 3.75-2.7 6.2-2.7a8.5 8.5 0 0 1 8.5 8.5c0 2.45-1.05 4.65-2.7 6.2L8 5.75Z"
-        fill="#fff"
-      />
+      <circle cx="12" cy="12" r="10" fill="#7C83F7" />
+      <g clipPath="url(#linear-clip)">
+        {/* 3 diagonal white stripes, bottom-left to top-right like the actual logo */}
+        <path d="M2 22 L22 2 L24 4 L4 24 Z" fill="#fff" opacity="0.9" />
+        <path d="M2 17 L17 2 L19 4 L4 19 Z" fill="#fff" opacity="0.9" />
+        <path d="M2 12 L12 2 L14 4 L4 14 Z" fill="#fff" opacity="0.9" />
+      </g>
     </svg>
   )
 }
