@@ -512,6 +512,186 @@ The PRD is implemented correctly when:
 
 ---
 
-## 19. One-paragraph TL;DR
+## 19. Eval cron tile (added 2026-05-31)
+
+The Inngest `eval-cron` function runs every 3 days at 9 AM PT. Each
+run produces an `agent_events` row of `kind='eval.cron_completed'`,
+plus one `kind='eval.regression'` row per dataset whose pass rate
+dropped by more than 5 percentage points vs. the previous run.
+
+The Activity page is where the user sees those results. Two surfaces:
+
+### 19.1 Agent Runs tab — top-of-page eval card
+
+When the Agent Runs tab loads, render an `EvalHealthCard` above the
+chronological run list. Card layout:
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ Eval health                                                │
+│ Last ran 2 days ago · next run in 1 day                    │
+├────────────────────────────────────────────────────────────┤
+│ gold-extract.gmail        88% ▁▂▃▅▆▅▆▇▇▇  ↑ 2pp           │
+│ slop-extract.gmail        76% ▅▆▅▄▃▄▅▆▇▆  flat            │
+│ gold-extract.granola      92% ▆▇▆▇▇▇▆▇▇▇  ↑ 1pp           │
+│ slop-extract.granola      71% ▇▆▅▄▃▂▂▁▁▂  ↓ 12pp ⚠       │
+│ gold-classify.functions   94% ▇▇▇▇▇▇▇▇▇▇  flat            │
+└────────────────────────────────────────────────────────────┘
+[View all runs in /observability]
+```
+
+Components:
+
+- **Card** wraps the whole thing using shadcn `<Card>` (already in repo).
+- **Header row** — H3 "Eval health" left, status line right ("Last ran 2d
+  ago · next run in 1d"). Status computed from the most recent
+  `agent_events` row with `kind='eval.cron_completed'` + the cron schedule.
+- **One row per dataset** — name (mono, 12px), current pass rate
+  (tabular-nums 16px), a 10-bar inline sparkline of the last 10 runs,
+  and a delta indicator (`↑ Npp` green, `↓ Npp` red, `flat` gray).
+- **Regression badge** — when delta < -5pp, append a small ⚠ icon
+  (Tabler `ti-alert-triangle`) tinted red. Hovering the row shows a
+  tooltip with the regression details from the agent_events payload.
+- **Footer button** "View all runs in /observability" links to the
+  existing observability dashboard for deep dives.
+
+If no eval datasets exist yet: hide the card entirely. Don't render an
+empty-state — eval datasets are an advanced feature, and seeing an empty
+card every visit is noise.
+
+### 19.2 Data query
+
+```sql
+-- Pass-rate series per dataset for the sparkline
+select
+  d.id as dataset_id, d.name, d.prompt_id,
+  array_agg(
+    round((r.passed::numeric / nullif(r.passed + r.failed, 0)) * 100, 1)
+    order by r.started_at desc
+  ) filter (where r.passed + r.failed > 0) as pass_rates,
+  array_agg(r.started_at order by r.started_at desc) as timestamps
+from eval_datasets d
+join eval_runs r on r.dataset_id = d.id and r.ended_at is not null
+group by d.id
+order by d.name;
+```
+
+In the loader: take the first 10 elements of each array (most recent
+10 runs per dataset), reverse to chronological order, compute delta as
+`array[length] - array[length - 1]`.
+
+Also load the most recent `kind='eval.cron_completed'` event to
+compute "last ran X ago" and the cron's `next_run_at` (via the Inngest
+function metadata if available, otherwise compute from cron expression).
+
+### 19.3 Sparkline component
+
+Inline `<EvalSparkline>` component. Pure SVG, no chart library:
+
+```tsx
+function EvalSparkline({ values }: { values: number[] }) {
+  if (values.length === 0) return null
+  const max = 100
+  const min = Math.min(...values, 0)
+  const range = max - min || 1
+  const w = 80
+  const h = 16
+  const step = w / Math.max(values.length - 1, 1)
+  const points = values
+    .map((v, i) => `${i * step},${h - ((v - min) / range) * h}`)
+    .join(' ')
+  return (
+    <svg width={w} height={h} className="inline-block">
+      <polyline
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        points={points}
+      />
+    </svg>
+  )
+}
+```
+
+The sparkline inherits color from text (`currentColor`). Green for the
+gold datasets, amber for slop datasets, red for any dataset currently
+in regression.
+
+### 19.4 All Activity feed rendering
+
+Two new row kinds for the All Activity feed:
+
+**`eval.cron_completed`** — one row per cron run:
+
+- Timestamp + `ti-refresh` icon
+- Label: `Ran N evals · K regressions` (K from payload.regressions)
+- Subtitle (12px muted): comma-separated `dataset: pass_rate%` list
+- Pill: `Succeeded` if K=0; `Attention` (amber) if K>0
+
+**`eval.regression`** — one row per dataset that regressed:
+
+- Timestamp + `ti-alert-triangle` icon (red)
+- Label: `<dataset_name> regressed` (e.g. `slop-extract.granola regressed`)
+- Subtitle (12px muted): `Pass rate XX% → YY% (Δ-Npp)`
+- Pill: `Regression` (red, `bg-danger-bg text-danger-fg`)
+- Clicking the row navigates to `/observability?dataset=<name>` to see the
+  cases that started failing
+
+### 19.5 Add to ActivityPill kind palette
+
+```ts
+attention:   { label: 'Attention',   bg: 'bg-tag-action-bg', fg: 'text-tag-action-fg' },
+regression:  { label: 'Regression',  bg: 'bg-danger-bg',     fg: 'text-danger-fg'     },
+```
+
+Add to the `PILL` table in §7.
+
+### 19.6 New component file
+
+```
+app/activity/components/
+├── eval-health-card.tsx       The card from §19.1
+├── eval-sparkline.tsx         The svg sparkline from §19.3
+```
+
+### 19.7 New loader function
+
+```ts
+// app/activity/loaders.ts — add
+export async function loadEvalHealth(userId: string): Promise<EvalHealth>
+
+export interface EvalHealth {
+  lastCronRanAt: string | null
+  nextCronAt: string | null
+  datasets: Array<{
+    datasetId: string
+    name: string
+    promptId: string
+    passRates: number[]        // last 10, chronological
+    currentPassRate: number | null
+    deltaPP: number | null
+    isRegression: boolean      // delta < -5
+  }>
+}
+```
+
+Called from `app/activity/page.tsx` and passed to the Agent Runs tab.
+
+### 19.8 Acceptance criteria (additions to §16)
+
+- [ ] `EvalHealthCard` renders at the top of the Agent Runs tab when
+      at least one eval dataset exists
+- [ ] Card hides cleanly when no datasets exist
+- [ ] Sparklines show the last 10 runs per dataset (or fewer if history
+      is shorter)
+- [ ] Delta indicator shows `↑ Npp` green, `↓ Npp` red, `flat` gray
+- [ ] Regression rows in All Activity link to `/observability?dataset=…`
+- [ ] `eval.cron_completed` events render with the correct pill kind
+      (Succeeded when regressions=0, Attention when >0)
+- [ ] `eval.regression` events render with the Regression pill
+
+---
+
+## 20. One-paragraph TL;DR
 
 > Build `/activity` as a 6-tab page (All / Agent Runs / Tasks / Data Sources / Approvals / Records) modeled on Nummo's screenshots. Each tab is a chronologically-ordered feed of rows with `[timestamp] [source icon] [label] [pill]` shape, grouped under Today / Earlier This Week / Earlier collapsible headers. Tasks tab needs a new `task_events` table (migration 023) writing on every status transition in `app/today/actions.ts`; Data Sources tab needs a `sources_failed` column on `runs` (migration 024) so failed-vs-skipped is distinguishable; Records tab derives from `llm_calls.input_content`. Status pills use a fixed palette (Synced/Approved=green, Rejected/Failed=red, Snoozed=amber, Completed/Running=blue, Slop/Skipped=gray). `@-mention` patterns in task titles render as `<MentionChip>` pills. Pagination via cursor-based "Load more" using `before` timestamp. Server loaders fan out in parallel for the All tab. Ship in 2 days: day 1 = migrations + components + one tab working end-to-end; day 2 = wire remaining tabs + pagination + empty states. Acceptance is in §16. No em-dashes.
