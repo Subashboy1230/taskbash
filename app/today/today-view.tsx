@@ -2608,13 +2608,13 @@ function groupItems(
     return out
   }
   if (groupBy === 'priority') {
-    const buckets: Record<string, MockItem[]> = { P0: [], P1: [], P2: [], P3: [], none: [] }
+    const buckets: Record<string, MockItem[]> = { P0: [], P1: [], P2: [], P3: [] }
     for (const it of items) {
-      const p = it.priority ?? 'none'
-      ;(buckets[p] ?? buckets.none).push(it)
+      const p = it.priority ?? defaultPriority(it)
+      ;(buckets[p] ?? buckets.P2).push(it)
     }
-    const PRIORITY_LABEL: Record<string, string> = { P0: 'P0 — Critical', P1: 'P1 — High', P2: 'P2 — Medium', P3: 'P3 — Low', none: 'No priority' }
-    return (['P0', 'P1', 'P2', 'P3', 'none'] as const)
+    const PRIORITY_LABEL: Record<string, string> = { P0: 'P0 - Critical', P1: 'P1 - High', P2: 'P2 - Medium', P3: 'P3 - Low' }
+    return (['P0', 'P1', 'P2', 'P3'] as const)
       .filter(p => buckets[p].length > 0)
       .map(p => ({ key: `p-${p}`, label: PRIORITY_LABEL[p], items: buckets[p] }))
   }
