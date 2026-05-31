@@ -2200,7 +2200,7 @@ function SubtasksSection({
             </button>
             <span
               className={cn(
-                'flex-1 text-[14px] text-ink transition-colors',
+                'flex-1 text-[13px] text-ink transition-colors',
                 sub.completed && 'line-through text-ink-faint'
               )}
             >
