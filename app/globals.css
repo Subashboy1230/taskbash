@@ -149,4 +149,9 @@ details > summary::-webkit-details-marker {
 .animate-slide-in-right  { animation: slide-in-right 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-slide-out-right { animation: slide-out-right 180ms cubic-bezier(0.55, 0, 1, 0.45) both; }
 .animate-fade-in         { animation: fade-in 180ms ease both; }
+
+/* Data-attribute driven panel animation — immune to React className reconciliation */
+[data-panel="opening"] { animation: slide-in-right 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+[data-panel="closing"] { animation: slide-out-right 180ms cubic-bezier(0.55, 0, 1, 0.45) both; }
+[data-panel="open"]    { animation: none; }
 .animate-task-dismiss    { opacity: 0; transform: translateX(12px); transition: opacity 200ms ease, transform 200ms ease; }

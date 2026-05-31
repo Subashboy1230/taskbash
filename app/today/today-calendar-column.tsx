@@ -490,8 +490,8 @@ function EventCard({ event, variant = 'future' }: { event: DayEvent; variant?: E
     : `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ''}`
 
   return (
-    <li>
-      <div className={cn(
+    <li suppressHydrationWarning>
+      <div suppressHydrationWarning className={cn(
         'rounded-md px-3 py-2',
         variant === 'current' && 'bg-emerald-500/10 ring-1 ring-emerald-500/30',
         variant === 'next'    && 'bg-blue-500/10 ring-1 ring-blue-500/25',

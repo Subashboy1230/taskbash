@@ -1,13 +1,6 @@
 'use client'
 
-// Client shell that wraps /today.
-//
-// Layout: sidebar | main task list | calendar column (always visible).
-// Task detail opens in a shadcn Sheet that slides over from the right with a
-// backdrop. The calendar stays present underneath so the user can see their
-// agenda even while reading a task brief.
-
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import React, { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppSidebar } from '@/app/_components/app-sidebar'
 import { TodayView, DetailPanel } from './today-view'
@@ -20,39 +13,47 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/app/_components/ui/sheet'
-import { cn } from '@/lib/utils'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { UserFunction } from '@/lib/types'
-
-function PanelColumn({
-  item, closing, onClose, onComplete, onDismiss, allFunctions,
-}: {
-  item: MockItem
-  closing: boolean
-  onClose: () => void
-  onComplete: (id: string) => void
-  onDismiss: (id: string) => void
-  allFunctions: UserFunction[]
-}) {
-  return (
-    <div className={cn(
-      'sticky top-0 h-screen w-[384px] shrink-0 border-l border-line bg-canvas overflow-y-auto',
-      closing ? 'animate-slide-out-right' : 'animate-slide-in-right'
-    )}>
-      <DetailPanel
-        item={item}
-        onClose={onClose}
-        onComplete={() => onComplete(item.id)}
-        onDismiss={() => onDismiss(item.id)}
-        allFunctions={allFunctions}
-      />
-    </div>
-  )
-}
 import type { DayEvent } from '@/lib/load-day-events'
 import type { UnreadThread } from '@/lib/load-unread-gmail'
 
 const CALENDAR_COLLAPSED_KEY = 'taskbash:calendarCollapsed'
+
+// Stable wrapper whose animation is driven by data-panel attribute only.
+// React owns className (layout only) but never touches data-panel,
+// so item switches never replay the slide-in animation.
+function PanelColumn({ closing, children }: { closing: boolean; children: React.ReactNode }) {
+  const divRef = useRef<HTMLDivElement>(null)
+  const prevClosing = useRef<boolean | null>(null)
+
+  useEffect(() => {
+    const el = divRef.current
+    if (!el) return
+    if (prevClosing.current === null) {
+      // First mount — play the opening animation once
+      el.dataset.panel = 'opening'
+      const onEnd = () => { el.dataset.panel = 'open' }
+      el.addEventListener('animationend', onEnd, { once: true })
+    } else if (closing && !prevClosing.current) {
+      el.dataset.panel = 'closing'
+    } else if (!closing && prevClosing.current) {
+      el.dataset.panel = 'opening'
+      const onEnd = () => { el.dataset.panel = 'open' }
+      el.addEventListener('animationend', onEnd, { once: true })
+    }
+    prevClosing.current = closing
+  }, [closing])
+
+  return (
+    <div
+      ref={divRef}
+      className="sticky top-0 h-screen w-[384px] shrink-0 border-l border-line bg-canvas overflow-y-auto"
+    >
+      {children}
+    </div>
+  )
+}
 
 export function TodayShell({
   digest,
@@ -69,50 +70,60 @@ export function TodayShell({
   calendarConnected: boolean
   unreadThreads?: UnreadThread[]
 }) {
-  const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
-  const lastSelectedItem = useRef<MockItem | null>(null)
+  // `displayedItem` is what the panel renders. It lags behind during close
+  // so the panel content doesn't vanish before the slide-out finishes.
+  const [displayedItem, setDisplayedItem] = useState<MockItem | null>(null)
+  // `panelOpen` drives the open/close animation independently of content.
+  const [panelOpen, setPanelOpen] = useState(false)
+  // While closing, we hold the panel in the DOM with slide-out animation.
   const [panelClosing, setPanelClosing] = useState(false)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const [addOpen, setAddOpen] = useState(false)
   const [shellHiddenIds, setShellHiddenIds] = useState<Set<string>>(new Set())
   const router = useRouter()
   const [, startTransition] = useTransition()
-
-  // Lift calendar collapsed state so the main column can claim the freed
-  // width when it's collapsed.
   const [calendarCollapsed, setCalendarCollapsed] = useState(false)
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem(CALENDAR_COLLAPSED_KEY)
       if (saved === '1') setCalendarCollapsed(true)
-    } catch {
-      /* localStorage unavailable */
-    }
+    } catch { /* ignore */ }
   }, [])
+
   useEffect(() => {
     try {
       localStorage.setItem(CALENDAR_COLLAPSED_KEY, calendarCollapsed ? '1' : '0')
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }, [calendarCollapsed])
 
-  const closeDetail = () => {
-    lastSelectedItem.current = selectedItem
-    setPanelClosing(true)
-    setTimeout(() => {
-      setSelectedItem(null)
-      setPanelClosing(false)
-      lastSelectedItem.current = null
-    }, 180)
+  function openPanel(item: MockItem) {
+    // Cancel any in-progress close
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+    setDisplayedItem(item)
+    setPanelOpen(true)
+    setPanelClosing(false)
   }
 
-  // Thread IDs already tracked as items (open or cleared today) — filtered out of Unread tab.
+  function closePanel() {
+    setPanelClosing(true)
+    setPanelOpen(false)
+    closeTimerRef.current = setTimeout(() => {
+      setDisplayedItem(null)
+      setPanelClosing(false)
+      closeTimerRef.current = null
+    }, 200)
+  }
+
   const clearedThreadIds = useMemo(() => {
     const ids = new Set<string>()
     for (const item of [...digest.open_items, ...digest.completed_today]) {
       if (item.gmail_thread_id) ids.add(item.gmail_thread_id)
     }
-    // Also include threads we completed this session (optimistic)
     for (const hiddenId of shellHiddenIds) {
       const item = digest.open_items.find(i => i.id === hiddenId)
       if (item?.gmail_thread_id) ids.add(item.gmail_thread_id)
@@ -130,14 +141,15 @@ export function TodayShell({
     open_items: digest.open_items.filter(i => !shellHiddenIds.has(i.id)),
   } : digest, [digest, shellHiddenIds])
 
+  const panelVisible = panelOpen || panelClosing
+
   return (
-    <div className="flex min-h-screen bg-canvas">
+    <div className="flex min-h-screen w-screen overflow-x-hidden bg-canvas">
       <AppSidebar
         userEmail={userEmail}
         userInitial={digest.user_initials.charAt(0)}
       />
 
-      {/* Task list — always full width, never resizes */}
       <main className="flex-1 min-w-0 pl-8 pr-0 pt-4 pb-16 overflow-y-auto">
         <TodayView
           digest={filteredDigest}
@@ -145,36 +157,44 @@ export function TodayShell({
           functions={functions}
           hideHeader
           hideDetailPanel
-          onSelectItem={setSelectedItem}
-          externalSelectedItemId={selectedItem?.id ?? null}
+          onSelectItem={(item) => { if (item) openPanel(item) }}
+          externalSelectedItemId={displayedItem?.id ?? null}
           onAddTask={() => setAddOpen(true)}
-          mainExpanded={calendarCollapsed || !!selectedItem}
+          mainExpanded={calendarCollapsed || panelVisible}
           unreadThreads={filteredUnread}
         />
       </main>
 
-      {/* Right column — detail panel replaces calendar when a task is open */}
-      {(selectedItem || panelClosing) ? (
-        <PanelColumn
-          item={(selectedItem ?? lastSelectedItem.current)!}
-          closing={panelClosing}
-          onClose={closeDetail}
-          onComplete={id => {
-            setShellHiddenIds(s => new Set(s).add(id))
-            closeDetail()
-            completeItem(id).then(() => router.refresh()).catch(() => {
-              setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
-            })
-          }}
-          onDismiss={id => {
-            setShellHiddenIds(s => new Set(s).add(id))
-            closeDetail()
-            dismissItem(id).then(() => router.refresh()).catch(() => {
-              setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
-            })
-          }}
-          allFunctions={functions}
-        />
+      {/* Right column: detail panel or calendar */}
+      {panelVisible ? (
+        <PanelColumn closing={panelClosing}>
+          {displayedItem && (
+            <DetailPanel
+              key={displayedItem.id}
+              item={displayedItem}
+              onClose={closePanel}
+              onComplete={() => {
+                if (!displayedItem) return
+                const id = displayedItem.id
+                setShellHiddenIds(s => new Set(s).add(id))
+                closePanel()
+                completeItem(id).then(() => router.refresh()).catch(() => {
+                  setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
+                })
+              }}
+              onDismiss={() => {
+                if (!displayedItem) return
+                const id = displayedItem.id
+                setShellHiddenIds(s => new Set(s).add(id))
+                closePanel()
+                dismissItem(id).then(() => router.refresh()).catch(() => {
+                  setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
+                })
+              }}
+              allFunctions={functions}
+            />
+          )}
+        </PanelColumn>
       ) : (
         <TodayCalendarColumn
           events={events}
@@ -189,7 +209,6 @@ export function TodayShell({
         />
       )}
 
-      {/* Add-task panel — still uses Sheet overlay */}
       <Sheet open={addOpen} onOpenChange={setAddOpen}>
         <SheetContent
           side="right"

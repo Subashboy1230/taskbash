@@ -11,6 +11,21 @@ import { runDigestForUser } from '@/lib/digest/run'
 import { inngest, EVENTS } from '@/inngest/client'
 import type { Priority } from '@/lib/types'
 
+async function writeTaskEvent(
+  userId: string,
+  itemId: string,
+  kind: 'completed' | 'dismissed' | 'snoozed' | 'slop',
+  payload?: Record<string, unknown>
+) {
+  await supabase.from('task_events').insert({
+    user_id: userId,
+    item_id: itemId,
+    kind,
+    payload: payload ?? null,
+  })
+  // Fire-and-forget — don't let event logging block the main action
+}
+
 /**
  * Mark an item as "slop" — wrong / irrelevant / shouldn't have been
  * extracted at all. Three things happen:
@@ -160,6 +175,7 @@ export async function markItemSlop(
     throw new Error(`markItemSlop dismiss failed: ${dismissErr.message}`)
   }
 
+  void writeTaskEvent(userId, itemId, 'slop', { reason, note: note ?? null })
   revalidatePath('/today')
 }
 
@@ -250,6 +266,7 @@ export async function deleteSubtask(subtaskId: string) {
 }
 
 export async function completeItem(itemId: string) {
+  const userId = await resolveUserId()
   const { error } = await supabase
     .from('items')
     .update({
@@ -257,8 +274,9 @@ export async function completeItem(itemId: string) {
       completed_at: new Date().toISOString(),
     })
     .eq('id', itemId)
-    .eq('user_id', await resolveUserId())
+    .eq('user_id', userId)
   if (error) throw new Error(`completeItem failed: ${error.message}`)
+  void writeTaskEvent(userId, itemId, 'completed')
   revalidatePath('/today')
 }
 
@@ -273,12 +291,14 @@ export async function uncompleteItem(itemId: string) {
 }
 
 export async function dismissItem(itemId: string) {
+  const userId = await resolveUserId()
   const { error } = await supabase
     .from('items')
     .update({ status: 'dismissed' })
     .eq('id', itemId)
-    .eq('user_id', await resolveUserId())
+    .eq('user_id', userId)
   if (error) throw new Error(`dismissItem failed: ${error.message}`)
+  void writeTaskEvent(userId, itemId, 'dismissed')
   revalidatePath('/today')
 }
 
@@ -286,6 +306,7 @@ export async function dismissItem(itemId: string) {
 // (default 24h). The morning digest auto-unsnoozes items whose snooze
 // window has passed, so they reappear on the next run.
 export async function snoozeItem(itemId: string, hours: number = 24) {
+  const userId = await resolveUserId()
   const snoozeUntil = new Date(
     Date.now() + hours * 60 * 60 * 1000
   ).toISOString()
@@ -293,8 +314,9 @@ export async function snoozeItem(itemId: string, hours: number = 24) {
     .from('items')
     .update({ status: 'snoozed', snooze_until: snoozeUntil })
     .eq('id', itemId)
-    .eq('user_id', await resolveUserId())
+    .eq('user_id', userId)
   if (error) throw new Error(`snoozeItem failed: ${error.message}`)
+  void writeTaskEvent(userId, itemId, 'snoozed', { hours })
   revalidatePath('/today')
 }
 

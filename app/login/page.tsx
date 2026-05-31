@@ -1,38 +1,33 @@
 'use client'
 
-// Login page — Google SSO only for now. Magic link can come later if
-// needed. Lands here from the middleware redirect when an unauthenticated
-// user tries to visit /today or /connections.
+// Login page — Google SSO + Granola-branded entry (both use Google OAuth).
+// Lands here from the middleware redirect when an unauthenticated user tries
+// to visit /today or /connections.
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser'
 
+type Provider = 'google' | 'granola'
+
 export default function LoginPage() {
-  const router = useRouter()
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<Provider | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  async function signInWithGoogle() {
+  async function signIn(provider: Provider) {
     setError(null)
-    setBusy(true)
+    setBusy(provider)
     try {
       const supabase = createSupabaseBrowserClient()
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          // After Google redirects back to Supabase, Supabase sends the user
-          // here. The route handler exchanges the code for a session, then
-          // pushes them on to /today.
           redirectTo: `${window.location.origin}/auth/callback`,
         },
       })
       if (error) throw error
-      // signInWithOAuth navigates the window to Google; we won't usually
-      // reach the next line, but keep busy=true just in case.
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sign-in failed')
-      setBusy(false)
+      setBusy(null)
     }
   }
 
@@ -46,14 +41,26 @@ export default function LoginPage() {
           Your morning digest, from every source.
         </p>
 
-        <button
-          onClick={signInWithGoogle}
-          disabled={busy}
-          className="mt-10 inline-flex w-full items-center justify-center gap-3 rounded-lg border border-line bg-surface px-5 py-3 text-[15px] font-medium text-ink shadow-sm transition-colors hover:bg-surface-muted disabled:opacity-50"
-        >
-          <GoogleMark />
-          {busy ? 'Connecting to Google…' : 'Continue with Google'}
-        </button>
+        <div className="mt-10 flex flex-col gap-3">
+          <button
+            onClick={() => signIn('google')}
+            disabled={!!busy}
+            className="inline-flex w-full items-center justify-center gap-3 rounded-lg border border-line bg-surface px-5 py-3 text-[15px] font-medium text-ink shadow-sm transition-colors hover:bg-surface-muted disabled:opacity-50"
+          >
+            <GoogleMark />
+            {busy === 'google' ? 'Connecting…' : 'Continue with Google'}
+          </button>
+
+          <button
+            onClick={() => signIn('granola')}
+            disabled={!!busy}
+            className="inline-flex w-full items-center justify-center gap-3 rounded-lg border border-line bg-surface px-5 py-3 text-[15px] font-medium text-ink shadow-sm transition-colors hover:bg-surface-muted disabled:opacity-50"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-granola.png" width={18} height={18} alt="Granola" style={{ borderRadius: 4 }} />
+            {busy === 'granola' ? 'Connecting…' : 'Continue with Granola'}
+          </button>
+        </div>
 
         {error && (
           <p className="mt-4 text-[13px] text-danger-fg">{error}</p>
@@ -69,7 +76,6 @@ export default function LoginPage() {
 }
 
 function GoogleMark() {
-  // Standard 4-color G mark — inline SVG so we don't pull a dep.
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
       <path

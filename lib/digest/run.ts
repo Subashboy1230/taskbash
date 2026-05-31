@@ -216,6 +216,12 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
           list.push(inserted.id)
           callToItemIds.set(fresh._llm_call_id, list)
         }
+        // Fire-and-forget task_events write — doesn't block the digest
+        void supabase.from('task_events').insert({
+          user_id: userId,
+          item_id: inserted.id,
+          kind: 'created',
+        })
       }
       // Ignore unique-index race (23505) — treat as carryover silently.
     }

@@ -1021,7 +1021,7 @@ function TaskRow({
                 return (
                   <li
                     key={sub.id}
-                    className="flex items-center gap-2 text-[13px]"
+                    className="flex min-w-0 items-center gap-2 text-[13px]"
                     onClick={e => e.stopPropagation()}
                   >
                     <button
@@ -1041,7 +1041,7 @@ function TaskRow({
                     </button>
                     <span
                       className={cn(
-                        'text-ink transition-colors',
+                        'truncate text-ink transition-colors',
                         isDone && 'line-through text-ink-faint'
                       )}
                     >
@@ -2202,7 +2202,7 @@ function SubtasksSection({
             </button>
             <span
               className={cn(
-                'flex-1 text-[13px] text-ink transition-colors',
+                'flex-1 text-[13px] leading-relaxed text-ink transition-colors',
                 sub.completed && 'line-through text-ink-faint'
               )}
             >
@@ -2221,14 +2221,14 @@ function SubtasksSection({
       </ul>
 
       <form onSubmit={handleAdd} className="mt-2 flex items-center gap-2 px-1">
-        <span className="text-[14px] text-ink-faint">+</span>
+        <span className="text-[13px] text-ink-faint">+</span>
         <Input
           type="text"
           value={draft}
           onChange={e => setDraft(e.target.value)}
           placeholder="Add a subtask"
           disabled={busy}
-          className="h-7 flex-1 border-0 bg-transparent px-0 text-[14px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+          className="h-7 flex-1 border-0 bg-transparent px-0 text-[13px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
         />
         {draft && (
           <Button type="submit" disabled={busy} size="sm" className="h-7 px-2.5">
