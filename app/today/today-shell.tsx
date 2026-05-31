@@ -144,7 +144,7 @@ export function TodayShell({
   const panelVisible = panelOpen || panelClosing
 
   return (
-    <div className="flex min-h-screen w-screen overflow-x-hidden bg-canvas">
+    <div className="flex h-screen w-screen overflow-hidden bg-canvas">
       <AppSidebar
         userEmail={userEmail}
         userInitial={digest.user_initials.charAt(0)}
