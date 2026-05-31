@@ -1,41 +1,53 @@
-// /profile — placeholder. Will hold Soul/voice profile, Function defaults,
-// connected sources at a glance, and personal stats.
-
+import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
-import { loadTodayEvents } from '@/lib/load-day-events'
-import { getActiveConnection } from '@/lib/connections'
-import { PageShell } from '@/app/_components/page-shell'
+import { loadProfileOverview, loadVoiceProfile, loadPromptsWithSlopRates, loadStats } from '@/lib/load-profile'
+import { AppSidebar } from '@/app/_components/app-sidebar'
+import ProfileTabs from './profile-tabs'
 
 export const dynamic = 'force-dynamic'
 
 export default async function ProfilePage() {
-  const [events, calConn, supabase] = await Promise.all([
-    loadTodayEvents().catch(() => []),
-    getActiveConnection('calendar').catch(() => null),
-    createSupabaseServerClient(),
+  const supabase = await createSupabaseServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const [overview, voiceProfile, prompts, stats] = await Promise.all([
+    loadProfileOverview(user.id),
+    loadVoiceProfile(user.id),
+    loadPromptsWithSlopRates(user.id),
+    loadStats(user.id),
   ])
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+
+  const memberSince = new Date(user.created_at).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+  const displayName =
+    (user.user_metadata?.full_name as string | undefined) ??
+    user.email?.split('@')[0] ??
+    'You'
+
   return (
-    <PageShell
-      userEmail={user?.email ?? undefined}
-      userInitial={(user?.email ?? 'U').charAt(0).toUpperCase()}
-      events={events}
-      calendarConnected={!!calConn?.nango_connection_id}
-    >
-      <h1 className="m-0 mb-2 text-[28px] font-semibold tracking-tight text-ink">
-        Profile
-      </h1>
-      <p className="m-0 mb-6 text-[14px] text-ink-faint">
-        Signed in as {user?.email ?? '-'}.
-      </p>
-      <div className="rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
-        <p className="m-0 text-[14px] text-ink-muted">
-          Coming soon: your voice profile (Soul), function defaults, weekly
-          stats, and source health at a glance.
-        </p>
-      </div>
-    </PageShell>
+    <div className="flex min-h-screen bg-canvas">
+      <AppSidebar
+        userEmail={user.email}
+        userInitial={displayName.charAt(0).toUpperCase()}
+      />
+      <main className="flex-1 min-w-0 px-8 pt-8 pb-16 max-w-3xl">
+        <h1 className="m-0 mb-6 text-[28px] font-semibold tracking-tight text-ink">
+          Profile
+        </h1>
+        <ProfileTabs
+          displayName={displayName}
+          email={user.email ?? ''}
+          memberSince={memberSince}
+          overview={overview}
+          voiceProfile={voiceProfile}
+          prompts={prompts}
+          stats={stats}
+        />
+      </main>
+    </div>
   )
 }

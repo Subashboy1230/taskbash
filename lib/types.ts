@@ -180,6 +180,11 @@ export interface Connection {
 // text column.
 export type ConnectionProvider = 'gmail' | 'granola' | 'slack' | 'calendar' | 'linear'
 
+export interface VoiceExamples {
+  openers: string[]
+  closers: string[]
+}
+
 // User-defined functions for cross-source bucketing — e.g. Product,
 // Marketing, People Ops. Many-to-many on items via items.function_ids[].
 export interface UserFunction {
