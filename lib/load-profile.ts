@@ -32,7 +32,7 @@ export async function loadProfileOverview(userId: string) {
     supabase.from('connections').select('provider').eq('user_id', userId),
   ])
 
-  const connectedSources = new Set((connections ?? []).map(c => c.provider as string))
+  const connectedSources = (connections ?? []).map(c => c.provider as string)
 
   return {
     openCount: openCount ?? 0,

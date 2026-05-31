@@ -20,7 +20,7 @@ interface Props {
     openCount: number
     clearedToday: number
     draftsReady: number
-    connectedSources: Set<string>
+    connectedSources: string[]
   }
   voiceProfile: {
     voice: string | null

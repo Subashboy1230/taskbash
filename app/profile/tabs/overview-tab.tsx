@@ -23,7 +23,7 @@ interface Props {
     openCount: number
     clearedToday: number
     draftsReady: number
-    connectedSources: Set<string>
+    connectedSources: string[]
   }
 }
 
@@ -75,7 +75,7 @@ export default function OverviewTab({ displayName, email, memberSince, overview 
         <CardContent className="px-5 pb-5 pt-0">
           <ul className="space-y-2.5">
             {SOURCES.map(src => {
-              const connected = overview.connectedSources.has(src.key)
+              const connected = overview.connectedSources.includes(src.key)
               return (
                 <li key={src.key} className="flex items-center gap-3">
                   <BrandLogo brand={src.key as 'gmail' | 'calendar' | 'granola' | 'linear' | 'slack'} size={18} />
