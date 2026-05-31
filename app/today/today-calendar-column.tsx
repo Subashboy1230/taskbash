@@ -172,7 +172,7 @@ export function TodayCalendarColumn({
   }
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-[300px] shrink-0 flex-col border-l border-line bg-canvas px-5 py-6 lg:flex">
+    <aside className="sticky top-0 hidden h-screen w-[300px] shrink-0 flex-col border-l border-line bg-canvas px-5 py-6 lg:flex overflow-hidden">
       {/* Month grid */}
       <header className="mb-3 flex items-center justify-between">
         <h2 className="m-0 text-[15px] font-semibold text-ink">
@@ -239,7 +239,7 @@ export function TodayCalendarColumn({
 
       {/* Day-specific events panel.
           Wrapped in a Card to visually separate it from the grid. */}
-      <Card className="mt-6 bg-surface/40">
+      <Card className="mt-6 flex min-h-0 flex-1 flex-col overflow-hidden bg-surface/40">
         <CardHeader className="flex-row items-center justify-between space-y-0 p-4 pb-2">
           <CardTitle className="m-0 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
             {eventsHeader}
@@ -254,7 +254,7 @@ export function TodayCalendarColumn({
             </Link>
           )}
         </CardHeader>
-        <CardContent className="p-4 pt-1">
+        <CardContent className="min-h-0 flex-1 overflow-y-auto p-4 pt-1">
           {!isShowingToday ? (
             <SelectedDaySection
               selectedIso={selectedDay!}
