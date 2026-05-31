@@ -157,7 +157,7 @@ export function TodayCalendarColumn({
   // Collapsed rail — just a thin column with an expand chevron.
   if (collapsed) {
     return (
-      <aside className="sticky top-0 hidden h-screen w-9 shrink-0 flex-col items-center border-l border-line bg-canvas py-4 lg:flex">
+      <aside className="sticky top-0 flex h-screen w-9 shrink-0 flex-col items-center border-l border-line bg-canvas py-4">
         <button
           type="button"
           onClick={() => setCollapsed(false)}
@@ -172,7 +172,7 @@ export function TodayCalendarColumn({
   }
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-[300px] shrink-0 flex-col border-l border-line bg-canvas px-5 py-6 lg:flex overflow-hidden">
+    <aside className="sticky top-0 flex h-screen w-[300px] shrink-0 flex-col border-l border-line bg-canvas px-5 py-6 overflow-hidden">
       {/* Month grid */}
       <header className="mb-3 flex items-center justify-between">
         <h2 className="m-0 text-[15px] font-semibold text-ink">
@@ -267,11 +267,7 @@ export function TodayCalendarColumn({
                 : 'Connect Google Calendar to see your schedule here.'}
             </p>
           ) : (
-            <ul className="m-0 list-none space-y-2 p-0">
-              {events.map(e => (
-                <EventCard key={e.id} event={e} />
-              ))}
-            </ul>
+            <EventList events={events} />
           )}
         </CardContent>
       </Card>
@@ -434,17 +430,86 @@ function DayCell({
   )
 }
 
-function EventCard({ event }: { event: DayEvent }) {
+type EventVariant = 'past' | 'current' | 'next' | 'future'
+
+function classifyEvents(events: DayEvent[]): EventVariant[] {
+  const now = Date.now()
+  const timed = events.map(e => ({
+    start: e.isAllDay ? null : new Date(e.startIso).getTime(),
+    end: e.isAllDay ? null : new Date(e.endIso).getTime(),
+  }))
+
+  // Find the single current meeting (started, not ended yet).
+  const currentIdx = timed.findIndex(
+    t => t.start !== null && t.end !== null && now >= t.start && now < t.end
+  )
+
+  // Find the single next meeting after now (or after the current meeting).
+  const afterIdx = currentIdx >= 0 ? currentIdx : -1
+  let nextIdx = -1
+  for (let i = afterIdx + 1; i < timed.length; i++) {
+    if (timed[i].start !== null && timed[i].start! > now) {
+      nextIdx = i
+      break
+    }
+  }
+
+  return events.map((_, i) => {
+    if (i === currentIdx) return 'current'
+    if (i === nextIdx) return 'next'
+    const t = timed[i]
+    if (t.end !== null && t.end <= now) return 'past'
+    return 'future'
+  })
+}
+
+function EventList({ events }: { events: DayEvent[] }) {
+  const [variants, setVariants] = useState<EventVariant[]>(() =>
+    events.map(() => 'future' as EventVariant)
+  )
+
+  useEffect(() => {
+    setVariants(classifyEvents(events))
+    // Re-classify every minute so current/next updates without a page reload.
+    const id = setInterval(() => setVariants(classifyEvents(events)), 60_000)
+    return () => clearInterval(id)
+  }, [events])
+
+  return (
+    <ul className="m-0 list-none space-y-2 p-0">
+      {events.map((e, i) => (
+        <EventCard key={e.id} event={e} variant={variants[i]} />
+      ))}
+    </ul>
+  )
+}
+
+function EventCard({ event, variant = 'future' }: { event: DayEvent; variant?: EventVariant }) {
   const timeLabel = event.isAllDay
     ? 'All day'
     : `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ''}`
+
   return (
     <li>
-      <div className="rounded-md bg-accent-soft/60 px-3 py-2 ring-1 ring-accent/15">
-        <p className="m-0 text-[13px] font-medium leading-snug text-ink">
+      <div className={cn(
+        'rounded-md px-3 py-2',
+        variant === 'current' && 'bg-emerald-500/10 ring-1 ring-emerald-500/30',
+        variant === 'next'    && 'bg-blue-500/10 ring-1 ring-blue-500/25',
+        variant === 'past'    && 'bg-canvas/30 ring-1 ring-line/40 opacity-50',
+        variant === 'future'  && 'bg-accent-soft/60 ring-1 ring-accent/15',
+      )}>
+        <p className={cn(
+          'm-0 text-[13px] font-medium leading-snug',
+          variant === 'past' ? 'text-ink-muted' : 'text-ink',
+        )}>
           {event.summary}
         </p>
-        <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-ink-muted">
+        <div className={cn(
+          'mt-0.5 flex items-center justify-between gap-2 text-[11px]',
+          variant === 'current' ? 'text-emerald-400'
+            : variant === 'next' ? 'text-blue-400'
+            : 'text-ink-muted',
+        )}>
           <span>{timeLabel}</span>
           {event.hangoutLink && (
             <a
