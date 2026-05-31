@@ -1262,10 +1262,6 @@ function FunctionPill({ fn, onClick }: { fn: UserFunction; onClick?: () => void 
       }}
       title={`Function: ${fn.name}`}
     >
-      <span
-        className="inline-block size-1.5 rounded-full"
-        style={{ backgroundColor: c }}
-      />
       {fn.name}
     </span>
   )
@@ -1341,10 +1337,6 @@ function FunctionsEditor({
                   : { backgroundColor: 'transparent', borderColor: c + '66', color: c }
               }
             >
-              <span
-                className="inline-block size-1.5 rounded-full"
-                style={{ backgroundColor: isOn ? '#fff' : c }}
-              />
               {fn.name}
             </button>
           )
@@ -2384,10 +2376,6 @@ function FilterBar({
                     : { backgroundColor: 'transparent', borderColor: c + '66', color: c }
                 }
               >
-                <span
-                  className="inline-block size-1.5 rounded-full"
-                  style={{ backgroundColor: isOn ? '#fff' : c }}
-                />
                 {fn.name}
               </button>
             )
