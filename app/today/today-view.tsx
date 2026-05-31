@@ -385,7 +385,7 @@ export function TodayView({
                   <TabCount active={tab === 'prep'}>{visiblePrep.length}</TabCount>
                 </TabsTrigger>
                 <TabsTrigger value="cleared">
-                  Cleared today
+                  Cleared
                   <TabCount active={tab === 'cleared'}>{digest.completed_today_count}</TabCount>
                 </TabsTrigger>
                 <TabsTrigger value="unread">
