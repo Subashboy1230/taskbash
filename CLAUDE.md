@@ -1,6 +1,6 @@
 # taskbash — handoff context
 
-A working snapshot of the codebase as of May 30, 2026. Drop this into Cursor (or any coding agent) as the seed context so the assistant doesn't have to rediscover everything. Last updated by Cowork after the Re-run-tasks bug fix series.
+A working snapshot of the codebase as of May 30, 2026. Drop this into Cursor (or any coding agent) as the seed context so the assistant doesn't have to rediscover everything. Last updated after the Unread Gmail tab + Linear QA pipeline session.
 
 ---
 
@@ -45,7 +45,7 @@ Repo: `https://github.com/Subashboy1230/taskbash`
 │   │   ├── today-view.tsx        ~2.5k LOC. The actual task list UI. Big file.
 │   │   ├── today-calendar-column.tsx   Right column: month grid + today's events
 │   │   ├── add-task-panel.tsx    Slide-over form for manual task creation
-│   │   └── actions.ts            Server actions (complete, dismiss, snooze, slop, addManual, requestRefresh, getEventsForDateAction)
+│   │   └── actions.ts            Server actions (complete, dismiss, snooze, slop, addManual, requestRefresh, getEventsForDateAction, openUnreadThread)
 │   ├── _components/
 │   │   ├── ui/                   shadcn primitives (Button, Sheet, Tabs, DropdownMenu, etc.)
 │   │   ├── app-sidebar.tsx       Left sidebar (Home / Profile / Connections / Activity / Network)
@@ -87,6 +87,7 @@ Repo: `https://github.com/Subashboy1230/taskbash`
 │   ├── connections.ts            getActiveConnection per source
 │   ├── load-digest.ts            Server loader for /today (open + cleared today)
 │   ├── load-day-events.ts        Server loader for calendar column (any day)
+│   ├── load-unread-gmail.ts      Server loader for unread inbox threads (Unread tab)
 │   ├── load-functions.ts         Server loader for user_functions
 │   ├── load-handled.ts           Server loader for /handled
 │   ├── load-observability.ts     Server loader for /observability
@@ -100,7 +101,7 @@ Repo: `https://github.com/Subashboy1230/taskbash`
 ├── inngest/
 │   ├── client.ts                 Inngest client + EVENTS constants
 │   └── functions/morning-digest.ts   Cron version of runDigestForUser (durable via step.run)
-├── migrations/                   Numbered SQL files (001-013). Apply via Supabase Mgmt API.
+├── migrations/                   Numbered SQL files (001-017). Apply via Supabase Mgmt API.
 ├── scripts/                      One-off helper scripts (tsx)
 │   ├── debug-digest.ts           Run digest pipeline + print every stage's output
 │   ├── restore-auto-completed.ts Emergency restore for wrongly-closed items
@@ -168,6 +169,8 @@ Run `cat migrations/*.sql` for full DDL. Headlines:
 
 This is the most important code path. Lives in `lib/digest/run.ts` (sync, called by Re-run button) and `inngest/functions/morning-digest.ts` (cron, same logic wrapped in `step.run` for durability).
 
+**Important:** The Unread Gmail tab is NOT part of the digest pipeline. It is a separate server loader (`lib/load-unread-gmail.ts`) that fetches the raw inbox on page load. Unread threads become items only when the user clicks them (via `openUnreadThread` server action). Do not add unread inbox fetching to the digest extractors — it would create duplicate items and noise.
+
 **Flow per re-run:**
 
 1. **Auto-unsnooze.** Items with `status='snoozed'` and `snooze_until < now()` flip back to `status='open'`.
@@ -211,18 +214,17 @@ The digest will NEVER auto-close a task just because an extractor didn't return 
 
 Most recent first:
 
+- **`b874931`** Mark as Done from detail panel hides task optimistically (shellHiddenIds in TodayShell); reply-to address now picks non-Subash participant so drafts don't self-address
+- **`4017f9e`** Unread thread open: look up existing item by semantic_hash across all statuses (was filtering open only, causing unique constraint crash on re-open)
+- **`dbb2ba3`** Detail panel Mark as Done now awaits completeItem + router.refresh()
+- **`b45423a`** Calendar right column: events panel scrollable (flex-1 + overflow-y-auto)
+- **`2cc7b76`** Calendar day clicks no longer filter the main task list — selectedDay is internal to TodayCalendarColumn, only drives the right column events panel
+- **`6162e09`** Unread Gmail tab (lib/load-unread-gmail.ts + today-view.tsx UnreadTab + UnreadThreadRow); click drafts reply with Claude and upserts item to DB; SVG logo in sidebar (public/logo.svg); Linear QA pipeline issues (QA Requested / Changes Requested / In QA / QA Passed states pulled regardless of assignment, merged + deduped with mention issues)
 - **`5d86660`** Cap cleared dedup at 100, raise display cap 50→200
 - **`fae8698`** Gmail today's reply on a cleared thread now extracts as a new task (thread+message dedup, not thread alone)
 - **`524e729`** Stop auto-complete-vanished entirely + restore script + Linear comment-mentions filter
 - **`2fc9651`** Load cleared items into diff + source_ref matching (the original anti-resurface fix; superseded by 524e729 + fae8698)
-- **`72bfa9b`** Sheet a11y (DialogTitle for screen readers)
 - **`9cc4f3f`** Popover z-index, calendar collapse expands main, add manual task, function color overrides
-- **`ab9aee2`** Sheet: no blur on tasks + no layout shift on close
-- **`8336fa6`** Selected-day section: fetch events for any clicked date
-- **`f6ecb07`** Card-wrap FilterBar + Sheet detail panel migration
-- **`2b7fda7`** Morning QA pass: 7 of 8 overnight fixes verified
-- **`8efc060`** Em-dash purge from UI + ban in all AI prompts
-- **`1d4b00e`** Dark Vercel-style palette flip
 
 These are all on `dev` waiting for QA before push to `main`. Run `git log --oneline dev origin/main..dev` to see the exact set pending.
 
@@ -372,9 +374,10 @@ This is the loop: production usage → slop signals → eval cases → prompt it
 - `#41` Slack OAuth + extractor (deferred to Week 5)
 - `#49` Rotate Linear Personal API key — user said done verbally, never marked
 - `#108` Network page MVP — sidebar entry exists but page is a placeholder. Plan: scan Gmail for distinct contacts, cache to a `contacts` table, render people list with name + org + last interaction
+- Mark as Done from the Sheet detail panel is partially working — `completeItem` fires and `router.refresh()` is called, but the task may not visually disappear consistently; investigate whether the shellHiddenIds optimistic hide is being applied before the refresh cycle
 - The DetailPanel's Edit + History header buttons have no onClick handlers — decorative
+- Unread tab: `openUnreadThread` drafts reply with Claude but the reply-to address uses heuristic (first non-Subash From header); works for simple threads, may be wrong on CC'd threads
 - `.gitignore` doesn't exclude `.taskbash-*.md` status files or `.claude/settings.local.json` (both have snuck into recent commits)
-- Stale `.git/index.lock` cruft from the overnight crash — `git gc --aggressive` cleans it up
 
 **Nice-to-haves discussed but not scoped:**
 - Inline subtask renaming (currently can add/check/delete only)
@@ -436,6 +439,6 @@ The product is a personal assistant that gets smarter from your slop signals. Di
 
 ## 15. One-page summary for Cursor
 
-> taskbash is a Next.js 15 + Supabase + Anthropic personal task manager. It extracts action items from Gmail / Granola / Linear / Calendar via Claude, dedupes them by stable source_refs and semantic hashes, and shows them on /today with shadcn dark UI. Recent critical fixes: Re-run no longer resurfaces cleared tasks (load cleared into diff + source_ref-aware matching), Gmail same-thread-new-message dedup (thread + message id), auto-complete-vanished disabled (tasks only close on user action), Linear filtered to issues where Subash is @-mentioned in comments. Dev branch has 12+ commits ahead of main; verify on preview URL before merging. Subash has 184 open items, 665 cleared (top 100 used for dedup). Local dev is `npm run dev`; debug pipeline is `npx tsx scripts/debug-digest.ts gmail`.
+> taskbash is a Next.js 15 + Supabase + Anthropic personal task manager. It extracts action items from Gmail / Granola / Linear / Calendar via Claude, dedupes them by stable source_refs and semantic hashes, and shows everything on /today. Tabs: Open (main task list), Prep (calendar), Cleared Today, Unread (live unread Gmail inbox — NOT extracted by the digest, surfaced as a separate tab via lib/load-unread-gmail.ts; clicking a thread drafts a reply with Claude via openUnreadThread server action and upserts to items table). Linear extractor pulls both assigned+mentioned issues AND any issue in QA Requested / Changes Requested / In QA / QA Passed states regardless of assignment. Calendar day clicks only update the right-column events panel — they do NOT filter the main task list. Sidebar uses public/logo.svg SVG mark. Key invariants: tasks only close on user action (never auto-closed by extractor), semantic_hash = sha256(source+parent_context+title).slice(16), dedup checks top 100 cleared items. Dev branch is ~15 commits ahead of main. Local dev: `npm run dev`; debug pipeline: `npx tsx scripts/debug-digest.ts gmail`.
 
 That's the whole story. Open this file in Cursor before starting work, plus the relevant `lib/*` files for whatever you're editing.
