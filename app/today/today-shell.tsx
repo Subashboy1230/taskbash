@@ -119,7 +119,7 @@ export function TodayShell({
 
       {/* Right column — detail panel replaces calendar when a task is open */}
       {selectedItem ? (
-        <div className="sticky top-0 h-screen w-[300px] shrink-0 border-l border-line bg-canvas overflow-y-auto">
+        <div className="sticky top-0 h-screen w-[480px] shrink-0 border-l border-line bg-canvas overflow-y-auto">
           <DetailPanel
             item={selectedItem}
             onClose={closeDetail}

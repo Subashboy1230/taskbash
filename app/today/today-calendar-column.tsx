@@ -172,7 +172,7 @@ export function TodayCalendarColumn({
   }
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-[300px] shrink-0 flex-col border-l border-line bg-canvas px-5 py-6 lg:flex overflow-hidden">
+    <aside className="sticky top-0 hidden h-screen w-[480px] shrink-0 flex-col border-l border-line bg-canvas px-5 py-6 lg:flex overflow-hidden">
       {/* Month grid */}
       <header className="mb-3 flex items-center justify-between">
         <h2 className="m-0 text-[15px] font-semibold text-ink">
