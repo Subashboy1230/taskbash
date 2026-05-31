@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { AppSidebar } from '@/app/_components/app-sidebar'
 import { TodayView, DetailPanel } from './today-view'
+import { completeItem } from './actions'
 import { TodayCalendarColumn } from './today-calendar-column'
 import { AddTaskPanel } from './add-task-panel'
 import {
@@ -118,7 +119,10 @@ export function TodayShell({
             <DetailPanel
               item={selectedItem}
               onClose={closeDetail}
-              onComplete={closeDetail}
+              onComplete={() => {
+                completeItem(selectedItem.id).catch(() => {})
+                closeDetail()
+              }}
               allFunctions={functions}
             />
           )}
