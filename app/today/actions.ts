@@ -680,6 +680,89 @@ export async function openUnreadThread(args: {
 }
 
 /**
+ * Enrich a calendar prep item's brief with cross-source context.
+ *
+ * Fetches past Granola notes, Gmail threads, and Linear issues for the
+ * meeting attendees, then calls Claude to produce a richer prep brief.
+ * Updates the item's brief field in DB and returns the enriched brief.
+ */
+export async function enrichPrepItem(itemId: string): Promise<{
+  ok: true
+  brief: import('@/lib/prep/meeting-prep').EnrichedBrief
+} | { ok: false; error: string }> {
+  try {
+    const userId = await resolveUserId()
+    const userEmail = 'subash@sigiq.ai'
+
+    // Load the item to get its calendar event id and metadata
+    const { data: item, error: itemErr } = await supabase
+      .from('items')
+      .select('*')
+      .eq('id', itemId)
+      .eq('user_id', userId)
+      .single()
+    if (itemErr || !item) return { ok: false, error: 'Item not found' }
+
+    const sourceRef = (item as any).source_ref ?? {}
+    const eventId: string = sourceRef.google_calendar_event_id ?? ''
+    if (!eventId) return { ok: false, error: 'No calendar event ID on this item' }
+
+    // Fetch the live calendar event for attendees + description
+    const { getActiveConnection, NANGO_PROVIDER_KEY } = await import('@/lib/connections')
+    const { nangoProxy } = await import('@/lib/nango')
+    const conn = await getActiveConnection('calendar')
+    if (!conn?.nango_connection_id) return { ok: false, error: 'Calendar not connected' }
+
+    interface CalendarEvent {
+      id: string
+      summary?: string
+      description?: string
+      start?: { dateTime?: string; date?: string }
+      attendees?: Array<{ email?: string; displayName?: string; self?: boolean }>
+    }
+
+    const event = await nangoProxy<CalendarEvent>({
+      providerConfigKey: NANGO_PROVIDER_KEY.calendar!,
+      connectionId: conn.nango_connection_id,
+      method: 'GET',
+      endpoint: `/calendar/v3/calendars/primary/events/${eventId}`,
+    })
+
+    const attendeeEmails = (event.attendees ?? [])
+      .filter(a => !a.self && a.email)
+      .map(a => a.email!)
+    const attendeeNames = (event.attendees ?? [])
+      .filter(a => !a.self)
+      .map(a => a.displayName || a.email || 'unknown')
+
+    const { generateMeetingPrepBrief } = await import('@/lib/prep/meeting-prep')
+    const brief = await generateMeetingPrepBrief({
+      eventId,
+      eventTitle: event.summary || item.title,
+      eventStart: event.start?.dateTime || event.start?.date || '',
+      eventDescription: (event.description || '').replace(/<[^>]+>/g, ' ').trim(),
+      attendeeEmails,
+      attendeeNames,
+      userEmail,
+      userId,
+    })
+
+    // Persist the enriched brief
+    await supabase
+      .from('items')
+      .update({ brief, brief_status: 'generated', brief_generated_at: new Date().toISOString() })
+      .eq('id', itemId)
+      .eq('user_id', userId)
+
+    revalidatePath('/today')
+    return { ok: true, brief }
+  } catch (err) {
+    console.error('[enrichPrepItem] failed:', err)
+    return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+/**
  * Persist a manual drag-to-reorder. Computes a new sort_order float for
  * `itemId` so it sits between `beforeId` and `afterId` (either can be null
  * for "moved to top" or "moved to bottom"). Uses midpoint insertion so we

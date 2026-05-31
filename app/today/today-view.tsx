@@ -28,6 +28,7 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
@@ -73,6 +74,7 @@ import {
   uncompleteItem,
   updateItemDescription,
   reorderItem,
+  enrichPrepItem,
 } from './actions'
 
 // ─── Top-level layout ───────────────────────────────────────────────────
@@ -2572,31 +2574,175 @@ function PrepTab({
       <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
         <p className="m-0 text-[15px] font-medium text-ink">No meetings to prep for</p>
         <p className="mt-1 text-[13px] text-ink-faint m-0">
-          Calendar prep briefs land here automatically the morning of a meeting.
+          Upcoming meetings show up here. Click &quot;Prep&quot; to pull context from Granola, Gmail, and Linear.
         </p>
       </div>
     )
   }
   return (
-    <div className="mt-4">
-      <p className="m-0 mb-2 text-[12px] text-ink-faint">
-        Briefs for upcoming meetings. Read them, then mark done. They don&apos;t
-        clutter your Open list.
-      </p>
-      <ul className="list-none p-0 m-0 divide-y divide-line/70">
-        {items.map(item => (
-          <TaskRow
-            key={item.id}
-            item={item}
-            isSelected={selectedId === item.id}
-            onSelect={() => onSelect(item)}
-            onComplete={() => onComplete(item.id)}
-            onDismiss={() => onDismiss(item.id)}
-            onSnooze={hours => onSnooze(item.id, hours)}
-            functionsById={functionsById}
-          />
-        ))}
-      </ul>
+    <div className="mt-4 space-y-3">
+      {items.map(item => (
+        <PrepCard
+          key={item.id}
+          item={item}
+          isSelected={selectedId === item.id}
+          onSelect={() => onSelect(item)}
+          onComplete={() => onComplete(item.id)}
+          onDismiss={() => onDismiss(item.id)}
+        />
+      ))}
+    </div>
+  )
+}
+
+function PrepCard({
+  item,
+  isSelected,
+  onSelect,
+  onComplete,
+  onDismiss,
+}: {
+  item: MockItem
+  isSelected: boolean
+  onSelect: () => void
+  onComplete: () => void
+  onDismiss: () => void
+}) {
+  const [generating, setGenerating] = useState(false)
+  const [brief, setBrief] = useState(item.brief)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleGenerate(e: React.MouseEvent) {
+    e.stopPropagation()
+    setGenerating(true)
+    setError(null)
+    try {
+      const result = await enrichPrepItem(item.id)
+      if (result.ok) {
+        setBrief(result.brief as typeof item.brief)
+      } else {
+        setError(result.error)
+      }
+    } catch {
+      setError('Failed to generate prep')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const sourcesUsed: string[] = (brief as any)?.sources_used ?? []
+  const talkingPoints: string[] = (brief as any)?.talking_points ?? []
+  const hasBrief = brief && (brief.why || brief.know?.length)
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border bg-surface transition-colors cursor-pointer',
+        isSelected ? 'border-ink/30' : 'border-line hover:border-line/80'
+      )}
+      onClick={onSelect}
+    >
+      {/* Header */}
+      <div className="flex items-start gap-3 px-4 pt-4 pb-3">
+        <span className="mt-0.5 shrink-0"><BrandLogo brand="calendar" size={18} /></span>
+        <div className="min-w-0 flex-1">
+          <p className="m-0 text-[14px] font-semibold leading-snug text-ink">
+            {item.title.replace(/^Prep:\s*/i, '')}
+          </p>
+          {item.parent_context && (
+            <p className="m-0 mt-0.5 text-[12px] text-ink-faint">{item.parent_context}</p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {sourcesUsed.length > 0 && (
+            <span className="text-[10px] text-ink-faint">
+              {sourcesUsed.join(' · ')}
+            </span>
+          )}
+          {!hasBrief ? (
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={generating}
+              className="flex items-center gap-1.5 rounded-md bg-surface-muted px-2.5 py-1 text-[12px] font-medium text-ink hover:bg-surface-muted/80 disabled:opacity-50"
+            >
+              {generating ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Sparkles size={12} />
+              )}
+              {generating ? 'Preparing...' : 'Prep'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={generating}
+              title="Regenerate prep brief"
+              className="rounded-md p-1 text-ink-faint hover:text-ink disabled:opacity-50"
+            >
+              {generating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onComplete() }}
+            title="Mark done"
+            className="rounded-md p-1 text-ink-faint hover:text-success-fg"
+          >
+            <Check size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <p className="mx-4 mb-3 text-[12px] text-danger-fg">{error}</p>
+      )}
+
+      {/* Brief content */}
+      {hasBrief && (
+        <div className="border-t border-line/50 px-4 py-3 space-y-2.5">
+          {brief!.why && (
+            <p className="m-0 text-[13px] text-ink leading-snug">{brief!.why}</p>
+          )}
+          {brief!.know && brief!.know.length > 0 && (
+            <ul className="m-0 list-none space-y-1 p-0">
+              {brief!.know.map((k, i) => (
+                <li key={i} className="flex gap-2 text-[12px] text-ink-muted">
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-faint" />
+                  {k}
+                </li>
+              ))}
+            </ul>
+          )}
+          {talkingPoints.length > 0 && (
+            <div>
+              <p className="m-0 mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Talking points</p>
+              <ul className="m-0 list-none space-y-1 p-0">
+                {talkingPoints.map((tp, i) => (
+                  <li key={i} className="flex gap-2 text-[12px] text-ink-muted">
+                    <span className="text-ink-faint">→</span>
+                    {tp}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {brief!.next && (
+            <p className="m-0 text-[12px] text-ink-muted">
+              <span className="font-medium text-ink">Aim: </span>{brief!.next}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* No brief yet */}
+      {!hasBrief && !generating && !error && (
+        <p className="mx-4 mb-3 text-[12px] text-ink-faint">
+          Click &quot;Prep&quot; to pull context from your notes, emails, and Linear.
+        </p>
+      )}
     </div>
   )
 }
