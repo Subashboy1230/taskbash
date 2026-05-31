@@ -22,9 +22,10 @@ import { nangoProxy } from '../nango'
 import { getActiveConnection, NANGO_PROVIDER_KEY } from '../connections'
 import { draftReply } from '../draft/reply'
 import { tracedMessage } from '../llm-trace'
-import type { ExtractedItem } from '../types'
+import type { ExtractedItem, DraftConfidence } from '../types'
 import { WORK_ONLY_RULE } from './filters'
 import { extractJsonObject } from './parse'
+import { supabase } from '../supabase'
 
 // Bump when you change SYSTEM_PROMPT or buildExtractionPrompt — used by
 // the observability page to bucket slop-rate per prompt revision.
@@ -94,6 +95,7 @@ interface GmailThreadDetail {
 
 interface ExtractActionItemsArgs {
   userEmail: string
+  userId?: string
   days: number
 }
 
@@ -109,11 +111,21 @@ export async function extractGmailActionItems(
   const providerConfigKey = NANGO_PROVIDER_KEY.gmail!
   const connectionId = conn.nango_connection_id
 
+  // Load user auto-draft settings once for the whole run (if userId available)
+  let autoDraftEnabled = true
+  let autoDraftBorderline = false
+  if (args.userId) {
+    const { data: userRow } = await supabase
+      .from('users')
+      .select('auto_draft_enabled, auto_draft_borderline')
+      .eq('id', args.userId)
+      .maybeSingle()
+    autoDraftEnabled = userRow?.auto_draft_enabled ?? true
+    autoDraftBorderline = userRow?.auto_draft_borderline ?? false
+  }
+
   // ─── Step 1: list recent inbox threads ─────────────────────────────
-  // The query is the easy tuning knob. Dropping promotions/social skips the
-  // obvious noise; the WORK_ONLY filter + anti-hallucination guard catch the
-  // rest. Tighten to `is:unread` or a specific label if it's still too broad.
-  const query = `in:inbox newer_than:${args.days}d -category:promotions -category:social`
+  const query = `in:inbox newer_than:${args.days}d -category:promotions -category:social -category:forums -category:updates`
 
   const list = await nangoProxy<GmailThreadListResponse>({
     providerConfigKey,
@@ -131,7 +143,11 @@ export async function extractGmailActionItems(
     const thread = await fetchThread(providerConfigKey, connectionId, ref.id)
     if (!thread) continue
 
-    const threadItems = await extractItemsFromThread(thread, args.userEmail)
+    const threadItems = await extractItemsFromThread(
+      thread,
+      args.userEmail,
+      args.userId ? { userId: args.userId, autoDraftEnabled, autoDraftBorderline } : undefined
+    )
     items.push(...threadItems)
   }
 
@@ -159,9 +175,16 @@ async function fetchThread(
   }
 }
 
+interface DraftOptions {
+  userId: string
+  autoDraftEnabled: boolean
+  autoDraftBorderline: boolean
+}
+
 async function extractItemsFromThread(
   thread: GmailThreadDetail,
-  userEmail: string
+  userEmail: string,
+  draftOpts?: DraftOptions
 ): Promise<ExtractedItem[]> {
   const messages = thread.messages ?? []
   if (messages.length === 0) return []
@@ -233,32 +256,86 @@ async function extractItemsFromThread(
   })
 
   // For "reply" tagged items, pre-draft the reply so the user can approve.
-  // This is the Nummo-style approval-queue move: the agent does the writing,
-  // user just hits Send. Draft only the first reply item per thread to keep
-  // cost bounded — anything else is unusual.
+  // Draft only the first reply item per thread to keep cost bounded.
   const latestFromEmail = parseEmailAddress(latestFrom)
+  const latestMessageId = headerValue(latestMessage, 'Message-ID') ?? latestMessage?.id ?? ''
+  const referencesHeader = headerValue(latestMessage, 'References') ?? ''
+  const references = referencesHeader
+    .split(/\s+/)
+    .map(r => r.replace(/[<>]/g, '').trim())
+    .filter(Boolean)
+  if (latestMessageId && !references.includes(latestMessageId.replace(/[<>]/g, ''))) {
+    references.push(latestMessageId.replace(/[<>]/g, ''))
+  }
+
   let draftedOnce = false
   for (const item of items) {
     item.source_excerpt = sourceExcerpt
     if (item.tag === 'reply' && !draftedOnce && latestFromEmail) {
       try {
-        item.proposed_action = await draftReply({
+        const drafted = await draftReply({
           threadText: transcript,
           subject,
           to: latestFromEmail,
           threadId: thread.id,
           messageId: latestMessage?.id,
         })
+        item.proposed_action = drafted
         draftedOnce = true
+
+        // Materialize as a real Gmail draft when conditions are met
+        if (draftOpts && shouldAutoDraft(item.draft_confidence, draftOpts)) {
+          try {
+            const { createGmailDraft, deleteGmailDraft } = await import('../gmail/drafts')
+            const blocklisted = await isInBlocklist(draftOpts.userId, latestFromEmail)
+            if (!blocklisted && drafted.body) {
+              const { draftId } = await createGmailDraft({
+                fromEmail: userEmail,
+                threadId: thread.id,
+                inReplyTo: latestMessageId.replace(/[<>]/g, ''),
+                references,
+                to: [latestFromEmail],
+                cc: drafted.cc ?? [],
+                subject,
+                body: drafted.body,
+              })
+              // Store draft_id in proposed_action so send/dismiss paths can use it
+              item.proposed_action = { ...drafted, gmail_draft_id: draftId, references }
+            }
+          } catch (err) {
+            // Gmail draft creation failure is non-fatal — the item still gets
+            // a DB-only draft and the "Draft ready" pill.
+            console.error(`[gmail] createGmailDraft failed for thread ${thread.id}:`, err)
+          }
+        }
       } catch (err) {
-        // Draft failure shouldn't block the item — the user can still
-        // open it as a plain "reply owed" task.
         console.error(`[gmail] draftReply failed for thread ${thread.id}:`, err)
       }
     }
   }
 
   return items
+}
+
+function shouldAutoDraft(
+  confidence: DraftConfidence | null | undefined,
+  opts: DraftOptions
+): boolean {
+  if (!opts.autoDraftEnabled) return false
+  if (confidence === 'high') return true
+  if (confidence === 'medium' && opts.autoDraftBorderline) return true
+  return false
+}
+
+async function isInBlocklist(userId: string, email: string): Promise<boolean> {
+  const domain = email.split('@')[1] ?? ''
+  const { data } = await supabase
+    .from('gmail_draft_blocklist')
+    .select('id')
+    .eq('user_id', userId)
+    .or(`pattern.eq.${email},pattern.eq.*@${domain},pattern.eq.${domain}`)
+    .limit(1)
+  return (data?.length ?? 0) > 0
 }
 
 /**
@@ -359,6 +436,7 @@ Schema:
       "tag": "action" | "reply" | "commit" | "fyi",
       "due_at": "ISO 8601 date or datetime, or null",
       "urgent": true | false,
+      "draft_confidence": "high" | "medium" | "low" | "skip",
       "sub_items": [ { "title": "string" }, ... ]
     }
   ]
@@ -392,6 +470,13 @@ How to choose the tag:
 - "fyi": purely informational, no action required
 
 Default to "reply" when the user simply owes a response; use "action" when there is concrete work beyond replying.
+
+draft_confidence (for tag="reply" items only, set null for other tags):
+- "high": genuine one-to-one human exchange, real person waiting on a reply. Examples: investor follow-up, customer question, colleague request, meeting request from a known contact.
+- "medium": likely real but borderline. Examples: cold outreach from a recruiter, first message from an unknown vendor, intro email where intent is unclear.
+- "low": probably automated or very low priority. The user likely does not need to reply promptly.
+- "skip": clearly automated despite slipping through category filters. Examples: SaaS onboarding emails, "your account is ready", receipts that ask a fake question.
+For non-reply tags (action, commit, fyi), set draft_confidence to null.
 
 STYLE RULE (absolute): NEVER use em-dashes (—) anywhere in the output. Use a
 regular hyphen with spaces ( - ), a colon, a comma, a period, or rewrite the
@@ -446,6 +531,7 @@ type ParsedItem = {
   tag?: 'action' | 'reply' | 'commit' | 'fyi'
   due_at?: string | null
   urgent?: boolean
+  draft_confidence?: DraftConfidence | null
   sub_items?: Array<{ title: string }>
 }
 
@@ -473,6 +559,9 @@ function parseExtractionResponse(
       gmail_thread_id: thread.id,
       gmail_message_id: latestMessageId,
     }
+    const validConfidence = ['high', 'medium', 'low', 'skip']
+    const draftConfidence = (validConfidence.includes(raw.draft_confidence ?? '') ? raw.draft_confidence : null) as DraftConfidence | null
+
     out.push({
       source: 'gmail',
       source_ref,
@@ -484,6 +573,7 @@ function parseExtractionResponse(
       tag,
       due_at: normalizeDueAt(raw.due_at),
       urgent: raw.urgent === true,
+      draft_confidence: draftConfidence,
       sub_items: (raw.sub_items ?? []).map(s => ({
         source: 'gmail' as const,
         source_ref,

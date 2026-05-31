@@ -50,6 +50,8 @@ export interface TaskBrief {
 // An artifact the agent drafted that the user approves to execute.
 // The agent fills this in when it can take an action on the user's behalf.
 // Tagged-union by `kind` so the executor knows what to do on approval.
+export type DraftConfidence = 'high' | 'medium' | 'low' | 'skip'
+
 export type ProposedAction =
   | {
       kind: 'gmail_compose'
@@ -57,11 +59,10 @@ export type ProposedAction =
       cc?: string[]
       subject: string
       body: string
-      // Set when this is a reply (vs. a fresh thread). Used to populate
-      // the Gmail compose URL with the right In-Reply-To headers, and to
-      // surface a "Reply to existing thread" affordance in the UI.
       in_reply_to_message_id?: string
       thread_id?: string
+      gmail_draft_id?: string      // set when materialized as a real Gmail draft
+      references?: string[]
     }
   | {
       kind: 'gmail_send'
@@ -71,6 +72,8 @@ export type ProposedAction =
       body: string
       in_reply_to_message_id?: string
       thread_id?: string
+      gmail_draft_id?: string
+      references?: string[]
     }
 
 export interface Item {
@@ -109,6 +112,9 @@ export interface Item {
   // Reply lifecycle outcome — set when the item is completed via approval
   // queue or rejection. null = completed via "Mark as Done" or not yet done.
   reply_outcome?: 'approved' | 'rejected' | 'completed' | null
+  gmail_draft_id?: string | null
+  draft_confidence?: DraftConfidence | null
+  draft_expired_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -133,6 +139,7 @@ export interface ExtractedItem {
   // Optional pre-drafted artifact for the user to approve. The Gmail
   // extractor sets this for "reply owed" items; other extractors leave null.
   proposed_action?: ProposedAction | null
+  draft_confidence?: DraftConfidence | null
   // Raw underlying content (email body, transcript chunk) for Context Trail.
   source_excerpt?: string | null
   // The id of the llm_calls row that produced this item. Set by

@@ -175,6 +175,18 @@ export async function markItemSlop(
     throw new Error(`markItemSlop dismiss failed: ${dismissErr.message}`)
   }
 
+  // Clean up the Gmail draft if one was materialized
+  const { data: slopItem } = await supabase
+    .from('items')
+    .select('proposed_action')
+    .eq('id', itemId)
+    .maybeSingle()
+  const slopDraftId = (slopItem?.proposed_action as { gmail_draft_id?: string } | null)?.gmail_draft_id
+  if (slopDraftId) {
+    const { deleteGmailDraft } = await import('@/lib/gmail/drafts')
+    void deleteGmailDraft(slopDraftId)
+  }
+
   void writeTaskEvent(userId, itemId, 'slop', { reason, note: note ?? null })
   revalidatePath('/today')
 }
@@ -292,12 +304,26 @@ export async function uncompleteItem(itemId: string) {
 
 export async function dismissItem(itemId: string) {
   const userId = await resolveUserId()
+  // Load gmail_draft_id before dismissing so we can clean up the Gmail draft
+  const { data: item } = await supabase
+    .from('items')
+    .select('proposed_action')
+    .eq('id', itemId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  const draftId = (item?.proposed_action as { gmail_draft_id?: string } | null)?.gmail_draft_id
+
   const { error } = await supabase
     .from('items')
-    .update({ status: 'dismissed' })
+    .update({ status: 'dismissed', gmail_draft_id: null })
     .eq('id', itemId)
     .eq('user_id', userId)
   if (error) throw new Error(`dismissItem failed: ${error.message}`)
+
+  if (draftId) {
+    const { deleteGmailDraft } = await import('@/lib/gmail/drafts')
+    void deleteGmailDraft(draftId)
+  }
   void writeTaskEvent(userId, itemId, 'dismissed')
   revalidatePath('/today')
 }
@@ -357,6 +383,34 @@ export async function executeProposedAction(
     body: string
     in_reply_to_message_id?: string
     thread_id?: string
+    gmail_draft_id?: string
+  }
+
+  // Prefer drafts.send when we have a materialized Gmail draft — it converts
+  // the draft to a sent message in place, preserving thread continuity.
+  if (opts.sendDirect !== false && action.gmail_draft_id) {
+    try {
+      const { sendGmailDraft } = await import('@/lib/gmail/drafts')
+      const result = await sendGmailDraft(action.gmail_draft_id)
+      const { error: updateErr } = await supabase
+        .from('items')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          reply_outcome: 'approved',
+          gmail_draft_id: null,  // draft is gone after send
+        })
+        .eq('id', itemId)
+        .eq('user_id', userId)
+      if (updateErr) return { ok: false, error: updateErr.message }
+      void writeTaskEvent(userId, itemId, 'completed')
+      revalidatePath('/today')
+      return { ok: true, sent: true, messageId: result.messageId }
+    } catch (err) {
+      // Draft may have been deleted/sent from Gmail already — fall through
+      // to the messages.send path.
+      console.error('[executeProposedAction] drafts.send failed, falling back:', err)
+    }
   }
 
   // Try to send directly via Gmail API. Requires the connected Gmail
@@ -373,6 +427,7 @@ export async function executeProposedAction(
           status: 'completed',
           completed_at: new Date().toISOString(),
           reply_outcome: 'approved',
+          gmail_draft_id: null,
         })
         .eq('id', itemId)
         .eq('user_id', userId)

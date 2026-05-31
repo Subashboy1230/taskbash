@@ -95,7 +95,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     const conn = await getActiveConnection('gmail')
     if (!conn?.nango_connection_id) return null
     const [inbox, sent] = await Promise.all([
-      extractGmailActionItems({ userEmail, days }),
+      extractGmailActionItems({ userEmail, userId, days }),
       extractGmailSentCommitments({ userEmail, days }),
     ])
     return [...inbox, ...sent]
@@ -205,6 +205,9 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
           // Auto-assigned function tags from classifyAndTagFunctions
           // (empty array when no functions defined or none fit).
           function_ids: fresh.function_ids ?? [],
+          draft_confidence: fresh.draft_confidence ?? null,
+          // Store gmail_draft_id from proposed_action if present
+          gmail_draft_id: (fresh.proposed_action as { gmail_draft_id?: string } | null | undefined)?.gmail_draft_id ?? null,
           ...briefFields,
         })
         .select('id')

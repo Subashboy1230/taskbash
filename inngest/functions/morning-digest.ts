@@ -153,6 +153,7 @@ export const morningDigest = inngest.createFunction(
         const gmailItems = await step.run('extract-gmail', async () =>
           extractGmailActionItems({
             userEmail: 'subashraj411@gmail.com', // TODO(week2): load from users.email
+            userId: USER_ID,
             days: 7,
           })
         )
