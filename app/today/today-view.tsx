@@ -64,6 +64,7 @@ import {
   deleteSubtask,
   dismissItem,
   executeProposedAction,
+  generateItemDetails,
   markItemSlop,
   openUnreadThread,
   rejectDraft,
@@ -1660,9 +1661,32 @@ export function DetailPanel({
   const [editDesc, setEditDesc] = useState(item.description ?? '')
   const [saving, setSaving] = useState(false)
 
+  // Local description state — updated optimistically after generation
+  const [description, setDescription] = useState<string | null>(item.description ?? null)
+  // Subtasks state for optimistic update after generation
+  const [generatedSubs, setGeneratedSubs] = useState<Array<{ id: string; title: string; completed: boolean }> | null>(null)
+  const [generating, setGenerating] = useState(false)
+
+  // Auto-generate on first open when no description + no subtasks
+  const subItems = item.sub_items ?? []
+  const shouldAutoGenerate = !item.description && subItems.length === 0 && item.task_type !== 'context_prep'
+
+  useEffect(() => {
+    if (!shouldAutoGenerate) return
+    setGenerating(true)
+    generateItemDetails(item.id).then(result => {
+      if (result.ok) {
+        setDescription(result.description)
+        setGeneratedSubs(result.subtasks)
+      }
+    }).finally(() => setGenerating(false))
+  // Run once on mount only
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function startEdit() {
     setEditTitle(item.title)
-    setEditDesc(item.description ?? '')
+    setEditDesc(description ?? '')
     setEditing(true)
   }
 
@@ -1673,6 +1697,7 @@ export function DetailPanel({
         title: editTitle,
         description: editDesc,
       })
+      setDescription(editDesc)
       setEditing(false)
     } finally {
       setSaving(false)
@@ -1682,7 +1707,7 @@ export function DetailPanel({
   function cancelEdit() {
     setEditing(false)
     setEditTitle(item.title)
-    setEditDesc(item.description ?? '')
+    setEditDesc(description ?? '')
   }
 
   return (
@@ -1788,23 +1813,28 @@ export function DetailPanel({
         allFunctions={allFunctions}
       />
 
-      {/* Subtasks — the headline interaction. Stored as child items in the
-          DB; toggle persists; add input creates a new manual item. */}
-      <SubtasksSection parentId={item.id} initial={item.sub_items ?? []} />
-
-      {/* The brief — synthesized context for the task. Why / Know / Done / Next. */}
-      {item.brief ? (
-        <BriefView brief={item.brief} />
-      ) : !item.proposed_action ? (
-        <div className="mb-5 rounded-md border border-line/60 bg-surface-muted/50 px-3.5 py-3">
-          <p className="m-0 text-[13px] text-ink-muted">
-            {item.description || 'No brief generated for this task yet.'}
-          </p>
-          <p className="m-0 mt-1 text-[12px] text-ink-faint">
-            Brief pending. Run the brief generator to synthesize context for this task.
-          </p>
+      {/* AI-generated description — shown inline, editable via the pencil icon */}
+      {generating ? (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-line/60 bg-surface-muted/40 px-3.5 py-3">
+          <Loader2 size={13} className="animate-spin text-ink-faint" />
+          <span className="text-[13px] text-ink-faint">Generating description and subtasks…</span>
+        </div>
+      ) : description ? (
+        <div className="mb-4 rounded-md border border-line/60 bg-surface-muted/40 px-3.5 py-3">
+          <p className="m-0 mb-1 text-[11px] font-medium uppercase tracking-wider text-ink-faint">Description</p>
+          <p className="m-0 text-[13px] leading-relaxed text-ink">{description}</p>
         </div>
       ) : null}
+
+      {/* Subtasks — the headline interaction. Stored as child items in the
+          DB; toggle persists; add input creates a new manual item. */}
+      <SubtasksSection
+        parentId={item.id}
+        initial={generatedSubs !== null ? generatedSubs : (item.sub_items ?? [])}
+      />
+
+      {/* The brief — synthesized context for the task. Why / Know / Done / Next. */}
+      {item.brief && <BriefView brief={item.brief} />}
 
       {/* Context Trail: the raw underlying content (email body / transcript)
           so the user can audit why the agent flagged this task. */}

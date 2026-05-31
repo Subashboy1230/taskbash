@@ -153,10 +153,9 @@ function toUIItem(
         : item.urgent
         ? 'Needs your review'
         : 'Review needed',
-    // Fallback description shown only when there's no brief yet
-    description: item.parent_context
-      ? `Auto-extracted from ${labelFor(item.source as Source)} — ${item.parent_context}.`
-      : `Auto-extracted from ${labelFor(item.source as Source)}.`,
+    // AI-generated description (migration 018). Falls back to null so the UI
+    // knows it hasn't been generated yet and can trigger generateItemDetails.
+    description: (item as any).description ?? null,
     reply_outcome: (item as any).reply_outcome ?? null,
     sub_items: subtasks ?? [],
     sort_order: (item as { sort_order?: number | null }).sort_order ?? null,

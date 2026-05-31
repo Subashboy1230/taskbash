@@ -949,6 +949,83 @@ export async function addManualTask(args: {
 }
 
 /**
+ * Generate a synthesized description + concrete subtasks for a task.
+ * Runs on first open of the detail panel when the task has no description
+ * and no subtasks yet. Uses Haiku (fast). Idempotent — if called again
+ * it regenerates, which is intentional (user can refresh).
+ *
+ * Returns the generated description and the new subtask rows so the UI
+ * can update optimistically without a full page reload.
+ */
+export async function generateItemDetails(itemId: string): Promise<
+  | { ok: true; description: string; subtasks: Array<{ id: string; title: string; completed: boolean }> }
+  | { ok: false; error: string }
+> {
+  try {
+    const userId = await resolveUserId()
+
+    const { data: item, error: itemErr } = await supabase
+      .from('items')
+      .select('id, title, parent_context, source, tag, source_excerpt')
+      .eq('id', itemId)
+      .eq('user_id', userId)
+      .single()
+    if (itemErr || !item) return { ok: false, error: 'Item not found' }
+
+    const { generateTaskDetails } = await import('@/lib/ai/task-details')
+    const details = await generateTaskDetails({
+      title: item.title,
+      parentContext: item.parent_context ?? null,
+      source: item.source,
+      tag: item.tag ?? null,
+      sourceExcerpt: (item as any).source_excerpt ?? null,
+      userId,
+    })
+
+    // Save description
+    await supabase
+      .from('items')
+      .update({ description: details.description })
+      .eq('id', itemId)
+      .eq('user_id', userId)
+
+    // Insert subtasks as child items
+    const newSubtasks: Array<{ id: string; title: string; completed: boolean }> = []
+    for (const title of details.subtasks) {
+      const semantic_hash = createHash('sha256')
+        .update(`manual|${itemId}|${title}|${Date.now()}`)
+        .digest('hex')
+        .slice(0, 16)
+      const { data: sub, error: subErr } = await supabase
+        .from('items')
+        .insert({
+          user_id: userId,
+          title,
+          task_type: 'manual',
+          tag: 'action',
+          source: 'manual',
+          source_ref: { manual_subtask: true, ai_generated: true },
+          parent_id: itemId,
+          parent_context: null,
+          semantic_hash,
+          status: 'open',
+        })
+        .select('id, title, status')
+        .single()
+      if (!subErr && sub) {
+        newSubtasks.push({ id: sub.id, title: sub.title, completed: false })
+      }
+    }
+
+    revalidatePath('/today')
+    return { ok: true, description: details.description, subtasks: newSubtasks }
+  } catch (err) {
+    console.error('[generateItemDetails] failed:', err)
+    return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+/**
  * Reject the agent-drafted reply attached to an item. Marks the item
  * completed with reply_outcome='rejected' so the user can distinguish
  * "I reviewed and decided not to send" from "I approved and sent".

@@ -101,6 +101,9 @@ export interface Item {
   // The artifact the agent proposes; null when no action was drafted
   // (e.g. an FYI item, a meeting prep brief, an unanswered question).
   proposed_action: ProposedAction | null
+  // AI-generated 1-2 sentence synthesis of what this task is and why it matters.
+  // Editable by the user. Separate from source_excerpt (the raw content).
+  description: string | null
   // Raw underlying content the agent drew on. Rendered in the Context Trail.
   source_excerpt: string | null
   // Reply lifecycle outcome — set when the item is completed via approval
