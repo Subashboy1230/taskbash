@@ -30,6 +30,7 @@ export async function markItemSlop(
     | 'irrelevant'
     | 'spam'
     | 'low_signal'
+    | 'not_my_focus'
     | 'misread_title'
     | 'duplicate'
     | 'old_task'

@@ -1184,6 +1184,7 @@ type SlopReason =
   | 'irrelevant'
   | 'spam'
   | 'low_signal'
+  | 'not_my_focus'
   | 'misread_title'
   | 'duplicate'
   | 'old_task'
@@ -1193,6 +1194,7 @@ const SLOP_OPTIONS: Array<{ key: SlopReason; label: string; hint: string }> = [
   { key: 'irrelevant', label: 'Irrelevant', hint: "Don't extract this kind of thing" },
   { key: 'spam', label: 'Spam / noise', hint: 'Marketing, automated, junk' },
   { key: 'low_signal', label: 'Low signal', hint: "Real, but doesn't need my attention" },
+  { key: 'not_my_focus', label: "Not my focus", hint: "Somebody else's responsibility" },
   { key: 'duplicate', label: 'Repeat', hint: 'Already exists as another task' },
   { key: 'old_task', label: 'Old task', hint: 'Stale, no longer relevant' },
   { key: 'misread_title', label: 'Misread', hint: 'Title or details are wrong' },
