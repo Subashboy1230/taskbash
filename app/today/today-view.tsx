@@ -934,9 +934,9 @@ function TaskRow({
       onDrop={handleDrop}
       onClick={onSelect}
       className={cn(
-        'group relative cursor-pointer pl-12 pr-2 py-4 transition-colors duration-150',
+        'group relative cursor-pointer pl-12 pr-2 py-4 transition-all duration-200',
         isSelected ? 'bg-success-bg/30' : 'hover:bg-surface-muted/50',
-        completed && 'animate-task-dismiss',
+        completed && 'opacity-0 translate-x-3 pointer-events-none',
         dragOver === 'before' && 'border-t-2 border-t-accent/70',
         dragOver === 'after' && 'border-b-2 border-b-accent/70',
         (dragOver === 'before' || dragOver === 'after') && 'bg-surface-muted/40',
