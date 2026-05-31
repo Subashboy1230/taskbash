@@ -143,7 +143,7 @@ export function TodayView({
   // Function filter — multi-select. Empty set = no filter applied. Match
   // mode is OR (any selected function matches).
   const [functionFilter, setFunctionFilter] = useState<Set<string>>(new Set())
-  const [groupBy, setGroupBy] = useState<'none' | 'source' | 'due' | 'function'>('none')
+  const [groupBy, setGroupBy] = useState<'none' | 'source' | 'due' | 'function' | 'priority'>('none')
   const [isRefreshing, startRefresh] = useTransition()
   const router = useRouter()
 
@@ -179,6 +179,7 @@ export function TodayView({
         savedGroup === 'source' ||
         savedGroup === 'due' ||
         savedGroup === 'function' ||
+        savedGroup === 'priority' ||
         savedGroup === 'none'
       ) {
         setGroupBy(savedGroup)
@@ -2311,8 +2312,8 @@ function FilterBar({
   functionFilter: Set<string>
   onFunctionToggle: (fid: string) => void
   onFunctionClear: () => void
-  groupBy: 'none' | 'source' | 'due' | 'function'
-  onGroupByChange: (g: 'none' | 'source' | 'due' | 'function') => void
+  groupBy: 'none' | 'source' | 'due' | 'function' | 'priority'
+  onGroupByChange: (g: 'none' | 'source' | 'due' | 'function' | 'priority') => void
 }) {
   const orderedSources = SOURCE_ORDER.filter(s => availableSources.includes(s))
   const orderedTags = TAG_ORDER.filter(t => availableTags.includes(t))
@@ -2511,16 +2512,17 @@ function GroupToggle({
   value,
   onChange,
 }: {
-  value: 'none' | 'source' | 'due' | 'function'
-  onChange: (g: 'none' | 'source' | 'due' | 'function') => void
+  value: 'none' | 'source' | 'due' | 'function' | 'priority'
+  onChange: (g: 'none' | 'source' | 'due' | 'function' | 'priority') => void
 }) {
   return (
     <Tabs
       value={value}
-      onValueChange={v => onChange(v as 'none' | 'source' | 'due' | 'function')}
+      onValueChange={v => onChange(v as 'none' | 'source' | 'due' | 'function' | 'priority')}
     >
       <TabsList className="h-7 p-0.5">
         <TabsTrigger value="none" className="h-6 px-2 text-[12px]">None</TabsTrigger>
+        <TabsTrigger value="priority" className="h-6 px-2 text-[12px]">Priority</TabsTrigger>
         <TabsTrigger value="source" className="h-6 px-2 text-[12px]">Source</TabsTrigger>
         <TabsTrigger value="due" className="h-6 px-2 text-[12px]">Due</TabsTrigger>
         <TabsTrigger value="function" className="h-6 px-2 text-[12px]">Function</TabsTrigger>
@@ -2540,7 +2542,7 @@ interface ItemGroup {
 
 function groupItems(
   items: MockItem[],
-  groupBy: 'none' | 'source' | 'due' | 'function',
+  groupBy: 'none' | 'source' | 'due' | 'function' | 'priority',
   functionsById?: Map<string, UserFunction>
 ): ItemGroup[] {
   if (groupBy === 'none') {
@@ -2604,6 +2606,17 @@ function groupItems(
       })
     }
     return out
+  }
+  if (groupBy === 'priority') {
+    const buckets: Record<string, MockItem[]> = { P0: [], P1: [], P2: [], P3: [], none: [] }
+    for (const it of items) {
+      const p = it.priority ?? 'none'
+      ;(buckets[p] ?? buckets.none).push(it)
+    }
+    const PRIORITY_LABEL: Record<string, string> = { P0: 'P0 — Critical', P1: 'P1 — High', P2: 'P2 — Medium', P3: 'P3 — Low', none: 'No priority' }
+    return (['P0', 'P1', 'P2', 'P3', 'none'] as const)
+      .filter(p => buckets[p].length > 0)
+      .map(p => ({ key: `p-${p}`, label: PRIORITY_LABEL[p], items: buckets[p] }))
   }
   // groupBy === 'due'
   const now = Date.now()
