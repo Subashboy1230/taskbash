@@ -41,10 +41,9 @@ export async function replayByPromptId(
       const { replayGranolaExtraction } = await import('../extract/granola')
       return replayGranolaExtraction(input, anthropic)
     }
-    case 'extract.calendar': {
-      const { replayCalendarBrief } = await import('../extract/calendar')
-      return replayCalendarBrief(input, anthropic)
-    }
+    case 'extract.calendar':
+      // extract.calendar now uses prep.meeting prompt — fall through to default
+      // which replays from the stored request_payload.
     case 'classify.functions': {
       const { replayClassifyFunctions } = await import('../classify/functions')
       return replayClassifyFunctions(input, anthropic)
