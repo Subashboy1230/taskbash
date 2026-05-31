@@ -44,6 +44,7 @@ export function TodayShell({
 }) {
   const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+  const [shellHiddenIds, setShellHiddenIds] = useState<Set<string>>(new Set())
   const router = useRouter()
   const [, startTransition] = useTransition()
 
@@ -76,7 +77,10 @@ export function TodayShell({
       />
       <main className="flex-1 min-w-0 pl-8 pr-0 pt-4 pb-16">
         <TodayView
-          digest={digest}
+          digest={shellHiddenIds.size > 0 ? {
+            ...digest,
+            open_items: digest.open_items.filter(i => !shellHiddenIds.has(i.id)),
+          } : digest}
           userEmail={userEmail}
           functions={functions}
           hideHeader
@@ -124,10 +128,10 @@ export function TodayShell({
               onClose={closeDetail}
               onComplete={() => {
                 const id = selectedItem.id
+                setShellHiddenIds(s => new Set(s).add(id))
                 closeDetail()
-                startTransition(async () => {
-                  await completeItem(id)
-                  router.refresh()
+                completeItem(id).then(() => router.refresh()).catch(() => {
+                  setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
                 })
               }}
               allFunctions={functions}

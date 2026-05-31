@@ -543,15 +543,31 @@ export async function openUnreadThread(args: {
     const latestBody = extractText(latestMessage?.payload).slice(0, 2000)
     const sourceExcerpt = `Subject: ${args.subject}\nFrom: ${args.fromEmail}\n\n${latestBody}`
 
+    // Find the reply-to address: the other party, not Subash.
+    // Walk messages newest-first to find the first From that isn't userEmail.
+    function parseEmail(raw: string): string {
+      const m = raw.match(/<([^>]+)>/)
+      return m ? m[1].trim().toLowerCase() : raw.trim().toLowerCase()
+    }
+    const userEmailLower = userEmail.toLowerCase()
+    let replyToEmail = args.fromEmail
+    for (const m of [...recent].reverse()) {
+      const from = hdr(m, 'From')
+      if (from && parseEmail(from) !== userEmailLower) {
+        replyToEmail = parseEmail(from)
+        break
+      }
+    }
+
     // ─── 2. Draft reply ─────────────────────────────────────────────────
     const { draftReply } = await import('@/lib/draft/reply')
     let proposedAction = null
-    if (args.fromEmail) {
+    if (replyToEmail) {
       try {
         proposedAction = await draftReply({
           threadText: transcript,
           subject: args.subject,
-          to: args.fromEmail,
+          to: replyToEmail,
           threadId: args.threadId,
           messageId: args.latestMessageId,
           userName: 'Subash',
