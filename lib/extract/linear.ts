@@ -30,6 +30,16 @@ const MAX_COMMENTS_PER_ISSUE = 30
 // Linear state.type values that count as "still actionable" for the digest.
 const OPEN_STATE_TYPES = new Set(['backlog', 'unstarted', 'started', 'triage'])
 
+// Workflow state names that represent the QA pipeline. Any issue in one of
+// these states surfaces in the QA function bucket regardless of assignment.
+const QA_STATE_NAMES = [
+  'QA Requested',
+  'Changes Requested',
+  'In QA',
+  'QA Passed',
+  'QA passed',
+]
+
 // ─── GraphQL types (only fields we use) ──────────────────────────────
 
 interface LinearComment {
@@ -66,6 +76,13 @@ interface AssignedIssuesResponse {
   errors?: Array<{ message?: string }>
 }
 
+interface QAIssuesResponse {
+  data?: {
+    issues?: { nodes?: LinearIssue[] }
+  }
+  errors?: Array<{ message?: string }>
+}
+
 // ─── Public entry point ──────────────────────────────────────────────
 
 interface ExtractArgs {
@@ -81,32 +98,31 @@ export async function extractLinearActionItems(
     throw new Error('Linear not connected — visit /connections to paste a Personal API key.')
   }
 
-  const query = `
+  const linearFetch = async <T>(query: string): Promise<T> => {
+    const res = await fetch(LINEAR_GRAPHQL_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: conn.api_key! },
+      body: JSON.stringify({ query }),
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new Error(`Linear API ${res.status}: ${body.slice(0, 200)}`)
+    }
+    return res.json() as Promise<T>
+  }
+
+  const assignedQuery = `
     query DigestIssues {
       viewer {
-        id
-        name
-        displayName
-        email
+        id name displayName email
         assignedIssues(first: ${MAX_ISSUES}, orderBy: updatedAt) {
           nodes {
-            id
-            identifier
-            title
-            description
-            priority
-            dueDate
-            url
+            id identifier title description priority dueDate url
             state { name type }
             team { key name }
             updatedAt
             comments(first: ${MAX_COMMENTS_PER_ISSUE}) {
-              nodes {
-                id
-                body
-                createdAt
-                user { id name displayName email }
-              }
+              nodes { id body createdAt user { id name displayName email } }
             }
           }
         }
@@ -114,71 +130,80 @@ export async function extractLinearActionItems(
     }
   `.trim()
 
-  // Linear's Authorization header takes the raw key (no "Bearer " prefix
-  // for Personal API keys; that prefix is only for OAuth access tokens).
-  const res = await fetch(LINEAR_GRAPHQL_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: conn.api_key,
-    },
-    body: JSON.stringify({ query }),
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`Linear API ${res.status}: ${body.slice(0, 200)}`)
-  }
-  const response = (await res.json()) as AssignedIssuesResponse
+  const qaStateList = QA_STATE_NAMES.map(s => `"${s}"`).join(', ')
+  const qaQuery = `
+    query QAIssues {
+      issues(
+        first: ${MAX_ISSUES}
+        filter: { state: { name: { in: [${qaStateList}] } } }
+        orderBy: updatedAt
+      ) {
+        nodes {
+          id identifier title description priority dueDate url
+          state { name type }
+          team { key name }
+          assignee { name email }
+          updatedAt
+        }
+      }
+    }
+  `.trim()
 
-  if (response.errors && response.errors.length > 0) {
-    const messages = response.errors.map(e => e.message ?? 'unknown').join('; ')
+  // Run both queries in parallel.
+  const [assignedResponse, qaResponse] = await Promise.all([
+    linearFetch<AssignedIssuesResponse>(assignedQuery),
+    linearFetch<QAIssuesResponse>(qaQuery).catch(err => {
+      console.error('[linear] QA issues query failed:', err)
+      return null
+    }),
+  ])
+
+  if (assignedResponse.errors?.length) {
+    const messages = assignedResponse.errors.map(e => e.message ?? 'unknown').join('; ')
     throw new Error(`Linear GraphQL errors: ${messages}`)
   }
 
-  const viewer = response.data?.viewer
+  // ─── Assigned + mentioned issues (original logic) ────────────────────
+  const viewer = assignedResponse.data?.viewer
   const viewerId = viewer?.id ?? null
   const viewerEmail = viewer?.email ?? args.userEmail
-  // Build the name-like tokens we expect mentions to use. We match
-  // case-insensitively against any of these in comment bodies. First
-  // name from email handles the common "@subash" mention pattern even
-  // when Linear renders it as plain text rather than a markdown ref.
   const emailLocal = viewerEmail.split('@')[0] ?? ''
   const firstNameFromName = (viewer?.displayName || viewer?.name || '')
     .split(/\s+/)[0]
     .toLowerCase()
   const mentionTokens = Array.from(
-    new Set(
-      [emailLocal.toLowerCase(), firstNameFromName].filter(t => t.length >= 2)
-    )
+    new Set([emailLocal.toLowerCase(), firstNameFromName].filter(t => t.length >= 2))
   )
 
-  const issues = viewer?.assignedIssues?.nodes ?? []
-  const openIssues = issues.filter(
+  const assignedIssues = viewer?.assignedIssues?.nodes ?? []
+  const openAssigned = assignedIssues.filter(
     i => i.state?.type && OPEN_STATE_TYPES.has(i.state.type)
   )
-
-  // Keep only issues where the user has been mentioned by name in any
-  // comment, OR where a recent comment was authored by someone OTHER
-  // than the user (someone is asking us something). The latter is a
-  // looser fallback when name-based detection misses an @-mention
-  // markup variant. Tunable — start tight, loosen if signals drop.
-  const mentioned = openIssues.filter(issue => {
+  const mentioned = openAssigned.filter(issue => {
     const comments = issue.comments?.nodes ?? []
     if (comments.length === 0) return false
     return comments.some(c => {
-      // 1. Direct id reference in the markdown source. Linear uses
-      //    `@[Name](mention://user/<uuid>)` for proper @-mentions.
       if (viewerId && c.body && c.body.includes(viewerId)) return true
-      // 2. Plain-text name token match.
       const body = (c.body || '').toLowerCase()
       return mentionTokens.some(token => body.includes(token))
     })
   })
 
-  return mentioned.map(toExtractedItem)
+  // ─── QA pipeline issues ──────────────────────────────────────────────
+  const qaIssues = qaResponse?.data?.issues?.nodes ?? []
+
+  // Merge: dedupe by issue id so an assigned+mentioned QA issue doesn't
+  // appear twice.
+  const seenIds = new Set(mentioned.map(i => i.id))
+  const qaOnly = qaIssues.filter(i => !seenIds.has(i.id))
+
+  return [
+    ...mentioned.map(i => toExtractedItem(i, false)),
+    ...qaOnly.map(i => toExtractedItem(i, true)),
+  ]
 }
 
-function toExtractedItem(issue: LinearIssue): ExtractedItem {
+function toExtractedItem(issue: LinearIssue, isQA: boolean): ExtractedItem {
   const teamLabel = issue.team?.name
     ? `${issue.team.name} (${issue.team.key ?? ''})`
     : 'Linear'

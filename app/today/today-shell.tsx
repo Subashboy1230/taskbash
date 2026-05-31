@@ -21,6 +21,7 @@ import {
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { UserFunction } from '@/lib/types'
 import type { DayEvent } from '@/lib/load-day-events'
+import type { UnreadThread } from '@/lib/load-unread-gmail'
 
 const CALENDAR_COLLAPSED_KEY = 'taskbash:calendarCollapsed'
 
@@ -30,12 +31,14 @@ export function TodayShell({
   functions,
   events,
   calendarConnected,
+  unreadThreads = [],
 }: {
   digest: MockDigestSummary
   userEmail?: string
   functions: UserFunction[]
   events: DayEvent[]
   calendarConnected: boolean
+  unreadThreads?: UnreadThread[]
 }) {
   const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
   const [dayFilter, setDayFilter] = useState<string | null>(null)
@@ -81,6 +84,7 @@ export function TodayShell({
           onClearDayFilter={() => setDayFilter(null)}
           onAddTask={() => setAddOpen(true)}
           mainExpanded={calendarCollapsed}
+          unreadThreads={unreadThreads}
         />
       </main>
 

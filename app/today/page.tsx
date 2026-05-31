@@ -5,6 +5,7 @@
 import { loadDigest } from '@/lib/load-digest'
 import { loadUserFunctions } from '@/lib/load-functions'
 import { loadTodayEvents } from '@/lib/load-day-events'
+import { loadUnreadGmail } from '@/lib/load-unread-gmail'
 import { getActiveConnection } from '@/lib/connections'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { TodayShell } from './today-shell'
@@ -12,11 +13,12 @@ import { TodayShell } from './today-shell'
 export const dynamic = 'force-dynamic'
 
 export default async function TodayPage() {
-  const [digest, functions, events, calConn] = await Promise.all([
+  const [digest, functions, events, calConn, unreadThreads] = await Promise.all([
     loadDigest(),
     loadUserFunctions().catch(() => []),
     loadTodayEvents(),
     getActiveConnection('calendar').catch(() => null),
+    loadUnreadGmail().catch(() => []),
   ])
 
   const supabase = await createSupabaseServerClient()
@@ -31,6 +33,7 @@ export default async function TodayPage() {
       functions={functions}
       events={events}
       calendarConnected={!!calConn?.nango_connection_id}
+      unreadThreads={unreadThreads}
     />
   )
 }

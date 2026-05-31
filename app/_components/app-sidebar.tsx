@@ -76,28 +76,42 @@ export function AppSidebar({
       <div className={cn(collapsed ? 'px-2 pt-5' : 'px-4 pt-5')}>
         {/* Wordmark + collapse toggle in the same row */}
         <div className="mb-8 flex items-center justify-between">
+          <Link
+            href="/today"
+            aria-label="taskbash home"
+            className={cn('shrink-0 hover:opacity-80', collapsed && 'mx-auto')}
+          >
+            <img
+              src="/logo.svg"
+              alt="taskbash"
+              width={collapsed ? 24 : 32}
+              height={collapsed ? 24 : 32}
+              className="block"
+            />
+          </Link>
           {!collapsed && (
-            <Link
-              href="/today"
-              className="text-[14px] font-semibold tracking-tight text-ink hover:opacity-80"
-              aria-label="taskbash home"
+            <button
+              type="button"
+              onClick={() => setCollapsed(c => !c)}
+              aria-label="Collapse sidebar"
+              title="Collapse"
+              className="rounded-md p-1 text-ink-faint hover:bg-surface-muted hover:text-ink"
             >
-              taskbash
-            </Link>
+              <ChevronsLeft size={14} />
+            </button>
           )}
+        </div>
+        {collapsed && (
           <button
             type="button"
             onClick={() => setCollapsed(c => !c)}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={collapsed ? 'Expand' : 'Collapse'}
-            className={cn(
-              'rounded-md p-1 text-ink-faint hover:bg-surface-muted hover:text-ink',
-              collapsed && 'mx-auto'
-            )}
+            aria-label="Expand sidebar"
+            title="Expand"
+            className="mx-auto mb-4 flex items-center justify-center rounded-md p-1 text-ink-faint hover:bg-surface-muted hover:text-ink"
           >
-            {collapsed ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}
+            <ChevronsRight size={14} />
           </button>
-        </div>
+        )}
 
         <nav className="space-y-0.5">
           {NAV.map(item => {

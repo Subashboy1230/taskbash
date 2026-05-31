@@ -52,6 +52,7 @@ import { Input } from '@/app/_components/ui/input'
 import { Card } from '@/app/_components/ui/card'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { Priority, ProposedAction, Source, Tag, TaskBrief, UserFunction } from '@/lib/types'
+import type { UnreadThread } from '@/lib/load-unread-gmail'
 import { functionColor } from '@/lib/function-color'
 import { renderSubtitleWithEntities } from '@/app/_components/entity-chip'
 import type { Entity } from '@/app/_components/entity-chip'
@@ -63,6 +64,7 @@ import {
   dismissItem,
   executeProposedAction,
   markItemSlop,
+  openUnreadThread,
   rejectDraft,
   requestRefresh,
   setItemPriority,
@@ -87,6 +89,7 @@ export function TodayView({
   onClearDayFilter,
   onAddTask,
   mainExpanded = false,
+  unreadThreads = [],
 }: {
   digest: MockDigestSummary
   userEmail?: string
@@ -111,6 +114,7 @@ export function TodayView({
   // When the calendar column is collapsed, give the main column more
   // breathing room. Removes the 820px content cap.
   mainExpanded?: boolean
+  unreadThreads?: UnreadThread[]
 }) {
   const [selectedItemInternal, setSelectedItemInternal] = useState<MockItem | null>(null)
   // When the parent shell provides an externalSelectedItemId, resolve
@@ -133,7 +137,7 @@ export function TodayView({
     setSelectedItemInternal(item)
     onSelectItem?.(item)
   }
-  const [tab, setTab] = useState<'open' | 'prep' | 'cleared'>('open')
+  const [tab, setTab] = useState<'open' | 'prep' | 'cleared' | 'unread'>('open')
   // Filter chips — null = "All". Persist in localStorage so the user's
   // filter survives a reload.
   const [sourceFilter, setSourceFilter] = useState<Source | null>(null)
@@ -378,7 +382,7 @@ export function TodayView({
 
           {/* Tabs: Open / Prep / Cleared — shadcn Tabs (pill segment) */}
           <div className="mt-7 flex items-center justify-between">
-            <Tabs value={tab} onValueChange={v => setTab(v as 'open' | 'prep' | 'cleared')}>
+            <Tabs value={tab} onValueChange={v => setTab(v as 'open' | 'prep' | 'cleared' | 'unread')}>
               <TabsList>
                 <TabsTrigger value="open">
                   Open
@@ -391,6 +395,10 @@ export function TodayView({
                 <TabsTrigger value="cleared">
                   Cleared today
                   <TabCount active={tab === 'cleared'}>{digest.completed_today_count}</TabCount>
+                </TabsTrigger>
+                <TabsTrigger value="unread">
+                  Unread
+                  <TabCount active={tab === 'unread'}>{unreadThreads.length}</TabCount>
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -543,6 +551,8 @@ export function TodayView({
                 </div>
               )}
             </>
+          ) : tab === 'unread' ? (
+            <UnreadTab threads={unreadThreads} onSelectItem={setSelectedItem} />
           ) : (
             <ClearedTab
               items={digest.completed_today}
@@ -1581,9 +1591,12 @@ function CompletedRow({ item }: { item: MockItem }) {
       </span>
     )
   return (
-    <li className="flex items-start justify-between gap-4 border-b border-line/50 py-4 px-2">
+    <li className="relative flex items-start gap-3 pl-12 pr-2 py-4 border-b border-line/50">
+      <div className="absolute left-3 top-4 flex shrink-0 items-center justify-center" style={{ width: 22, height: 22 }}>
+        <BrandLogo brand={item.source} size={18} />
+      </div>
       <div className="min-w-0 flex-1">
-        <p className="m-0 text-[15px] font-semibold leading-snug text-ink">
+        <p className="m-0 text-[15px] font-semibold leading-snug text-ink-faint line-through">
           {item.title}
         </p>
         <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
@@ -2613,6 +2626,118 @@ function PrepTab({
 }
 
 // ─── Cleared tab ────────────────────────────────────────────────────────
+
+// ─── Unread Gmail tab ────────────────────────────────────────────────────
+
+function UnreadTab({
+  threads,
+  onSelectItem,
+}: {
+  threads: UnreadThread[]
+  onSelectItem: (item: MockItem) => void
+}) {
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+  const [errorId, setErrorId] = useState<string | null>(null)
+
+  async function handleOpen(thread: UnreadThread) {
+    setLoadingId(thread.id)
+    setErrorId(null)
+    try {
+      const result = await openUnreadThread({
+        threadId: thread.id,
+        latestMessageId: thread.latestMessageId,
+        subject: thread.subject,
+        fromEmail: thread.fromEmail,
+        fromName: thread.fromName,
+        snippet: thread.snippet,
+      })
+      if (result.ok) {
+        onSelectItem(result.item)
+      } else {
+        setErrorId(thread.id)
+      }
+    } catch {
+      setErrorId(thread.id)
+    } finally {
+      setLoadingId(null)
+    }
+  }
+
+  if (threads.length === 0) {
+    return (
+      <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
+        <p className="m-0 text-[15px] font-medium text-ink">Inbox zero</p>
+        <p className="mt-1 text-[13px] text-ink-faint m-0">
+          No unread emails right now. Nice.
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="mt-4">
+      <ul className="list-none p-0 m-0 divide-y divide-line/70">
+        {threads.map(thread => (
+          <UnreadThreadRow
+            key={thread.id}
+            thread={thread}
+            isLoading={loadingId === thread.id}
+            hasError={errorId === thread.id}
+            onClick={() => handleOpen(thread)}
+          />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function UnreadThreadRow({
+  thread,
+  isLoading,
+  hasError,
+  onClick,
+}: {
+  thread: UnreadThread
+  isLoading: boolean
+  hasError: boolean
+  onClick: () => void
+}) {
+  return (
+    <li
+      onClick={isLoading ? undefined : onClick}
+      className={cn(
+        'group relative flex items-start gap-3 pl-12 pr-2 py-4 transition-colors',
+        isLoading ? 'cursor-wait opacity-70' : 'cursor-pointer hover:bg-surface-muted/50',
+      )}
+    >
+      <div className="absolute left-3 top-4 flex shrink-0 items-center justify-center" style={{ width: 22, height: 22 }}>
+        <BrandLogo brand="gmail" size={18} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[15px] font-semibold leading-snug text-ink">
+            {thread.subject}
+          </span>
+        </div>
+        <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
+          {thread.fromName} &middot; {thread.snippet}
+        </p>
+        {hasError && (
+          <p className="mt-1 text-[12px] text-danger-fg m-0">Failed to open - try again</p>
+        )}
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <span className="text-[11px] text-ink-faint">{thread.date}</span>
+        {isLoading ? (
+          <Loader2 size={14} className="animate-spin text-ink-faint" />
+        ) : (
+          <StatusPill kind="draft" label="Unread" />
+        )}
+      </div>
+    </li>
+  )
+}
+
+// ─── Cleared today tab ───────────────────────────────────────────────────
 
 function ClearedTab({
   items,

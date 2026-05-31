@@ -454,6 +454,211 @@ export async function getEventsForDateAction(yyyymmdd: string) {
 }
 
 /**
+ * Open an unread Gmail thread as a task in the detail panel.
+ *
+ * Flow:
+ *   1. Fetch the full thread body via Nango.
+ *   2. Draft a reply with draftReply().
+ *   3. Upsert an item row (source='gmail', tag='reply', status='open').
+ *      Uses ON CONFLICT DO NOTHING via the semantic_hash unique index so
+ *      re-clicking the same thread is idempotent.
+ *   4. Return the MockItem shape so the caller can open the detail panel
+ *      immediately — no page reload needed.
+ */
+export async function openUnreadThread(args: {
+  threadId: string
+  latestMessageId: string
+  subject: string
+  fromEmail: string
+  fromName: string
+  snippet: string
+}): Promise<{ ok: true; item: import('@/lib/mock-items').MockItem } | { ok: false; error: string }> {
+  try {
+    const userId = await resolveUserId()
+    const userEmail = 'subash@sigiq.ai'
+
+    // ─── 1. Fetch full thread body ──────────────────────────────────────
+    const { nangoProxy } = await import('@/lib/nango')
+    const { getActiveConnection, NANGO_PROVIDER_KEY } = await import('@/lib/connections')
+    const conn = await getActiveConnection('gmail')
+    if (!conn?.nango_connection_id) return { ok: false, error: 'Gmail not connected' }
+
+    interface GmailPart {
+      mimeType?: string
+      body?: { data?: string }
+      parts?: GmailPart[]
+    }
+    interface GmailMessage {
+      id: string
+      snippet?: string
+      internalDate?: string
+      payload?: GmailPart & { headers?: Array<{ name: string; value: string }> }
+    }
+    interface ThreadDetail { id: string; messages?: GmailMessage[] }
+
+    const thread = await nangoProxy<ThreadDetail>({
+      providerConfigKey: NANGO_PROVIDER_KEY.gmail!,
+      connectionId: conn.nango_connection_id,
+      method: 'GET',
+      endpoint: `/gmail/v1/users/me/threads/${args.threadId}`,
+      params: { format: 'full' },
+    })
+
+    const messages = thread.messages ?? []
+    const MAX_MESSAGES = 6
+    const MAX_CHARS = 1500
+    const recent = messages.slice(-MAX_MESSAGES)
+
+    function extractText(part: GmailPart | undefined): string {
+      if (!part) return ''
+      if (part.mimeType === 'text/plain' && part.body?.data)
+        return Buffer.from(part.body.data, 'base64url').toString('utf-8')
+      if (part.parts) {
+        const plain = part.parts.find(p => p.mimeType === 'text/plain' && p.body?.data)
+        if (plain?.body?.data) return Buffer.from(plain.body.data, 'base64url').toString('utf-8')
+        return part.parts.map(extractText).filter(Boolean).join('\n')
+      }
+      if (part.body?.data) {
+        const raw = Buffer.from(part.body.data, 'base64url').toString('utf-8')
+        return part.mimeType === 'text/html'
+          ? raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+          : raw
+      }
+      return ''
+    }
+
+    const hdr = (msg: GmailMessage, name: string) =>
+      msg.payload?.headers?.find(h => h.name.toLowerCase() === name.toLowerCase())?.value ?? ''
+
+    const transcript = recent
+      .map((m, i) => {
+        const from = hdr(m, 'From') || 'unknown'
+        const date = hdr(m, 'Date') || ''
+        const body = extractText(m.payload).slice(0, MAX_CHARS)
+        return `--- Message ${i + 1} ---\nFrom: ${from}\nDate: ${date}\n${body || m.snippet || ''}`
+      })
+      .join('\n\n')
+
+    const latestMessage = recent[recent.length - 1]
+    const latestBody = extractText(latestMessage?.payload).slice(0, 2000)
+    const sourceExcerpt = `Subject: ${args.subject}\nFrom: ${args.fromEmail}\n\n${latestBody}`
+
+    // ─── 2. Draft reply ─────────────────────────────────────────────────
+    const { draftReply } = await import('@/lib/draft/reply')
+    let proposedAction = null
+    if (args.fromEmail) {
+      try {
+        proposedAction = await draftReply({
+          threadText: transcript,
+          subject: args.subject,
+          to: args.fromEmail,
+          threadId: args.threadId,
+          messageId: args.latestMessageId,
+          userName: 'Subash',
+        })
+      } catch (err) {
+        console.error('[openUnreadThread] draftReply failed:', err)
+      }
+    }
+
+    // ─── 3. Upsert item to DB ────────────────────────────────────────────
+    // Use thread_id in the hash to guarantee uniqueness even when subject
+    // is empty or two threads share the same subject.
+    const { createHash: _createHash } = await import('node:crypto')
+    const semantic_hash = _createHash('sha256')
+      .update(`gmail::unread::${args.threadId}`)
+      .digest('hex')
+      .slice(0, 16)
+
+    // Check if this item already exists (same thread, we already extracted it)
+    const { data: existing } = await supabase
+      .from('items')
+      .select('*')
+      .eq('user_id', userId)
+      .contains('source_ref', { gmail_thread_id: args.threadId })
+      .in('status', ['open', 'in_progress'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    let itemRow: Record<string, unknown>
+    if (existing) {
+      // Already exists — just update proposed_action if we got a fresher draft
+      if (proposedAction) {
+        await supabase
+          .from('items')
+          .update({ proposed_action: proposedAction, source_excerpt: sourceExcerpt })
+          .eq('id', existing.id)
+          .eq('user_id', userId)
+      }
+      itemRow = existing as Record<string, unknown>
+    } else {
+      const subjectLabel = args.subject && args.subject !== '(no subject)' ? ` re: ${args.subject}` : ''
+      const title = `Reply to ${args.fromName || args.fromEmail || 'sender'}${subjectLabel}`
+      const { data: inserted, error: insertErr } = await supabase
+        .from('items')
+        .insert({
+          user_id: userId,
+          title,
+          subtitle: args.snippet,
+          task_type: 'review' as const,
+          tag: 'reply' as const,
+          parent_context: args.subject,
+          source: 'gmail' as const,
+          source_ref: {
+            gmail_thread_id: args.threadId,
+            gmail_message_id: args.latestMessageId,
+          },
+          urgent: false,
+          semantic_hash,
+          proposed_action: proposedAction,
+          source_excerpt: sourceExcerpt,
+          status: 'open' as const,
+        })
+        .select('*')
+        .single()
+      if (insertErr) return { ok: false, error: insertErr.message }
+      itemRow = inserted as Record<string, unknown>
+    }
+
+    revalidatePath('/today')
+
+    // ─── 4. Map to MockItem ──────────────────────────────────────────────
+    const now = new Date()
+    const firstSeen = new Date((itemRow.first_seen_at as string | undefined) ?? now.toISOString())
+    const ageDays = Math.max(0, Math.floor((now.getTime() - firstSeen.getTime()) / 86400000))
+
+    const mockItem: import('@/lib/mock-items').MockItem = {
+      id: itemRow.id as string,
+      title: itemRow.title as string,
+      subtitle: (itemRow.subtitle as string | null) ?? null,
+      task_type: (itemRow.task_type as import('@/lib/types').TaskType),
+      tag: (itemRow.tag as import('@/lib/types').Tag),
+      parent_context: (itemRow.parent_context as string | null) ?? null,
+      status: 'open',
+      source: 'gmail',
+      priority: (itemRow.priority as import('@/lib/types').Priority) ?? undefined,
+      urgent: !!(itemRow.urgent),
+      function_ids: (itemRow.function_ids as string[] | undefined) ?? [],
+      age_days: ageDays,
+      due_at: (itemRow.due_at as string | null) ?? null,
+      is_new_today: ageDays === 0,
+      proposed_action: (itemRow.proposed_action as import('@/lib/types').ProposedAction | null) ?? null,
+      source_excerpt: (itemRow.source_excerpt as string | null) ?? null,
+      detail_status: proposedAction ? 'Draft ready' : 'Review needed',
+      description: `From ${args.fromName} - ${args.subject}`,
+      sub_items: [],
+      sort_order: null,
+    }
+
+    return { ok: true, item: mockItem }
+  } catch (err) {
+    console.error('[openUnreadThread] failed:', err)
+    return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+/**
  * Persist a manual drag-to-reorder. Computes a new sort_order float for
  * `itemId` so it sits between `beforeId` and `afterId` (either can be null
  * for "moved to top" or "moved to bottom"). Uses midpoint insertion so we
