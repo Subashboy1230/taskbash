@@ -2293,101 +2293,114 @@ function FilterBar({
 }) {
   const orderedSources = SOURCE_ORDER.filter(s => availableSources.includes(s))
   const orderedTags = TAG_ORDER.filter(t => availableTags.includes(t))
-  // Hide the bar entirely when there's nothing to filter or group.
   if (orderedSources.length === 0 && orderedTags.length === 0 && functions.length === 0) return null
+
   return (
-    <Card className="mt-4 space-y-2 bg-surface/40 p-4">
-      {/* Row 1: Source chips + Group-by toggle (right-aligned) */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
-            Source
-          </span>
-          <FilterChip
-            active={sourceFilter === null}
-            onClick={() => onSourceChange(null)}
-          >
-            All
-          </FilterChip>
-          {orderedSources.map(s => (
-            <FilterChip
-              key={s}
-              active={sourceFilter === s}
-              onClick={() => onSourceChange(sourceFilter === s ? null : s)}
-            >
-              <BrandLogo brand={s} size={12} />
-              {SOURCE_LABEL[s]}
+    <Card className="mt-4 bg-surface/40 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+
+        {/* Source dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger className={cn(
+            'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium outline-none transition-colors',
+            sourceFilter
+              ? 'border-ink/40 bg-surface-muted text-ink'
+              : 'border-line bg-surface text-ink-faint hover:border-line-strong hover:text-ink'
+          )}>
+            {sourceFilter ? (
+              <>
+                <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-sm">
+                  <BrandLogo brand={sourceFilter} size={14} />
+                </span>
+                {SOURCE_LABEL[sourceFilter]}
+              </>
+            ) : 'Source'}
+            <ChevronDown size={11} className="text-ink-faint" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-44">
+            <DropdownMenuItem onSelect={() => onSourceChange(null)} className={cn('flex items-center gap-2 text-[13px]', !sourceFilter && 'font-medium text-ink')}>
+              All sources
+            </DropdownMenuItem>
+            {orderedSources.map(s => (
+              <DropdownMenuItem key={s} onSelect={() => onSourceChange(sourceFilter === s ? null : s)} className="flex items-center gap-2 text-[13px]">
+                <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-sm">
+                  <BrandLogo brand={s} size={14} />
+                </span>
+                <span className={cn(sourceFilter === s && 'font-medium text-ink')}>{SOURCE_LABEL[s]}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Tag dropdown */}
+        {orderedTags.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger className={cn(
+              'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium outline-none transition-colors',
+              tagFilter
+                ? 'border-ink/40 bg-surface-muted text-ink'
+                : 'border-line bg-surface text-ink-faint hover:border-line-strong hover:text-ink'
+            )}>
+              {tagFilter ? TAG_LABEL[tagFilter] : 'Tag'}
+              <ChevronDown size={11} className="text-ink-faint" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-36">
+              <DropdownMenuItem onSelect={() => onTagChange(null)} className={cn('text-[13px]', !tagFilter && 'font-medium text-ink')}>
+                All tags
+              </DropdownMenuItem>
+              {orderedTags.map(t => (
+                <DropdownMenuItem key={t} onSelect={() => onTagChange(tagFilter === t ? null : t)} className={cn('text-[13px]', tagFilter === t && 'font-medium text-ink')}>
+                  {TAG_LABEL[t]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {/* Separator */}
+        {functions.length > 0 && <span className="h-4 w-px bg-line" />}
+
+        {/* Function chips */}
+        {functions.length > 0 && (
+          <>
+            <FilterChip active={functionFilter.size === 0} onClick={onFunctionClear}>
+              All
             </FilterChip>
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5 text-[12px] text-ink-faint">
+            {functions.map(fn => {
+              const isOn = functionFilter.has(fn.id)
+              const c = functionColor(fn)
+              return (
+                <button
+                  key={fn.id}
+                  type="button"
+                  onClick={() => onFunctionToggle(fn.id)}
+                  className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors"
+                  style={
+                    isOn
+                      ? { backgroundColor: c, borderColor: c, color: '#fff' }
+                      : { backgroundColor: 'transparent', borderColor: c + '66', color: c }
+                  }
+                >
+                  {fn.name}
+                </button>
+              )
+            })}
+            <Link
+              href="/settings/functions"
+              className="ml-1 text-[11px] text-ink-faint underline hover:text-ink"
+            >
+              Manage
+            </Link>
+          </>
+        )}
+
+        {/* Group-by — right side */}
+        <div className="ml-auto flex items-center gap-1.5 text-[12px] text-ink-faint">
           <Layers size={12} />
           <span>Group:</span>
           <GroupToggle value={groupBy} onChange={onGroupByChange} />
         </div>
       </div>
-
-      {/* Row 2: Tag chips */}
-      {orderedTags.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
-            Tag
-          </span>
-          <FilterChip
-            active={tagFilter === null}
-            onClick={() => onTagChange(null)}
-          >
-            All
-          </FilterChip>
-          {orderedTags.map(t => (
-            <FilterChip
-              key={t}
-              active={tagFilter === t}
-              onClick={() => onTagChange(tagFilter === t ? null : t)}
-              tone={t}
-            >
-              {TAG_LABEL[t]}
-            </FilterChip>
-          ))}
-        </div>
-      )}
-
-      {/* Row 3: Function chips (multi-select) */}
-      {functions.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-ink-faint">
-            Function
-          </span>
-          <FilterChip active={functionFilter.size === 0} onClick={onFunctionClear}>
-            All
-          </FilterChip>
-          {functions.map(fn => {
-            const isOn = functionFilter.has(fn.id)
-            const c = functionColor(fn)
-            return (
-              <button
-                key={fn.id}
-                type="button"
-                onClick={() => onFunctionToggle(fn.id)}
-                className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors"
-                style={
-                  isOn
-                    ? { backgroundColor: c, borderColor: c, color: '#fff' }
-                    : { backgroundColor: 'transparent', borderColor: c + '66', color: c }
-                }
-              >
-                {fn.name}
-              </button>
-            )
-          })}
-          <Link
-            href="/settings/functions"
-            className="ml-1 text-[11px] text-ink-faint underline hover:text-ink"
-          >
-            Manage
-          </Link>
-        </div>
-      )}
     </Card>
   )
 }
