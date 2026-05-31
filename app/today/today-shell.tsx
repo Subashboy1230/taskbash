@@ -20,6 +20,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from '@/app/_components/ui/sheet'
+import { cn } from '@/lib/utils'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { UserFunction } from '@/lib/types'
 import type { DayEvent } from '@/lib/load-day-events'
@@ -99,7 +100,12 @@ export function TodayShell({
         userEmail={userEmail}
         userInitial={digest.user_initials.charAt(0)}
       />
-      <main className="flex-1 min-w-0 pl-8 pr-0 pt-4 pb-16">
+
+      {/* Task list — shrinks when detail panel is open */}
+      <main className={cn(
+        'min-w-0 pl-8 pr-0 pt-4 pb-16 transition-all duration-200',
+        selectedItem ? 'flex-[0_0_auto] w-[420px]' : 'flex-1'
+      )}>
         <TodayView
           digest={filteredDigest}
           userEmail={userEmail}
@@ -114,8 +120,29 @@ export function TodayShell({
         />
       </main>
 
-      {/* Calendar column is always present so the user can see their agenda.
-          Controlled collapse state lives in the shell. */}
+      {/* Inline detail panel — slides in as a sibling column, pushing the task list */}
+      <div className={cn(
+        'flex-shrink-0 border-l border-line bg-canvas overflow-y-auto transition-all duration-200',
+        selectedItem ? 'w-[420px] opacity-100' : 'w-0 opacity-0 overflow-hidden'
+      )}>
+        {selectedItem && (
+          <DetailPanel
+            item={selectedItem}
+            onClose={closeDetail}
+            onComplete={() => {
+              const id = selectedItem.id
+              setShellHiddenIds(s => new Set(s).add(id))
+              closeDetail()
+              completeItem(id).then(() => router.refresh()).catch(() => {
+                setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
+              })
+            }}
+            allFunctions={functions}
+          />
+        )}
+      </div>
+
+      {/* Calendar column */}
       <TodayCalendarColumn
         events={events}
         items={digest.open_items.map(i => ({
@@ -128,40 +155,7 @@ export function TodayShell({
         onToggleCollapsed={() => setCalendarCollapsed(c => !c)}
       />
 
-      {/* Task detail slides over from the right. The Sheet's overlay is
-          transparent (see ui/sheet) so the task list stays fully visible.
-          SheetTitle + SheetDescription are visually hidden but present for
-          screen readers; Radix Dialog requires them. */}
-      <Sheet open={!!selectedItem} onOpenChange={open => !open && closeDetail()}>
-        <SheetContent
-          side="right"
-          className="w-full overflow-y-auto p-0 sm:max-w-md md:max-w-lg"
-        >
-          <SheetTitle className="sr-only">
-            {selectedItem?.title ?? 'Task details'}
-          </SheetTitle>
-          <SheetDescription className="sr-only">
-            Details, brief, and actions for the selected task.
-          </SheetDescription>
-          {selectedItem && (
-            <DetailPanel
-              item={selectedItem}
-              onClose={closeDetail}
-              onComplete={() => {
-                const id = selectedItem.id
-                setShellHiddenIds(s => new Set(s).add(id))
-                closeDetail()
-                completeItem(id).then(() => router.refresh()).catch(() => {
-                  setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
-                })
-              }}
-              allFunctions={functions}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
-
-      {/* Add-task panel uses the same slide-over pattern. */}
+      {/* Add-task panel — still uses Sheet overlay */}
       <Sheet open={addOpen} onOpenChange={setAddOpen}>
         <SheetContent
           side="right"
