@@ -365,7 +365,7 @@ export function TodayView({
             'transition-all duration-200',
             hideHeader ? '' : 'mx-auto px-8 pt-4 pb-16',
             selectedItem
-              ? 'max-w-[680px]'
+              ? 'w-full max-w-[680px] mx-0'
               : hideHeader
               ? 'w-full max-w-none'
               : 'max-w-[920px] flex-1'
