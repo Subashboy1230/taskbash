@@ -364,10 +364,10 @@ export function TodayView({
           className={cn(
             'transition-all duration-200',
             hideHeader ? '' : 'mx-auto px-8 pt-4 pb-16',
-            selectedItem
-              ? 'w-full max-w-[680px] mx-0'
-              : hideHeader
+            hideHeader
               ? 'w-full max-w-none'
+              : selectedItem
+              ? 'w-full max-w-[680px] mx-0'
               : 'max-w-[920px] flex-1'
           )}
         >
