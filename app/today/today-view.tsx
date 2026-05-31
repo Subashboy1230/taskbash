@@ -1780,8 +1780,7 @@ export function DetailPanel({
           </div>
         </div>
       ) : (
-        <div className="mb-3 flex items-start gap-2">
-          <NummoLogo />
+        <div className="mb-3">
           <h2 className="m-0 text-[18px] font-medium leading-snug text-ink">{item.title}</h2>
         </div>
       )}
