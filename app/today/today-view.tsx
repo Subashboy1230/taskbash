@@ -138,8 +138,8 @@ export function TodayView({
   const [tab, setTab] = useState<'open' | 'prep' | 'cleared' | 'unread'>('open')
   // Filter chips — null = "All". Persist in localStorage so the user's
   // filter survives a reload.
-  const [sourceFilter, setSourceFilter] = useState<Source | null>(null)
-  const [tagFilter, setTagFilter] = useState<NonNullable<Tag> | null>(null)
+  const [sourceFilter, setSourceFilter] = useState<Set<Source>>(new Set())
+  const [tagFilter, setTagFilter] = useState<Set<NonNullable<Tag>>>(new Set())
   // Function filter — multi-select. Empty set = no filter applied. Match
   // mode is OR (any selected function matches).
   const [functionFilter, setFunctionFilter] = useState<Set<string>>(new Set())
@@ -152,15 +152,18 @@ export function TodayView({
   useEffect(() => {
     try {
       const savedSource = localStorage.getItem('todoo:sourceFilter')
-      if (savedSource && savedSource !== 'null') setSourceFilter(savedSource as Source)
+      if (savedSource && savedSource !== 'null') {
+        try {
+          const parsed = JSON.parse(savedSource)
+          if (Array.isArray(parsed)) setSourceFilter(new Set(parsed as Source[]))
+        } catch { /* corrupt */ }
+      }
       const savedTag = localStorage.getItem('todoo:tagFilter')
-      if (
-        savedTag === 'reply' ||
-        savedTag === 'action' ||
-        savedTag === 'commit' ||
-        savedTag === 'fyi'
-      ) {
-        setTagFilter(savedTag)
+      if (savedTag && savedTag !== 'null') {
+        try {
+          const parsed = JSON.parse(savedTag)
+          if (Array.isArray(parsed)) setTagFilter(new Set(parsed as NonNullable<Tag>[]))
+        } catch { /* corrupt */ }
       }
       const savedFns = localStorage.getItem('todoo:functionFilter')
       if (savedFns && savedFns !== 'null') {
@@ -186,8 +189,8 @@ export function TodayView({
   }, [])
   useEffect(() => {
     try {
-      localStorage.setItem('todoo:sourceFilter', sourceFilter ?? 'null')
-      localStorage.setItem('todoo:tagFilter', tagFilter ?? 'null')
+      localStorage.setItem('todoo:sourceFilter', JSON.stringify(Array.from(sourceFilter)))
+      localStorage.setItem('todoo:tagFilter', JSON.stringify(Array.from(tagFilter)))
       localStorage.setItem('todoo:functionFilter', JSON.stringify(Array.from(functionFilter)))
       localStorage.setItem('todoo:groupBy', groupBy)
     } catch {
@@ -319,8 +322,8 @@ export function TodayView({
   // unfiltered for now (small enough that it doesn't need it).
   const filteredOpen = useMemo(() => {
     let out = visibleOpen
-    if (sourceFilter) out = out.filter(i => i.source === sourceFilter)
-    if (tagFilter) out = out.filter(i => i.tag === tagFilter)
+    if (sourceFilter.size > 0) out = out.filter(i => sourceFilter.has(i.source as Source))
+    if (tagFilter.size > 0) out = out.filter(i => i.tag != null && tagFilter.has(i.tag as NonNullable<Tag>))
     if (functionFilter.size > 0) {
       out = out.filter(i => (i.function_ids ?? []).some(fid => functionFilter.has(fid)))
     }
@@ -452,10 +455,20 @@ export function TodayView({
               <FilterBar
                 availableSources={availableSources}
                 sourceFilter={sourceFilter}
-                onSourceChange={setSourceFilter}
+                onSourceToggle={s => setSourceFilter(prev => {
+                  const next = new Set(prev)
+                  if (next.has(s)) next.delete(s); else next.add(s)
+                  return next
+                })}
+                onSourceClear={() => setSourceFilter(new Set())}
                 availableTags={availableTags}
                 tagFilter={tagFilter}
-                onTagChange={setTagFilter}
+                onTagToggle={t => setTagFilter(prev => {
+                  const next = new Set(prev)
+                  if (next.has(t)) next.delete(t); else next.add(t)
+                  return next
+                })}
+                onTagClear={() => setTagFilter(new Set())}
                 functions={functions}
                 functionFilter={functionFilter}
                 onFunctionToggle={fid => {
@@ -470,14 +483,14 @@ export function TodayView({
               />
 
               {filteredOpen.length === 0 ? (
-                sourceFilter || tagFilter || functionFilter.size > 0 ? (
+                sourceFilter.size > 0 || tagFilter.size > 0 || functionFilter.size > 0 ? (
                   <FilterEmpty
-                    source={sourceFilter}
-                    tag={tagFilter}
+                    sourceCount={sourceFilter.size}
+                    tagCount={tagFilter.size}
                     functionCount={functionFilter.size}
                     onClear={() => {
-                      setSourceFilter(null)
-                      setTagFilter(null)
+                      setSourceFilter(new Set())
+                      setTagFilter(new Set())
                       setFunctionFilter(new Set())
                     }}
                   />
@@ -2267,10 +2280,12 @@ const TAG_LABEL: Record<NonNullable<Tag>, string> = {
 function FilterBar({
   availableSources,
   sourceFilter,
-  onSourceChange,
+  onSourceToggle,
+  onSourceClear,
   availableTags,
   tagFilter,
-  onTagChange,
+  onTagToggle,
+  onTagClear,
   functions,
   functionFilter,
   onFunctionToggle,
@@ -2279,11 +2294,13 @@ function FilterBar({
   onGroupByChange,
 }: {
   availableSources: Source[]
-  sourceFilter: Source | null
-  onSourceChange: (s: Source | null) => void
+  sourceFilter: Set<Source>
+  onSourceToggle: (s: Source) => void
+  onSourceClear: () => void
   availableTags: NonNullable<Tag>[]
-  tagFilter: NonNullable<Tag> | null
-  onTagChange: (t: NonNullable<Tag> | null) => void
+  tagFilter: Set<NonNullable<Tag>>
+  onTagToggle: (t: NonNullable<Tag>) => void
+  onTagClear: () => void
   functions: UserFunction[]
   functionFilter: Set<string>
   onFunctionToggle: (fid: string) => void
@@ -2295,72 +2312,23 @@ function FilterBar({
   const orderedTags = TAG_ORDER.filter(t => availableTags.includes(t))
   if (orderedSources.length === 0 && orderedTags.length === 0 && functions.length === 0) return null
 
+  const sourceLabel = sourceFilter.size === 0
+    ? 'Source'
+    : sourceFilter.size === 1
+    ? SOURCE_LABEL[Array.from(sourceFilter)[0]]
+    : `${sourceFilter.size} sources`
+
+  const tagLabel = tagFilter.size === 0
+    ? 'Tag'
+    : tagFilter.size === 1
+    ? TAG_LABEL[Array.from(tagFilter)[0] as NonNullable<Tag>]
+    : `${tagFilter.size} tags`
+
   return (
     <Card className="mt-4 bg-surface/40 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
 
-        {/* Source dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger className={cn(
-            'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium outline-none transition-colors',
-            sourceFilter
-              ? 'border-ink/40 bg-surface-muted text-ink'
-              : 'border-line bg-surface text-ink-faint hover:border-line-strong hover:text-ink'
-          )}>
-            {sourceFilter ? (
-              <>
-                <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-sm">
-                  <BrandLogo brand={sourceFilter} size={14} />
-                </span>
-                {SOURCE_LABEL[sourceFilter]}
-              </>
-            ) : 'Source'}
-            <ChevronDown size={11} className="text-ink-faint" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-44">
-            <DropdownMenuItem onSelect={() => onSourceChange(null)} className={cn('flex items-center gap-2 text-[13px]', !sourceFilter && 'font-medium text-ink')}>
-              All sources
-            </DropdownMenuItem>
-            {orderedSources.map(s => (
-              <DropdownMenuItem key={s} onSelect={() => onSourceChange(sourceFilter === s ? null : s)} className="flex items-center gap-2 text-[13px]">
-                <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-sm">
-                  <BrandLogo brand={s} size={14} />
-                </span>
-                <span className={cn(sourceFilter === s && 'font-medium text-ink')}>{SOURCE_LABEL[s]}</span>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Tag dropdown */}
-        {orderedTags.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger className={cn(
-              'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium outline-none transition-colors',
-              tagFilter
-                ? 'border-ink/40 bg-surface-muted text-ink'
-                : 'border-line bg-surface text-ink-faint hover:border-line-strong hover:text-ink'
-            )}>
-              {tagFilter ? TAG_LABEL[tagFilter] : 'Tag'}
-              <ChevronDown size={11} className="text-ink-faint" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-36">
-              <DropdownMenuItem onSelect={() => onTagChange(null)} className={cn('text-[13px]', !tagFilter && 'font-medium text-ink')}>
-                All tags
-              </DropdownMenuItem>
-              {orderedTags.map(t => (
-                <DropdownMenuItem key={t} onSelect={() => onTagChange(tagFilter === t ? null : t)} className={cn('text-[13px]', tagFilter === t && 'font-medium text-ink')}>
-                  {TAG_LABEL[t]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-
-        {/* Separator */}
-        {functions.length > 0 && <span className="h-4 w-px bg-line" />}
-
-        {/* Function chips */}
+        {/* LEFT: All chip + function chips */}
         {functions.length > 0 && (
           <>
             <FilterChip active={functionFilter.size === 0} onClick={onFunctionClear}>
@@ -2391,14 +2359,101 @@ function FilterBar({
             >
               Manage
             </Link>
+            <span className="h-4 w-px bg-line" />
           </>
         )}
 
-        {/* Group-by — right side */}
-        <div className="ml-auto flex items-center gap-1.5 text-[12px] text-ink-faint">
-          <Layers size={12} />
-          <span>Group:</span>
-          <GroupToggle value={groupBy} onChange={onGroupByChange} />
+        {/* RIGHT side: Group-by + Source + Tag dropdowns */}
+        <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-1.5 text-[12px] text-ink-faint">
+            <Layers size={12} />
+            <span>Group:</span>
+            <GroupToggle value={groupBy} onChange={onGroupByChange} />
+          </div>
+
+          {/* Source multi-select dropdown */}
+          {orderedSources.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger className={cn(
+                'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[13px] font-medium outline-none transition-colors',
+                sourceFilter.size > 0
+                  ? 'border-ink/50 bg-surface-muted text-ink'
+                  : 'border-line-strong bg-surface text-ink hover:border-ink/40 hover:bg-surface-muted'
+              )}>
+                {sourceFilter.size === 1 && (
+                  <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-sm">
+                    <BrandLogo brand={Array.from(sourceFilter)[0]} size={14} />
+                  </span>
+                )}
+                {sourceLabel}
+                <ChevronDown size={12} className="text-ink-muted" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  onSelect={e => { e.preventDefault(); onSourceClear() }}
+                  className="flex items-center gap-2 text-[13px]"
+                >
+                  <span className={cn('size-3.5 rounded-sm border border-line flex items-center justify-center flex-shrink-0', sourceFilter.size === 0 && 'bg-ink border-ink')}>
+                    {sourceFilter.size === 0 && <Check size={10} className="text-canvas" />}
+                  </span>
+                  All sources
+                </DropdownMenuItem>
+                {orderedSources.map(s => (
+                  <DropdownMenuItem
+                    key={s}
+                    onSelect={e => { e.preventDefault(); onSourceToggle(s) }}
+                    className="flex items-center gap-2 text-[13px]"
+                  >
+                    <span className={cn('size-3.5 rounded-sm border flex items-center justify-center flex-shrink-0', sourceFilter.has(s) ? 'bg-ink border-ink' : 'border-line')}>
+                      {sourceFilter.has(s) && <Check size={10} className="text-canvas" />}
+                    </span>
+                    <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-sm">
+                      <BrandLogo brand={s} size={14} />
+                    </span>
+                    {SOURCE_LABEL[s]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {/* Tag multi-select dropdown */}
+          {orderedTags.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger className={cn(
+                'inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-[13px] font-medium outline-none transition-colors',
+                tagFilter.size > 0
+                  ? 'border-ink/50 bg-surface-muted text-ink'
+                  : 'border-line-strong bg-surface text-ink hover:border-ink/40 hover:bg-surface-muted'
+              )}>
+                {tagLabel}
+                <ChevronDown size={12} className="text-ink-muted" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem
+                  onSelect={e => { e.preventDefault(); onTagClear() }}
+                  className="flex items-center gap-2 text-[13px]"
+                >
+                  <span className={cn('size-3.5 rounded-sm border border-line flex items-center justify-center flex-shrink-0', tagFilter.size === 0 && 'bg-ink border-ink')}>
+                    {tagFilter.size === 0 && <Check size={10} className="text-canvas" />}
+                  </span>
+                  All tags
+                </DropdownMenuItem>
+                {orderedTags.map(t => (
+                  <DropdownMenuItem
+                    key={t}
+                    onSelect={e => { e.preventDefault(); onTagToggle(t) }}
+                    className="flex items-center gap-2 text-[13px]"
+                  >
+                    <span className={cn('size-3.5 rounded-sm border flex items-center justify-center flex-shrink-0', tagFilter.has(t) ? 'bg-ink border-ink' : 'border-line')}>
+                      {tagFilter.has(t) && <Check size={10} className="text-canvas" />}
+                    </span>
+                    {TAG_LABEL[t]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
     </Card>
@@ -2935,30 +2990,23 @@ function ClearedTab({
 // ─── Filter empty state ─────────────────────────────────────────────────
 
 function FilterEmpty({
-  source,
-  tag,
+  sourceCount = 0,
+  tagCount = 0,
   functionCount = 0,
   onClear,
 }: {
-  source: Source | null
-  tag: NonNullable<Tag> | null
+  sourceCount?: number
+  tagCount?: number
   functionCount?: number
   onClear: () => void
 }) {
-  // Build a "Gmail + Replies" style description of the active filter.
   const parts: string[] = []
-  if (source) parts.push(SOURCE_LABEL[source])
-  if (tag) parts.push(TAG_LABEL[tag])
-  if (functionCount > 0)
-    parts.push(`${functionCount} function${functionCount === 1 ? '' : 's'}`)
+  if (sourceCount > 0) parts.push(`${sourceCount} source${sourceCount === 1 ? '' : 's'}`)
+  if (tagCount > 0) parts.push(`${tagCount} tag${tagCount === 1 ? '' : 's'}`)
+  if (functionCount > 0) parts.push(`${functionCount} function${functionCount === 1 ? '' : 's'}`)
   const desc = parts.join(' + ')
   return (
     <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
-      {source && (
-        <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-md bg-surface-muted">
-          <BrandLogo brand={source} size={20} />
-        </div>
-      )}
       <p className="m-0 text-[15px] font-medium text-ink">
         No items match {desc}
       </p>
