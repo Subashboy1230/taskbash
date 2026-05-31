@@ -1725,7 +1725,16 @@ export function DetailPanel({
           Edit + History, with right padding so they sit clear of Sheet's
           built-in close button (top-4 right-4). onClose stays on the
           props since the optimistic-complete flow in TodayShell needs it. */}
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-end gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Edit"
+          className={cn('h-8 w-8 hover:text-ink', editing ? 'text-ink' : 'text-ink-faint')}
+          onClick={editing ? cancelEdit : startEdit}
+        >
+          <Edit3 size={15} />
+        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -1735,25 +1744,6 @@ export function DetailPanel({
         >
           <X size={15} />
         </Button>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Edit"
-            className={cn('h-8 w-8 hover:text-ink', editing ? 'text-ink' : 'text-ink-faint')}
-            onClick={editing ? cancelEdit : startEdit}
-          >
-            <Edit3 size={15} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="History"
-            className="h-8 w-8 text-ink-faint hover:text-ink"
-          >
-            <History size={15} />
-          </Button>
-        </div>
       </div>
 
       {editing ? (
