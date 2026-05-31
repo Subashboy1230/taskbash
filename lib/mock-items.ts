@@ -58,6 +58,8 @@ export interface MockItem {
 
   sub_items?: MockSubItem[]
   sort_order?: number | null
+  // Populated for gmail items so the shell can filter the Unread tab
+  gmail_thread_id?: string | null
 }
 
 export interface MockDigestSummary {

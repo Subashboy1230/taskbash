@@ -7,7 +7,7 @@
 // backdrop. The calendar stays present underneath so the user can see their
 // agenda even while reading a task brief.
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppSidebar } from '@/app/_components/app-sidebar'
 import { TodayView, DetailPanel } from './today-view'
@@ -69,6 +69,30 @@ export function TodayShell({
 
   const closeDetail = () => setSelectedItem(null)
 
+  // Thread IDs already tracked as items (open or cleared today) — filtered out of Unread tab.
+  const clearedThreadIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const item of [...digest.open_items, ...digest.completed_today]) {
+      if (item.gmail_thread_id) ids.add(item.gmail_thread_id)
+    }
+    // Also include threads we completed this session (optimistic)
+    for (const hiddenId of shellHiddenIds) {
+      const item = digest.open_items.find(i => i.id === hiddenId)
+      if (item?.gmail_thread_id) ids.add(item.gmail_thread_id)
+    }
+    return ids
+  }, [digest, shellHiddenIds])
+
+  const filteredUnread = useMemo(
+    () => unreadThreads.filter(t => !clearedThreadIds.has(t.id)),
+    [unreadThreads, clearedThreadIds]
+  )
+
+  const filteredDigest = useMemo(() => shellHiddenIds.size > 0 ? {
+    ...digest,
+    open_items: digest.open_items.filter(i => !shellHiddenIds.has(i.id)),
+  } : digest, [digest, shellHiddenIds])
+
   return (
     <div className="flex min-h-screen bg-canvas">
       <AppSidebar
@@ -77,10 +101,7 @@ export function TodayShell({
       />
       <main className="flex-1 min-w-0 pl-8 pr-0 pt-4 pb-16">
         <TodayView
-          digest={shellHiddenIds.size > 0 ? {
-            ...digest,
-            open_items: digest.open_items.filter(i => !shellHiddenIds.has(i.id)),
-          } : digest}
+          digest={filteredDigest}
           userEmail={userEmail}
           functions={functions}
           hideHeader
@@ -89,7 +110,7 @@ export function TodayShell({
           externalSelectedItemId={selectedItem?.id ?? null}
           onAddTask={() => setAddOpen(true)}
           mainExpanded={calendarCollapsed}
-          unreadThreads={unreadThreads}
+          unreadThreads={filteredUnread}
         />
       </main>
 
