@@ -934,11 +934,12 @@ function TaskRow({
       onDrop={handleDrop}
       onClick={onSelect}
       className={cn(
-        'group relative cursor-pointer pl-12 pr-2 py-4 transition-colors',
+        'group relative cursor-pointer pl-12 pr-2 py-4 transition-colors duration-150',
         isSelected ? 'bg-success-bg/30' : 'hover:bg-surface-muted/50',
-        completed && 'opacity-50',
-        dragOver === 'before' && 'border-t-2 border-t-accent',
-        dragOver === 'after' && 'border-b-2 border-b-accent',
+        completed && 'animate-task-dismiss',
+        dragOver === 'before' && 'border-t-2 border-t-accent/70',
+        dragOver === 'after' && 'border-b-2 border-b-accent/70',
+        (dragOver === 'before' || dragOver === 'after') && 'bg-surface-muted/40',
       )}
     >
       {/* Hover-triage micro-buttons on the LEFT — speed approval. Hidden
@@ -1720,7 +1721,7 @@ export function DetailPanel({
   }
 
   return (
-    <aside className="h-full w-full overflow-y-auto bg-surface px-5 py-5">
+    <aside className="h-full w-full overflow-y-auto bg-surface px-5 py-5 animate-fade-in">
       {/* Close button is provided by the parent Sheet. Header only carries
           Edit + History, with right padding so they sit clear of Sheet's
           built-in close button (top-4 right-4). onClose stays on the

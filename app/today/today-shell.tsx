@@ -7,7 +7,7 @@
 // backdrop. The calendar stays present underneath so the user can see their
 // agenda even while reading a task brief.
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppSidebar } from '@/app/_components/app-sidebar'
 import { TodayView, DetailPanel } from './today-view'
@@ -23,6 +23,32 @@ import {
 import { cn } from '@/lib/utils'
 import type { MockDigestSummary, MockItem } from '@/lib/mock-items'
 import type { UserFunction } from '@/lib/types'
+
+function PanelColumn({
+  item, closing, onClose, onComplete, onDismiss, allFunctions,
+}: {
+  item: MockItem
+  closing: boolean
+  onClose: () => void
+  onComplete: (id: string) => void
+  onDismiss: (id: string) => void
+  allFunctions: UserFunction[]
+}) {
+  return (
+    <div className={cn(
+      'sticky top-0 h-screen w-[384px] shrink-0 border-l border-line bg-canvas overflow-y-auto',
+      closing ? 'animate-slide-out-right' : 'animate-slide-in-right'
+    )}>
+      <DetailPanel
+        item={item}
+        onClose={onClose}
+        onComplete={() => onComplete(item.id)}
+        onDismiss={() => onDismiss(item.id)}
+        allFunctions={allFunctions}
+      />
+    </div>
+  )
+}
 import type { DayEvent } from '@/lib/load-day-events'
 import type { UnreadThread } from '@/lib/load-unread-gmail'
 
@@ -44,6 +70,8 @@ export function TodayShell({
   unreadThreads?: UnreadThread[]
 }) {
   const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
+  const lastSelectedItem = useRef<MockItem | null>(null)
+  const [panelClosing, setPanelClosing] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [shellHiddenIds, setShellHiddenIds] = useState<Set<string>>(new Set())
   const router = useRouter()
@@ -68,7 +96,15 @@ export function TodayShell({
     }
   }, [calendarCollapsed])
 
-  const closeDetail = () => setSelectedItem(null)
+  const closeDetail = () => {
+    lastSelectedItem.current = selectedItem
+    setPanelClosing(true)
+    setTimeout(() => {
+      setSelectedItem(null)
+      setPanelClosing(false)
+      lastSelectedItem.current = null
+    }, 180)
+  }
 
   // Thread IDs already tracked as items (open or cleared today) — filtered out of Unread tab.
   const clearedThreadIds = useMemo(() => {
@@ -118,30 +154,27 @@ export function TodayShell({
       </main>
 
       {/* Right column — detail panel replaces calendar when a task is open */}
-      {selectedItem ? (
-        <div className="sticky top-0 h-screen w-[384px] shrink-0 border-l border-line bg-canvas overflow-y-auto">
-          <DetailPanel
-            item={selectedItem}
-            onClose={closeDetail}
-            onComplete={() => {
-              const id = selectedItem.id
-              setShellHiddenIds(s => new Set(s).add(id))
-              closeDetail()
-              completeItem(id).then(() => router.refresh()).catch(() => {
-                setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
-              })
-            }}
-            onDismiss={() => {
-              const id = selectedItem.id
-              setShellHiddenIds(s => new Set(s).add(id))
-              closeDetail()
-              dismissItem(id).then(() => router.refresh()).catch(() => {
-                setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
-              })
-            }}
-            allFunctions={functions}
-          />
-        </div>
+      {(selectedItem || panelClosing) ? (
+        <PanelColumn
+          item={(selectedItem ?? lastSelectedItem.current)!}
+          closing={panelClosing}
+          onClose={closeDetail}
+          onComplete={id => {
+            setShellHiddenIds(s => new Set(s).add(id))
+            closeDetail()
+            completeItem(id).then(() => router.refresh()).catch(() => {
+              setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
+            })
+          }}
+          onDismiss={id => {
+            setShellHiddenIds(s => new Set(s).add(id))
+            closeDetail()
+            dismissItem(id).then(() => router.refresh()).catch(() => {
+              setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
+            })
+          }}
+          allFunctions={functions}
+        />
       ) : (
         <TodayCalendarColumn
           events={events}
