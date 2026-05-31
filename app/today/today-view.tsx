@@ -459,10 +459,8 @@ export function TodayView({
                 functionFilter={functionFilter}
                 onFunctionToggle={fid => {
                   setFunctionFilter(prev => {
-                    const next = new Set(prev)
-                    if (next.has(fid)) next.delete(fid)
-                    else next.add(fid)
-                    return next
+                    if (prev.has(fid)) return new Set()
+                    return new Set([fid])
                   })
                 }}
                 onFunctionClear={() => setFunctionFilter(new Set())}
