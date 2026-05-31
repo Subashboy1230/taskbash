@@ -40,7 +40,7 @@ export function TodayCalendarColumn({
   events,
   items = [],
   calendarConnected = true,
-  selectedDay = null,
+  selectedDay: selectedDayProp = null,
   onSelectDay,
   collapsed: collapsedProp,
   onToggleCollapsed,
@@ -62,6 +62,8 @@ export function TodayCalendarColumn({
   today.setHours(0, 0, 0, 0)
   const todayIso = isoDay(today)
   const [viewMonth, setViewMonth] = useState(new Date(today))
+  const [selectedDayInternal, setSelectedDayInternal] = useState<string | null>(selectedDayProp)
+  const selectedDay = selectedDayInternal
 
   // Collapse/expand. Default expanded; hydrate from localStorage on mount.
   // When `collapsed` prop is passed we treat this component as controlled
@@ -227,10 +229,9 @@ export function TodayCalendarColumn({
             cell={c}
             selected={c.iso === selectedDay}
             onClick={() => {
-              // Toggle: clicking the same day clears the filter.
-              // Allow clicking ANY in-month day — the events section
-              // below reflects the selection even if no tasks are due.
-              onSelectDay?.(c.iso === selectedDay ? null : c.iso)
+              const next = c.iso === selectedDay ? null : c.iso
+              setSelectedDayInternal(next)
+              onSelectDay?.(next)
             }}
           />
         ))}
@@ -426,7 +427,7 @@ function DayCell({
               <li className="text-ink-faint">+{cell.dayItems.length - 5} more</li>
             )}
           </ul>
-          <p className="m-0 mt-1.5 text-[10px] text-ink-faint">Click day to filter list</p>
+          <p className="m-0 mt-1.5 text-[10px] text-ink-faint">Click day to see events</p>
         </div>
       )}
     </div>

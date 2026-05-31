@@ -41,7 +41,6 @@ export function TodayShell({
   unreadThreads?: UnreadThread[]
 }) {
   const [selectedItem, setSelectedItem] = useState<MockItem | null>(null)
-  const [dayFilter, setDayFilter] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
 
   // Lift calendar collapsed state so the main column can claim the freed
@@ -80,8 +79,6 @@ export function TodayShell({
           hideDetailPanel
           onSelectItem={setSelectedItem}
           externalSelectedItemId={selectedItem?.id ?? null}
-          dayFilter={dayFilter}
-          onClearDayFilter={() => setDayFilter(null)}
           onAddTask={() => setAddOpen(true)}
           mainExpanded={calendarCollapsed}
           unreadThreads={unreadThreads}
@@ -98,8 +95,6 @@ export function TodayShell({
           due_at: i.due_at,
         }))}
         calendarConnected={calendarConnected}
-        selectedDay={dayFilter}
-        onSelectDay={setDayFilter}
         collapsed={calendarCollapsed}
         onToggleCollapsed={() => setCalendarCollapsed(c => !c)}
       />

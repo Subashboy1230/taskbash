@@ -85,8 +85,6 @@ export function TodayView({
   hideDetailPanel = false,
   onSelectItem,
   externalSelectedItemId,
-  dayFilter,
-  onClearDayFilter,
   onAddTask,
   mainExpanded = false,
   unreadThreads = [],
@@ -106,9 +104,6 @@ export function TodayView({
   // Lets the parent control which row is highlighted (e.g. when the
   // shell already had a selected item from URL state).
   externalSelectedItemId?: string | null
-  // YYYY-MM-DD — when set, filter the open list to items due that day.
-  dayFilter?: string | null
-  onClearDayFilter?: () => void
   // Open the add-task panel (controlled by the shell).
   onAddTask?: () => void
   // When the calendar column is collapsed, give the main column more
@@ -326,11 +321,8 @@ export function TodayView({
     if (functionFilter.size > 0) {
       out = out.filter(i => (i.function_ids ?? []).some(fid => functionFilter.has(fid)))
     }
-    if (dayFilter) {
-      out = out.filter(i => i.due_at && (i.due_at as string).slice(0, 10) === dayFilter)
-    }
     return out
-  }, [visibleOpen, sourceFilter, tagFilter, functionFilter, dayFilter])
+  }, [visibleOpen, sourceFilter, tagFilter, functionFilter])
 
   // Fast lookup map for chip rendering and the multi-select editor.
   const functionsById = useMemo(() => {
@@ -475,22 +467,6 @@ export function TodayView({
                 groupBy={groupBy}
                 onGroupByChange={setGroupBy}
               />
-
-              {dayFilter && (
-                <div className="mt-3 flex items-center justify-between rounded-md border border-line bg-surface-muted/40 px-3 py-2 text-[12px]">
-                  <span className="text-ink">
-                    Showing tasks due{' '}
-                    <strong>{new Date(dayFilter + 'T12:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</strong>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => onClearDayFilter?.()}
-                    className="rounded px-2 py-0.5 text-[11px] text-ink-faint hover:bg-surface-muted hover:text-ink"
-                  >
-                    Clear ×
-                  </button>
-                </div>
-              )}
 
               {filteredOpen.length === 0 ? (
                 sourceFilter || tagFilter || functionFilter.size > 0 ? (
