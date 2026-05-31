@@ -1656,11 +1656,13 @@ export function DetailPanel({
   item,
   onClose,
   onComplete,
+  onDismiss,
   allFunctions = [],
 }: {
   item: MockItem
   onClose: () => void
   onComplete: () => void
+  onDismiss?: () => void
   allFunctions?: UserFunction[]
 }) {
   const [editing, setEditing] = useState(false)
@@ -1877,12 +1879,15 @@ export function DetailPanel({
       )}
 
       <div className="mt-6 flex gap-2">
-        <button
-          onClick={onClose}
-          className="flex-1 rounded-md border border-line bg-surface px-4 py-2 text-[13px] font-medium text-ink hover:bg-surface-muted"
-        >
-          Close
-        </button>
+        {onDismiss && (
+          <button
+            onClick={() => { onDismiss(); onClose() }}
+            className="rounded-md border border-line bg-surface px-3 py-2 text-[13px] font-medium text-ink-muted hover:border-danger-fg hover:text-danger-fg"
+          >
+            <X size={13} className="-mt-0.5 mr-1 inline" />
+            Dismiss
+          </button>
+        )}
         {item.proposed_action && item.status !== 'completed' && (
           <button
             onClick={() => {

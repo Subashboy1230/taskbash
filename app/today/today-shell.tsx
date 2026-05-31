@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppSidebar } from '@/app/_components/app-sidebar'
 import { TodayView, DetailPanel } from './today-view'
-import { completeItem } from './actions'
+import { completeItem, dismissItem } from './actions'
 import { TodayCalendarColumn } from './today-calendar-column'
 import { AddTaskPanel } from './add-task-panel'
 import {
@@ -128,6 +128,14 @@ export function TodayShell({
               setShellHiddenIds(s => new Set(s).add(id))
               closeDetail()
               completeItem(id).then(() => router.refresh()).catch(() => {
+                setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
+              })
+            }}
+            onDismiss={() => {
+              const id = selectedItem.id
+              setShellHiddenIds(s => new Set(s).add(id))
+              closeDetail()
+              dismissItem(id).then(() => router.refresh()).catch(() => {
                 setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
               })
             }}
