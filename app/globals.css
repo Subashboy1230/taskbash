@@ -84,12 +84,18 @@
 
 /* ─── Base ─── */
 html {
-  /* Reserve the scrollbar gutter at all times. Without this, opening
-     Radix Dialog / Sheet (which body-scroll-locks) adds a padding-right
-     to compensate, and removing it on close leaves a brief layout flash
-     and sometimes a residual gap between the main column and the calendar
-     sidebar. With overflow-y always scroll, no compensation is needed. */
+  /* Reserve the scrollbar gutter so Radix Dialog scroll-lock compensation
+     has no effect. scrollbar-gutter:stable keeps the gutter space whether
+     or not the scrollbar is visible, preventing layout shift on open/close. */
   overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
+/* Radix Dialog/Sheet injects padding-right on body when it scroll-locks.
+   Since we always show the scrollbar gutter, we don't need that compensation
+   — force it to 0 to prevent the leftward layout shift. */
+body {
+  padding-right: 0 !important;
 }
 
 html, body {
