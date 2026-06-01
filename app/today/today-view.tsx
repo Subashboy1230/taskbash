@@ -1297,6 +1297,7 @@ function FunctionsEditor({
   allFunctions: UserFunction[]
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set(initialIds))
+  const [fnError, setFnError] = useState<string | null>(null)
   useEffect(() => {
     setSelected(new Set(initialIds))
   }, [initialIds])
@@ -1307,7 +1308,16 @@ function FunctionsEditor({
     if (next.has(id)) next.delete(id)
     else next.add(id)
     setSelected(next)
-    setItemFunctions(itemId, Array.from(next)).catch(() => setSelected(prev))
+    setFnError(null)
+    setItemFunctions(itemId, Array.from(next)).then(result => {
+      if (!result.ok) {
+        setSelected(prev)
+        setFnError(result.error)
+      }
+    }).catch(() => {
+      setSelected(prev)
+      setFnError('Network error. Try again.')
+    })
   }
 
   if (allFunctions.length === 0) {
@@ -1357,6 +1367,9 @@ function FunctionsEditor({
           )
         })}
       </div>
+      {fnError && (
+        <p className="mt-2 text-[12px] text-danger-fg">{fnError}</p>
+      )}
     </div>
   )
 }
@@ -1939,11 +1952,6 @@ function DraftCard({
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  // Two action modes:
-  //   - sendDirect: true  → call Gmail API users.messages.send (one click)
-  //                          falls back to opening compose if the scope is
-  //                          missing or the API returns 403.
-  //   - sendDirect: false → skip the API entirely; open compose URL only.
   function handleAction(sendDirect: boolean) {
     setError(null)
     setNotice(null)
@@ -1957,18 +1965,16 @@ function DraftCard({
           return
         }
         if (result.sent) {
-          // Direct API send succeeded.
+          // Direct API send succeeded — item is done.
           setNotice('Sent via Gmail.')
+          onSent()
         } else {
-          // Fallback path — open compose URL in a new tab.
+          // Either "Open in Gmail" was clicked, or Send now fell back because
+          // gmail.modify scope is not yet granted. Open the draft either way.
           window.open(result.openUrl, '_blank', 'noopener,noreferrer')
-          setNotice(
-            sendDirect
-              ? 'Opened in Gmail (gmail.send scope not granted yet).'
-              : 'Opened in Gmail.'
-          )
+          setNotice(sendDirect ? 'Opening draft in Gmail - send scope not yet active.' : 'Draft opened in Gmail.')
+          setBusyMode(null)
         }
-        onSent()
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Send failed')
         setBusyMode(null)

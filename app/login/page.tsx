@@ -67,8 +67,10 @@ export default function LoginPage() {
         )}
 
         <p className="mt-8 text-[12px] text-ink-faint">
-          By signing in, you allow taskbash to read items from the sources
-          you connect (Gmail, Calendar, Granola, Linear).
+          By signing in you agree to the{' '}
+          <a href="/terms" className="underline hover:text-ink">Terms of Use</a>
+          {' '}and acknowledge the{' '}
+          <a href="/privacy" className="underline hover:text-ink">Privacy Policy</a>.
         </p>
       </div>
     </div>

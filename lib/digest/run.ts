@@ -122,7 +122,8 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
       if (items === null) return
       for (const parent of items) {
         allFresh.push(parent)
-        for (const sub of parent.sub_items ?? []) allFresh.push(sub)
+        // sub_items stay on parent.sub_items — written as child rows with
+        // parent_id in the insert loop, not flattened into top-level siblings.
       }
       sourcesRun.push(source)
     } catch (err) {
@@ -225,6 +226,31 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
           item_id: inserted.id,
           kind: 'created',
         })
+
+        // Write sub_items as child rows attached to the parent, never as
+        // top-level siblings (that was the cascading-subtask-leak bug).
+        if (fresh.sub_items && fresh.sub_items.length > 0) {
+          const subInserts = fresh.sub_items.map(sub => {
+            const subHash = computeSemanticHash(
+              'manual',
+              fresh.parent_context,
+              sub.title
+            )
+            return {
+              user_id: userId,
+              title: sub.title,
+              task_type: (sub.task_type ?? 'action') as string,
+              tag: 'action' as const,
+              source: 'manual' as const,
+              source_ref: { auto_subtask: true } as Record<string, unknown>,
+              parent_id: inserted.id,
+              parent_context: null as string | null,
+              semantic_hash: subHash,
+              status: 'open' as const,
+            }
+          })
+          void supabase.from('items').insert(subInserts)
+        }
       }
       // Ignore unique-index race (23505) — treat as carryover silently.
     }

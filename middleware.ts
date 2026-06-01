@@ -45,6 +45,8 @@ export async function middleware(request: NextRequest) {
     path === '/' ||
     path.startsWith('/login') ||
     path.startsWith('/auth') ||
+    path.startsWith('/privacy') ||
+    path.startsWith('/terms') ||
     path.startsWith('/api/inngest') // Inngest webhook — never gated
 
   if (!user && !isPublic) {

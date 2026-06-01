@@ -14,6 +14,7 @@ import { tracedMessage } from '../llm-trace'
 import { getActiveConnection, NANGO_PROVIDER_KEY } from '../connections'
 import { nangoProxy } from '../nango'
 import { extractJsonObject } from '../extract/parse'
+import { supabase } from '../supabase'
 import type { TaskBrief } from '../types'
 
 const GRANOLA_API_BASE = 'https://public-api.granola.ai/v1'
@@ -40,15 +41,19 @@ export async function generateMeetingPrepBrief(args: {
 
   const otherAttendees = attendeeEmails.filter(e => e.toLowerCase() !== userEmail.toLowerCase())
   const sourcesUsed: string[] = ['calendar']
+  const resolvedUserId = userId ?? process.env.APP_USER_ID ?? null
 
   // ─── Fetch context in parallel ───────────────────────────────────────
-  const [granolaContext, gmailContext, linearContext] = await Promise.all([
+  const [granolaContext, granolaItemsContext, gmailContext, linearContext] = await Promise.all([
     fetchGranolaContext(otherAttendees, eventTitle).catch(() => null),
+    resolvedUserId
+      ? fetchGranolaItemsContext(otherAttendees, eventTitle, resolvedUserId).catch(() => null)
+      : Promise.resolve(null),
     fetchGmailContext(otherAttendees, userEmail).catch(() => null),
     fetchLinearContext(eventTitle, attendeeNames).catch(() => null),
   ])
 
-  if (granolaContext) sourcesUsed.push('granola')
+  if (granolaContext || granolaItemsContext) sourcesUsed.push('granola')
   if (gmailContext) sourcesUsed.push('gmail')
   if (linearContext) sourcesUsed.push('linear')
 
@@ -62,7 +67,11 @@ Attendees: ${attendeeNames.join(', ') || otherAttendees.join(', ') || 'none list
 Description: ${eventDescription.slice(0, 800) || '(no description)'}`)
 
   if (granolaContext) {
-    sections.push(`## Past Meeting Notes (Granola)\n${granolaContext}`)
+    sections.push(`## Past Meeting Notes (Granola — full summaries, newest first)\n${granolaContext}`)
+  }
+
+  if (granolaItemsContext) {
+    sections.push(`## Open/Completed Action Items From Past Meetings on This Topic\n${granolaItemsContext}`)
   }
 
   if (gmailContext) {
@@ -87,7 +96,7 @@ Description: ${eventDescription.slice(0, 800) || '(no description)'}`)
     },
     {
       model: MODELS.synthesis,
-      max_tokens: 800,
+      max_tokens: 1200,
       system: MEETING_PREP_PROMPT,
       messages: [{ role: 'user', content: `User: ${userEmail}\n\n${contextBlock}\n\nGenerate the meeting prep brief as JSON.` }],
     }
@@ -102,10 +111,10 @@ Description: ${eventDescription.slice(0, 800) || '(no description)'}`)
     const parsed = JSON.parse(extractJsonObject(text)) as Partial<EnrichedBrief>
     return {
       why: parsed.why || `Meeting with ${attendeeNames[0] || 'attendees'}`,
-      know: Array.isArray(parsed.know) ? parsed.know.slice(0, 5) : [],
+      know: Array.isArray(parsed.know) ? parsed.know.slice(0, 6) : [],
       done: parsed.done || '',
       next: parsed.next || '',
-      talking_points: Array.isArray(parsed.talking_points) ? parsed.talking_points.slice(0, 4) : [],
+      talking_points: Array.isArray(parsed.talking_points) ? parsed.talking_points.slice(0, 5) : [],
       sources_used: sourcesUsed,
     }
   } catch {
@@ -122,53 +131,164 @@ Description: ${eventDescription.slice(0, 800) || '(no description)'}`)
 
 // ─── Granola: past notes with these attendees ────────────────────────
 
+interface GranolaListNote {
+  id: string
+  title: string | null
+  created_at?: string
+  attendees?: Array<{ email: string }>
+}
+
+interface GranolaDetailNote {
+  title?: string | null
+  created_at?: string
+  attendees?: Array<{ name?: string; email: string }>
+  summary_markdown?: string | null
+  summary_text?: string | null
+  transcript?: Array<{ text: string; speaker?: { source: string } }> | null
+}
+
 async function fetchGranolaContext(attendeeEmails: string[], eventTitle: string): Promise<string | null> {
   const conn = await getActiveConnection('granola')
   if (!conn?.api_key) return null
 
-  const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  const url = new URL(`${GRANOLA_API_BASE}/notes`)
-  url.searchParams.set('created_after', since)
-  url.searchParams.set('page_size', '50')
+  // 120-day window, paginate up to 200 notes to maximise coverage
+  const since = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  let notes: GranolaListNote[] = []
+  for (const pageSize of [100, 100]) {
+    const url = new URL(`${GRANOLA_API_BASE}/notes`)
+    url.searchParams.set('created_after', since)
+    url.searchParams.set('page_size', String(pageSize))
+    if (notes.length > 0) url.searchParams.set('offset', String(notes.length))
+    try {
+      const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${conn.api_key}` } })
+      if (!res.ok) break
+      const data = await res.json() as { notes?: GranolaListNote[] }
+      const page = data.notes ?? []
+      notes.push(...page)
+      if (page.length < pageSize) break
+    } catch { break }
+  }
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${conn.api_key}` },
-  })
-  if (!res.ok) return null
+  if (notes.length === 0) return null
 
-  const data = await res.json() as { notes?: Array<{ id: string; title: string | null; attendees?: Array<{ email: string }> }> }
-  const notes = data.notes ?? []
-
-  // Filter to notes that share attendees or have a title related to this meeting
+  // Score each note for relevance:
+  //   3 = attendee email exact match + title word match
+  //   2 = attendee email exact match
+  //   1 = title word match OR same email domain as an attendee
   const lowerAttendees = attendeeEmails.map(e => e.toLowerCase())
+  const attendeeDomains = lowerAttendees.map(e => e.split('@')[1]).filter(Boolean)
   const titleWords = eventTitle.toLowerCase().split(/\s+/).filter(w => w.length > 3)
-  const relevant = notes.filter(n => {
-    const nAttendees = (n.attendees ?? []).map(a => a.email.toLowerCase())
-    const attendeeMatch = lowerAttendees.some(e => nAttendees.includes(e))
-    const titleMatch = titleWords.some(w => (n.title || '').toLowerCase().includes(w))
-    return attendeeMatch || titleMatch
-  }).slice(0, 4)
 
-  if (relevant.length === 0) return null
+  const scored = notes
+    .map(n => {
+      const nEmails = (n.attendees ?? []).map(a => a.email.toLowerCase())
+      const nTitle = (n.title || '').toLowerCase()
+      const exactAttendee = lowerAttendees.some(e => nEmails.includes(e))
+      const domainAttendee = !exactAttendee && attendeeDomains.some(d => nEmails.some(e => e.endsWith(`@${d}`)))
+      const titleMatch = titleWords.some(w => nTitle.includes(w))
+      const score = exactAttendee && titleMatch ? 3 : exactAttendee ? 2 : (titleMatch || domainAttendee) ? 1 : 0
+      return { note: n, score }
+    })
+    .filter(x => x.score > 0)
+    // Sort: score desc, then created_at desc (recency within same tier)
+    .sort((a, b) => b.score - a.score || (b.note.created_at ?? '').localeCompare(a.note.created_at ?? ''))
+    .slice(0, 6)
 
-  // Fetch summaries for relevant notes
+  if (scored.length === 0) return null
+
+  // Fetch full detail for each — pull summary + transcript snippet
   const summaries: string[] = []
-  for (const note of relevant) {
+  await Promise.all(scored.map(async ({ note }) => {
     try {
       const detailRes = await fetch(`${GRANOLA_API_BASE}/notes/${note.id}`, {
         headers: { Authorization: `Bearer ${conn.api_key!}` },
       })
-      if (!detailRes.ok) continue
-      const detail = await detailRes.json() as { title?: string | null; summary_markdown?: string | null; created_at?: string }
+      if (!detailRes.ok) return
+      const detail = await detailRes.json() as GranolaDetailNote
+
+      const dateStr = detail.created_at?.split('T')[0] || note.created_at?.split('T')[0] || 'recent'
+      const attendeeList = (detail.attendees ?? []).map(a => a.name || a.email).join(', ')
+      const header = `### ${detail.title || note.title || 'Meeting'} (${dateStr}${attendeeList ? ` — ${attendeeList}` : ''})`
+
+      // Prefer markdown summary; fall back to plain text; then transcript
+      let body = ''
       if (detail.summary_markdown) {
-        summaries.push(`### ${detail.title || 'Meeting'} (${detail.created_at?.split('T')[0] || 'recent'})\n${detail.summary_markdown.slice(0, 600)}`)
+        body = detail.summary_markdown.slice(0, 1500)
+      } else if (detail.summary_text) {
+        body = detail.summary_text.slice(0, 1500)
+      } else if (detail.transcript && detail.transcript.length > 0) {
+        body = detail.transcript
+          .slice(0, 40)
+          .map(t => t.text)
+          .join(' ')
+          .slice(0, 1000)
+        body = `[Transcript excerpt] ${body}`
       }
-    } catch {
-      // skip
+
+      if (body) summaries.push(`${header}\n${body}`)
+    } catch { /* skip individual fetch failures */ }
+  }))
+
+  if (summaries.length === 0) return null
+
+  // Sort final summaries by date desc so Claude sees newest first
+  summaries.sort((a, b) => {
+    const dateA = a.match(/\((\d{4}-\d{2}-\d{2})/)?.[1] ?? ''
+    const dateB = b.match(/\((\d{4}-\d{2}-\d{2})/)?.[1] ?? ''
+    return dateB.localeCompare(dateA)
+  })
+
+  return summaries.join('\n\n')
+}
+
+// ─── Granola: past action items already extracted into items DB ───────
+
+async function fetchGranolaItemsContext(
+  attendeeEmails: string[],
+  eventTitle: string,
+  userId: string
+): Promise<string | null> {
+  // Find Granola-sourced items where the parent_context (meeting title) overlaps
+  // with attendee emails OR the upcoming event title.
+  const titleWords = eventTitle.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+
+  const { data: rows } = await supabase
+    .from('items')
+    .select('title, tag, status, parent_context, completed_at, first_seen_at')
+    .eq('user_id', userId)
+    .eq('source', 'granola')
+    .in('status', ['open', 'in_progress', 'completed'])
+    .order('first_seen_at', { ascending: false })
+    .limit(200)
+
+  if (!rows || rows.length === 0) return null
+
+  // Score each item: does the parent_context match this meeting?
+  const relevant = rows.filter(row => {
+    const ctx = (row.parent_context || '').toLowerCase()
+    return titleWords.some(w => ctx.includes(w))
+  })
+
+  if (relevant.length === 0) return null
+
+  const lines: string[] = []
+  const open = relevant.filter(r => r.status === 'open' || r.status === 'in_progress')
+  const done = relevant.filter(r => r.status === 'completed').slice(0, 5)
+
+  if (open.length > 0) {
+    lines.push('**Open action items from past meetings on this topic:**')
+    for (const r of open.slice(0, 8)) {
+      lines.push(`- [${r.tag ?? 'action'}] ${r.title} (from: ${r.parent_context})`)
+    }
+  }
+  if (done.length > 0) {
+    lines.push('**Recently completed items from past meetings on this topic:**')
+    for (const r of done) {
+      lines.push(`- ${r.title} (completed ${r.completed_at?.split('T')[0] ?? 'recently'})`)
     }
   }
 
-  return summaries.length > 0 ? summaries.join('\n\n') : null
+  return lines.join('\n')
 }
 
 // ─── Gmail: recent threads with these attendees ──────────────────────
@@ -287,21 +407,29 @@ const MEETING_PREP_PROMPT = `You generate a rich meeting prep brief from cross-s
 Output STRICT JSON only. No prose, no markdown fences:
 {
   "why": "string. One sentence: what is this meeting really about and why does it matter",
-  "know": ["bullet 1", "bullet 2", "bullet 3"],
-  "done": "string. What has already happened - prior meetings, emails, decisions, commits",
+  "know": ["bullet 1", "bullet 2", "bullet 3", "bullet 4", "bullet 5"],
+  "done": "string. What has already been decided, completed, or discussed in past meetings with these people",
   "next": "string. What the user should aim to achieve or decide in THIS meeting",
-  "talking_points": ["point 1", "point 2", "point 3"]
+  "talking_points": ["point 1", "point 2", "point 3", "point 4"]
 }
 
-"know" is 3 to 5 short bullets - key facts, open items, relevant context the user needs walking in.
-"talking_points" is 2 to 4 specific things the user should raise or be ready to answer.
+"know" is 3 to 5 short bullets. Mine the Granola meeting notes deeply:
+- Include specific decisions made, commitments given, and open threads from past meetings
+- Include any open action items from past meetings that are still unresolved
+- Include names, numbers, dates, project names from the notes - be specific
+- Surface relationship context: tone, outstanding asks, any tension or momentum
+
+"done" should reference specific past meetings by name/date when available.
+"talking_points" is 3 to 4 specific things to raise, referencing open items or unresolved threads from past context.
 
 Rules:
 - Draw ONLY from the context provided. Do not invent facts.
-- Prioritize recent Granola notes and email threads over older ones.
-- If Linear issues are provided, mention any that are directly relevant.
-- Be specific and actionable. Skip generic advice like "prepare agenda".
+- Granola past meeting notes are your richest source - extract intricate detail from them.
+- If open action items from past meetings are provided, surface any that are unresolved.
+- Prioritize recent context over older context within each source.
+- If Linear issues are provided, surface any directly relevant to this meeting's topic.
+- Be specific: names, numbers, project names. Never generic.
 - If context is sparse, be honest: "Limited prior context found."
-- Keep each field under 2 sentences. Bullets under 15 words each.
+- Bullets under 20 words each.
 
 STYLE RULE (absolute): NEVER use em-dashes (—). Use hyphens, colons, or rewrite.`

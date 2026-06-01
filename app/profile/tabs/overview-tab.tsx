@@ -61,7 +61,7 @@ export default function OverviewTab({ displayName, email, memberSince, overview 
       </Card>
 
       <div className="flex gap-3">
-        <StatCard label="Open tasks" value={overview.openCount} />
+        <StatCard label="Active tasks" value={overview.openCount} />
         <StatCard label="Cleared today" value={overview.clearedToday} />
         <StatCard label="Drafts ready" value={overview.draftsReady} />
       </div>

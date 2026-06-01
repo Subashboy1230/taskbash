@@ -101,37 +101,46 @@ export async function deleteFunction(id: string) {
  *      dataset so `npm run eval` can regression-test prompt changes
  *      against every correction the user has ever made
  */
-export async function setItemFunctions(itemId: string, functionIds: string[]) {
-  const userId = await resolveUserId()
+export async function setItemFunctions(
+  itemId: string,
+  functionIds: string[]
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const userId = await resolveUserId()
 
-  // 1. Read the current state BEFORE updating, so we can diff.
-  const { data: before, error: beforeErr } = await supabase
-    .from('items')
-    .select('id, title, source, source_ref, source_excerpt, parent_context, function_ids, extraction_meta')
-    .eq('id', itemId)
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (beforeErr) throw new Error(`setItemFunctions read failed: ${beforeErr.message}`)
-  if (!before) throw new Error('Item not found.')
+    // 1. Read the current state BEFORE updating, so we can diff.
+    const { data: before, error: beforeErr } = await supabase
+      .from('items')
+      .select('id, title, source, source_ref, source_excerpt, parent_context, function_ids, extraction_meta')
+      .eq('id', itemId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (beforeErr) return { ok: false, error: `Read failed: ${beforeErr.message}` }
+    if (!before) return { ok: false, error: 'Item not found.' }
 
-  // 2. Apply the update.
-  const { error: updateErr } = await supabase
-    .from('items')
-    .update({ function_ids: functionIds })
-    .eq('id', itemId)
-    .eq('user_id', userId)
-  if (updateErr) throw new Error(`setItemFunctions failed: ${updateErr.message}`)
+    // 2. Apply the update.
+    const { error: updateErr } = await supabase
+      .from('items')
+      .update({ function_ids: functionIds })
+      .eq('id', itemId)
+      .eq('user_id', userId)
+    if (updateErr) return { ok: false, error: updateErr.message }
 
-  // 3. Capture the correction (fire-and-forget — failures don't block
-  //    the user's edit).
-  void captureFunctionCorrection({
-    userId,
-    item: before as ItemSnapshot,
-    before: (before as { function_ids?: string[] }).function_ids ?? [],
-    after: functionIds,
-  })
+    // 3. Capture the correction (fire-and-forget — failures don't block
+    //    the user's edit).
+    void captureFunctionCorrection({
+      userId,
+      item: before as ItemSnapshot,
+      before: (before as { function_ids?: string[] }).function_ids ?? [],
+      after: functionIds,
+    })
 
-  revalidatePath('/today')
+    revalidatePath('/today')
+    return { ok: true }
+  } catch (err) {
+    console.error('[setItemFunctions]', err)
+    return { ok: false, error: 'Network error. Try again.' }
+  }
 }
 
 interface ItemSnapshot {

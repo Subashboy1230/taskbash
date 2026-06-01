@@ -29,6 +29,12 @@ interface DraftArgs {
   messageId?: string
   /** User's name — used to sign the draft. */
   userName?: string
+  /**
+   * 'cc_only' means the user was CC'd but not the primary recipient —
+   * they are an adjacent manager or observer weighing in, not the main party.
+   * 'to' (default) means the email was addressed directly to the user.
+   */
+  userRole?: 'to' | 'cc_only'
 }
 
 /**
@@ -38,13 +44,17 @@ interface DraftArgs {
 export async function draftReply(args: DraftArgs): Promise<ProposedAction> {
   const voice = await loadVoice()
 
+  const ccOnlyContext = args.userRole === 'cc_only'
+    ? `\nIMPORTANT: The user was CC'd on this thread, not the primary recipient. They are an adjacent manager or observer who wants to weigh in. Draft the reply from THEIR perspective as a manager/colleague chiming in - not as if they were the direct report or main party in the conversation. The tone should be that of a senior stakeholder offering guidance or acknowledgment, not the person being managed or instructed.`
+    : ''
+
   const system = `You draft email replies on behalf of a user.
 You will be given the user's communication style profile and the email
 thread that needs a reply. Produce ONE reply body. No subject line, no
 salutation header (just "Hi <name>,"), no signature except a sign-off line.
 
 Voice:
-${voice}
+${voice}${ccOnlyContext}
 
 Rules:
 - Sound like the user. Match their tone, brevity, formatting habits.

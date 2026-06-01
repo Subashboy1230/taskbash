@@ -384,43 +384,48 @@ export async function executeProposedAction(
     in_reply_to_message_id?: string
     thread_id?: string
     gmail_draft_id?: string
+    references?: string[]
   }
 
-  // Prefer drafts.send when we have a materialized Gmail draft — it converts
-  // the draft to a sent message in place, preserving thread continuity.
-  if (opts.sendDirect !== false && action.gmail_draft_id) {
-    try {
-      const { sendGmailDraft } = await import('@/lib/gmail/drafts')
-      const result = await sendGmailDraft(action.gmail_draft_id)
-      const { error: updateErr } = await supabase
-        .from('items')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          reply_outcome: 'approved',
-          gmail_draft_id: null,  // draft is gone after send
-        })
-        .eq('id', itemId)
-        .eq('user_id', userId)
-      if (updateErr) return { ok: false, error: updateErr.message }
-      void writeTaskEvent(userId, itemId, 'completed')
-      revalidatePath('/today')
-      return { ok: true, sent: true, messageId: result.messageId }
-    } catch (err) {
-      // Draft may have been deleted/sent from Gmail already — fall through
-      // to the messages.send path.
-      console.error('[executeProposedAction] drafts.send failed, falling back:', err)
-    }
-  }
-
-  // Try to send directly via Gmail API. Requires the connected Gmail
-  // integration to include the gmail.send scope (otherwise we get 403
-  // and fall back to the compose URL).
+  // ── "Send now" path: always go through the Gmail Drafts API ────────────
+  // 1. If there's already a materialized draft → send it directly.
+  // 2. If there's no draft yet → create one first, then send.
+  // Either way we never fall back to opening a compose URL here.
   if (opts.sendDirect !== false) {
-    const { sendGmailReply } = await import('@/lib/gmail/send')
-    const sendResult = await sendGmailReply(action)
-    if (sendResult.ok) {
-      // Sent! Mark the item completed.
+    const { createGmailDraft, sendGmailDraft } = await import('@/lib/gmail/drafts')
+
+    let draftId = action.gmail_draft_id
+
+    // Create a draft on-the-fly if one doesn't exist yet, so it always
+    // appears in the user's Gmail Drafts folder before being sent.
+    if (!draftId) {
+      try {
+        const fromEmail = 'subash@sigiq.ai'
+        const { draftId: newDraftId } = await createGmailDraft({
+          fromEmail,
+          threadId: action.thread_id ?? '',
+          inReplyTo: action.in_reply_to_message_id ?? '',
+          references: action.references ?? [],
+          to: action.to,
+          cc: action.cc ?? [],
+          subject: action.subject,
+          body: action.body,
+        })
+        draftId = newDraftId
+        // Persist the new draft_id so dismiss/edit paths can use it
+        await supabase
+          .from('items')
+          .update({ proposed_action: { ...action, gmail_draft_id: draftId } })
+          .eq('id', itemId)
+          .eq('user_id', userId)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        return { ok: false, error: `Could not create Gmail draft: ${msg}` }
+      }
+    }
+
+    try {
+      const result = await sendGmailDraft(draftId)
       const { error: updateErr } = await supabase
         .from('items')
         .update({
@@ -432,43 +437,70 @@ export async function executeProposedAction(
         .eq('id', itemId)
         .eq('user_id', userId)
       if (updateErr) return { ok: false, error: updateErr.message }
+      void writeTaskEvent(userId, itemId, 'completed')
       revalidatePath('/today')
-      return { ok: true, sent: true, messageId: sendResult.messageId }
+      return { ok: true, sent: true, messageId: result.messageId }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      // 403 = missing gmail.modify scope. Fall back to opening the draft
+      // in Gmail's native editor rather than showing a hard error.
+      const isScopeMissing = msg.includes('403') || msg.toLowerCase().includes('insufficient') || msg.toLowerCase().includes('scope')
+      if (isScopeMissing && draftId) {
+        const openUrl = `https://mail.google.com/mail/u/0/#drafts/${draftId}`
+        revalidatePath('/today')
+        return { ok: true, sent: false, openUrl }
+      }
+      return { ok: false, error: `Gmail send failed: ${msg}` }
     }
-    // If we can't fall back (e.g. no Gmail connection at all), surface the
-    // error so the user knows what to fix.
-    if (!sendResult.canFallback) {
-      return { ok: false, error: sendResult.error }
-    }
-    // Else: fall through to the compose URL flow.
   }
 
-  // Fallback: build a Gmail compose URL pre-filled with the draft. The
-  // user reviews in Gmail and clicks Send themselves.
-  const params = new URLSearchParams({
-    view: 'cm',
-    fs: '1',
-    to: action.to.join(','),
-    su: action.subject,
-    body: action.body,
-  })
-  if (action.cc?.length) params.set('cc', action.cc.join(','))
-  const openUrl = `https://mail.google.com/mail/?${params.toString()}`
+  // ── "Open in Gmail" path: create a real draft (preserves threading),
+  // then open the Gmail draft editor. Item stays open until Gmail poll
+  // detects the sent message and auto-completes it.
+  {
+    const { createGmailDraft } = await import('@/lib/gmail/drafts')
 
-  // Mark the item completed — the user is committing by approving.
-  const { error: updateErr } = await supabase
-    .from('items')
-    .update({
-      status: 'completed',
-      completed_at: new Date().toISOString(),
-      reply_outcome: 'approved',
-    })
-    .eq('id', itemId)
-    .eq('user_id', userId)
-  if (updateErr) return { ok: false, error: updateErr.message }
+    let draftId = action.gmail_draft_id
 
-  revalidatePath('/today')
-  return { ok: true, sent: false, openUrl }
+    if (!draftId) {
+      try {
+        const fromEmail = 'subash@sigiq.ai'
+        const { draftId: newDraftId } = await createGmailDraft({
+          fromEmail,
+          threadId: action.thread_id ?? '',
+          inReplyTo: action.in_reply_to_message_id ?? '',
+          references: action.references ?? [],
+          to: action.to,
+          cc: action.cc ?? [],
+          subject: action.subject,
+          body: action.body,
+        })
+        draftId = newDraftId
+        await supabase
+          .from('items')
+          .update({ proposed_action: { ...action, gmail_draft_id: draftId } })
+          .eq('id', itemId)
+          .eq('user_id', userId)
+      } catch (err) {
+        // Draft creation failed — fall back to compose URL so the user isn't stuck
+        const params = new URLSearchParams({
+          view: 'cm', fs: '1',
+          to: action.to.join(','),
+          su: action.subject,
+          body: action.body,
+        })
+        if (action.cc?.length) params.set('cc', action.cc.join(','))
+        revalidatePath('/today')
+        return { ok: true, sent: false, openUrl: `https://mail.google.com/mail/?${params.toString()}` }
+      }
+    }
+
+    // Open the draft in Gmail's edit-draft view. The MIME headers already
+    // contain In-Reply-To / References so threading is preserved.
+    const openUrl = `https://mail.google.com/mail/u/0/#drafts/${draftId}`
+    revalidatePath('/today')
+    return { ok: true, sent: false, openUrl }
+  }
 }
 
 /**
@@ -611,9 +643,17 @@ export async function openUnreadThread(args: {
     const transcript = recent
       .map((m, i) => {
         const from = hdr(m, 'From') || 'unknown'
+        const to = hdr(m, 'To') || ''
+        const cc = hdr(m, 'Cc') || ''
         const date = hdr(m, 'Date') || ''
         const body = extractText(m.payload).slice(0, MAX_CHARS)
-        return `--- Message ${i + 1} ---\nFrom: ${from}\nDate: ${date}\n${body || m.snippet || ''}`
+        const headerLines = [
+          `From: ${from}`,
+          to ? `To: ${to}` : null,
+          cc ? `Cc: ${cc}` : null,
+          `Date: ${date}`,
+        ].filter(Boolean).join('\n')
+        return `--- Message ${i + 1} ---\n${headerLines}\n${body || m.snippet || ''}`
       })
       .join('\n\n')
 
@@ -621,19 +661,41 @@ export async function openUnreadThread(args: {
     const latestBody = extractText(latestMessage?.payload).slice(0, 2000)
     const sourceExcerpt = `Subject: ${args.subject}\nFrom: ${args.fromEmail}\n\n${latestBody}`
 
-    // Find the reply-to address: the other party, not Subash.
-    // Walk messages newest-first to find the first From that isn't userEmail.
+    // Find the reply-to address.
+    // Rule: if Subash is in To/From of the latest message, reply to the sender.
+    //       If Subash is only in Cc (bystander), reply to the actual To recipient(s)
+    //       since the email wasn't addressed to Subash in the first place.
     function parseEmail(raw: string): string {
       const m = raw.match(/<([^>]+)>/)
       return m ? m[1].trim().toLowerCase() : raw.trim().toLowerCase()
     }
+    function parseEmails(raw: string): string[] {
+      return raw.split(',').map(s => parseEmail(s.trim())).filter(Boolean)
+    }
     const userEmailLower = userEmail.toLowerCase()
+    const latest = recent[recent.length - 1]
+    const latestFrom = parseEmail(hdr(latest, 'From'))
+    const latestTo = parseEmails(hdr(latest, 'To'))
+    const latestCc = parseEmails(hdr(latest, 'Cc'))
+    const userIsTo = latestTo.includes(userEmailLower)
+    const userIsCcOnly = !userIsTo && latestCc.includes(userEmailLower)
+
     let replyToEmail = args.fromEmail
-    for (const m of [...recent].reverse()) {
-      const from = hdr(m, 'From')
-      if (from && parseEmail(from) !== userEmailLower) {
-        replyToEmail = parseEmail(from)
-        break
+    if (userIsCcOnly) {
+      // Subash is a bystander — the email was sent to someone else.
+      // Reply back to the original sender (From) which is the person Subash
+      // as a manager would respond to, not the direct report they were
+      // writing to.
+      replyToEmail = latestFrom !== userEmailLower ? latestFrom : (latestTo.find(e => e !== userEmailLower) ?? latestFrom)
+    } else {
+      // Normal case: Subash is in To or From. Reply to whoever last sent,
+      // excluding Subash himself.
+      for (const m of [...recent].reverse()) {
+        const from = parseEmail(hdr(m, 'From'))
+        if (from && from !== userEmailLower) {
+          replyToEmail = from
+          break
+        }
       }
     }
 
@@ -649,6 +711,7 @@ export async function openUnreadThread(args: {
           threadId: args.threadId,
           messageId: args.latestMessageId,
           userName: 'Subash',
+          userRole: userIsCcOnly ? 'cc_only' : 'to',
         })
       } catch (err) {
         console.error('[openUnreadThread] draftReply failed:', err)
@@ -1044,11 +1107,14 @@ export async function generateItemDetails(itemId: string): Promise<
 
     const { data: item, error: itemErr } = await supabase
       .from('items')
-      .select('id, title, parent_context, source, tag, source_excerpt')
+      .select('id, title, parent_context, source, tag, source_excerpt, parent_id')
       .eq('id', itemId)
       .eq('user_id', userId)
       .single()
     if (itemErr || !item) return { ok: false, error: 'Item not found' }
+    // Never generate details for subtask rows — they don't need descriptions
+    // and running the generator on them caused cascading subtask creation.
+    if ((item as any).parent_id) return { ok: false, error: 'is_subtask' }
 
     const { generateTaskDetails } = await import('@/lib/ai/task-details')
     const details = await generateTaskDetails({

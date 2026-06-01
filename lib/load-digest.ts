@@ -27,6 +27,7 @@ export async function loadDigest(): Promise<MockDigestSummary> {
     .select('*')
     .eq('user_id', USER_ID)
     .in('status', ['open', 'in_progress'])
+    .is('parent_id', null)
     .order('sort_order', { ascending: true, nullsFirst: false })
     .order('priority', { ascending: true, nullsFirst: false })
     .order('proposed_action', { ascending: false, nullsFirst: false })
