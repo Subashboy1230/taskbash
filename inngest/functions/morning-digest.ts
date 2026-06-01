@@ -13,8 +13,10 @@ export const morningDigest = inngest.createFunction(
     { cron: 'TZ=America/Los_Angeles 0 7 * * *' }, // 7:00 PT daily
     { event: EVENTS.digestRequested },             // also manual
   ],
-  async ({ step, logger }) => {
-    const userId = process.env.APP_USER_ID
+  async ({ event, step, logger }) => {
+    // Manual trigger passes userId in event.data; cron falls back to APP_USER_ID
+    const userId = (event.data as { userId?: string } | undefined)?.userId?.trim()
+      || process.env.APP_USER_ID?.trim()
     if (!userId) throw new Error('APP_USER_ID is not set')
 
     // Load the user's email from the DB — never hardcoded.
