@@ -465,20 +465,34 @@ function classifyEvents(events: DayEvent[]): EventVariant[] {
 
 function EventList({ events }: { events: DayEvent[] }) {
   const [variants, setVariants] = useState<EventVariant[]>(() =>
-    events.map(() => 'future' as EventVariant)
+    classifyEvents(events)
   )
 
   useEffect(() => {
     setVariants(classifyEvents(events))
-    // Re-classify every minute so current/next updates without a page reload.
     const id = setInterval(() => setVariants(classifyEvents(events)), 60_000)
     return () => clearInterval(id)
   }, [events])
 
+  // Sort: current → next → future → past (past pushed to bottom)
+  const ORDER: Record<EventVariant, number> = { current: 0, next: 1, future: 2, past: 3 }
+  const sorted = events
+    .map((e, i) => ({ e, v: variants[i] ?? 'future' }))
+    .sort((a, b) => ORDER[a.v] - ORDER[b.v])
+
+  const pastCount = sorted.filter(x => x.v === 'past').length
+
   return (
     <ul className="m-0 list-none space-y-2 p-0">
-      {events.map((e, i) => (
-        <EventCard key={e.id} event={e} variant={variants[i]} />
+      {sorted.map(({ e, v }, i) => (
+        <>
+          {v === 'past' && i === sorted.length - pastCount && (
+            <li key={`divider-${e.id}`}>
+              <p className="m-0 pt-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Earlier today</p>
+            </li>
+          )}
+          <EventCard key={e.id} event={e} variant={v} />
+        </>
       ))}
     </ul>
   )
