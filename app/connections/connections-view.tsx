@@ -377,40 +377,37 @@ function ApiKeyForm({
  * resulting connection ID to our DB.
  */
 async function connectViaNango(provider: ConnectionProvider) {
-  // Dynamic import so the @nangohq/frontend SDK doesn't ship in the SSR bundle.
-  const NangoFrontend = (await import('@nangohq/frontend')).default
+  const { ConnectUI } = await import('@nangohq/frontend')
+  const { token } = await createNangoConnectSession(provider)
 
-  const { token, providerKey } = await createNangoConnectSession(provider)
-  const nango = new NangoFrontend({ connectSessionToken: token })
-
-  let connectionId: string | undefined
-
-  try {
-    const result = (await nango.auth(providerKey, {
-      params: { prompt: 'select_account consent' },
-    })) as { connectionId?: string; isPending?: boolean }
-    connectionId = result?.connectionId
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    // windowClosed means user closed the popup — fall through to server-side check
-    // because the OAuth may have completed before they closed it.
-    if (!msg.includes('windowClosed') && !msg.includes('closed')) {
-      throw err
-    }
-  }
-
-  // If the WebSocket didn't deliver a connectionId (race / WS drop / popup close),
-  // ask the server to look up whether Nango already has a connection for this user.
-  if (!connectionId) {
-    const found = await findNangoConnection(provider)
-    if (!found) {
-      throw new Error('OAuth window closed before completing - please try again.')
-    }
-    connectionId = found
-  }
-
-  const saved = await recordNangoConnection(provider, connectionId)
-  if (!saved.ok) {
-    throw new Error(`Connected but failed to save: ${saved.error}`)
-  }
+  await new Promise<void>((resolve, reject) => {
+    const ui = new ConnectUI({
+      sessionToken: token,
+      onEvent: async (event: { type: string; payload?: { connectionId?: string; providerConfigKey?: string; error?: string } }) => {
+        if (event.type === 'close') {
+          // User closed without completing — check if connection was made anyway
+          const found = await findNangoConnection(provider)
+          if (found) {
+            const saved = await recordNangoConnection(provider, found)
+            if (!saved.ok) { reject(new Error(`Connected but failed to save: ${saved.error}`)); return }
+            resolve()
+          } else {
+            reject(new Error('Window closed before completing - please try again.'))
+          }
+        } else if (event.type === 'connect') {
+          const connectionId = event.payload?.connectionId
+          if (!connectionId) {
+            reject(new Error('No connection ID returned from OAuth'))
+            return
+          }
+          const saved = await recordNangoConnection(provider, connectionId)
+          if (!saved.ok) { reject(new Error(`Connected but failed to save: ${saved.error}`)); return }
+          resolve()
+        } else if (event.type === 'error') {
+          reject(new Error(event.payload?.error ?? 'OAuth failed'))
+        }
+      },
+    })
+    ui.open()
+  })
 }
