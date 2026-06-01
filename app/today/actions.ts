@@ -1121,16 +1121,37 @@ export async function addManualTask(args: {
  */
 export async function extractTasksFromText(args: {
   text: string
+  /** Base64-encoded image (JPEG/PNG/WEBP/GIF). If provided, Claude reads the image alongside the text. */
+  imageBase64?: string
+  imageMediaType?: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
 }): Promise<{ ok: true; tasks: Array<{ title: string; subtasks: string[]; due_at: string | null; priority: string | null }> } | { ok: false; error: string }> {
   try {
     const text = args.text.trim()
-    if (!text) return { ok: false, error: 'No text provided.' }
+    if (!text && !args.imageBase64) return { ok: false, error: 'No text or image provided.' }
 
     const { anthropic, MODELS } = await import('@/lib/anthropic')
+
+    type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
+    const userContent: Array<{ type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: ImageMediaType; data: string } }> = []
+    if (args.imageBase64) {
+      userContent.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: args.imageMediaType ?? 'image/jpeg',
+          data: args.imageBase64,
+        },
+      })
+    }
+    userContent.push({
+      type: 'text',
+      text: text ? `Extract tasks from:\n\n${text}` : 'Extract tasks from this image.',
+    })
+
     const response = await anthropic.messages.create({
       model: MODELS.classifier,
       max_tokens: 1024,
-      system: `You extract action items from freeform text — brain dumps, voice transcripts, meeting notes, or any unstructured input.
+      system: `You extract action items from freeform text, screenshots, or images — brain dumps, voice transcripts, meeting notes, task boards, whiteboards, or any unstructured input.
 
 Return STRICT JSON only. No prose, no markdown fences.
 
@@ -1153,7 +1174,7 @@ Rules:
 - Set due_at only when the text explicitly mentions a date or deadline. Use today's date (${new Date().toISOString().slice(0, 10)}) as reference for relative dates.
 - NEVER use em-dashes in any string. Use hyphens or rewrite.
 - If no actionable tasks, return { "tasks": [] }.`,
-      messages: [{ role: 'user', content: `Extract tasks from:\n\n${text}` }],
+      messages: [{ role: 'user', content: userContent }],
     })
 
     const raw = response.content

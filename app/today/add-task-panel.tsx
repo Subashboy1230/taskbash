@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { ImageIcon, Loader2, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/app/_components/ui/button'
 import { Input } from '@/app/_components/ui/input'
@@ -295,6 +295,33 @@ function ManualForm({
   )
 }
 
+// ─── Image resize helper (client-side, max 1024px) ───────────────────────
+
+async function resizeImageToBase64(
+  file: File,
+  maxPx = 1024
+): Promise<{ base64: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height))
+      const w = Math.round(img.width * scale)
+      const h = Math.round(img.height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+      // Always output JPEG for screenshots (smaller than PNG)
+      const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1]
+      resolve({ base64, mediaType: 'image/jpeg' })
+    }
+    img.onerror = reject
+    img.src = url
+  })
+}
+
 // ─── AI extract form ──────────────────────────────────────────────────────
 
 function AIForm({
@@ -305,21 +332,55 @@ function AIForm({
   onClose: () => void
 }) {
   const [text, setText] = useState('')
+  const [image, setImage] = useState<{ base64: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; previewUrl: string } | null>(null)
   const [extracting, setExtracting] = useState(false)
   const [extracted, setExtracted] = useState<ExtractedTask[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [committing, setCommitting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
+  async function handleImageFile(file: File) {
+    setError(null)
+    try {
+      const { base64, mediaType } = await resizeImageToBase64(file)
+      const previewUrl = URL.createObjectURL(file)
+      setImage({ base64, mediaType, previewUrl })
+    } catch {
+      setError('Could not read image. Try a JPEG or PNG.')
+    }
+  }
+
+  function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) handleImageFile(file)
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    const file = e.dataTransfer.files?.[0]
+    if (file && file.type.startsWith('image/')) handleImageFile(file)
+  }
+
+  function removeImage() {
+    if (image) URL.revokeObjectURL(image.previewUrl)
+    setImage(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   async function handleExtract() {
-    if (!text.trim()) return
+    if (!text.trim() && !image) return
     setExtracting(true)
     setError(null)
     setExtracted(null)
-    const result = await extractTasksFromText({ text })
+    const result = await extractTasksFromText({
+      text,
+      imageBase64: image?.base64,
+      imageMediaType: image?.mediaType,
+    })
     setExtracting(false)
     if (!result.ok) { setError(result.error); return }
-    if (result.tasks.length === 0) { setError('No actionable tasks found. Try adding more detail.'); return }
+    if (result.tasks.length === 0) { setError('No actionable tasks found. Try adding more detail or a clearer image.'); return }
     setExtracted(result.tasks)
   }
 
@@ -395,9 +456,7 @@ function AIForm({
             {committing ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
             Add {extracted.length} task{extracted.length !== 1 ? 's' : ''}
           </Button>
-          <Button type="button" variant="ghost" onClick={() => setExtracted(null)}>
-            Back
-          </Button>
+          <Button type="button" variant="ghost" onClick={() => setExtracted(null)}>Back</Button>
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
         </div>
       </div>
@@ -407,18 +466,56 @@ function AIForm({
   return (
     <div className="space-y-4">
       <p className="m-0 text-[13px] text-ink-muted">
-        Paste meeting notes, a voice transcript, or just type a brain dump. AI will pull out the tasks.
+        Paste notes, type a brain dump, or attach a screenshot. AI extracts the tasks.
       </p>
 
+      {/* Image drop zone / preview */}
+      {image ? (
+        <div className="relative rounded-lg border border-line overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={image.previewUrl} alt="Attached screenshot" className="w-full max-h-48 object-contain bg-canvas" />
+          <button
+            type="button"
+            onClick={removeImage}
+            className="absolute right-2 top-2 rounded-full bg-surface p-1 text-ink-faint hover:text-danger-fg shadow"
+            title="Remove image"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : (
+        <div
+          onDrop={handleDrop}
+          onDragOver={e => e.preventDefault()}
+          onClick={() => fileInputRef.current?.click()}
+          className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-line bg-canvas px-4 py-5 text-center hover:border-ink-faint transition-colors"
+        >
+          <ImageIcon size={20} className="text-ink-faint" />
+          <p className="m-0 text-[12px] text-ink-faint">
+            Drop a screenshot here, or <span className="underline">click to browse</span>
+          </p>
+          <p className="m-0 text-[11px] text-ink-faint">JPEG, PNG, WEBP</p>
+        </div>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        onChange={handleFilePick}
+      />
+
+      {/* Text input */}
       <div className="space-y-1.5">
-        <Label htmlFor="ai-input" className="text-ink-muted">Your notes</Label>
+        <Label htmlFor="ai-input" className="text-ink-muted">
+          Notes <span className="text-ink-faint font-normal">(optional if image attached)</span>
+        </Label>
         <textarea
           id="ai-input"
-          autoFocus
           value={text}
           onChange={e => setText(e.target.value)}
-          placeholder="e.g. Need to send the deck to Sarah by Friday, follow up with Jason about the contract, schedule onboarding for new hire next week..."
-          rows={8}
+          placeholder="e.g. Need to send the deck to Sarah by Friday, follow up with Jason about the contract..."
+          rows={5}
           disabled={extracting}
           className="w-full resize-none rounded-md border border-line bg-canvas px-3 py-2.5 text-[13px] text-ink outline-none focus:ring-1 focus:ring-line placeholder:text-ink-faint disabled:opacity-60"
         />
@@ -427,7 +524,7 @@ function AIForm({
       {error && <p className="m-0 text-[12px] text-danger-fg">{error}</p>}
 
       <div className="flex items-center gap-2">
-        <Button onClick={handleExtract} disabled={extracting || !text.trim()} className="gap-1.5">
+        <Button onClick={handleExtract} disabled={extracting || (!text.trim() && !image)} className="gap-1.5">
           {extracting ? (
             <><Loader2 size={14} className="animate-spin" /> Extracting...</>
           ) : (
