@@ -379,7 +379,7 @@ async function connectViaNango(provider: ConnectionProvider) {
   // Dynamic import so the @nangohq/frontend SDK doesn't ship in the SSR bundle.
   const NangoFrontend = (await import('@nangohq/frontend')).default
 
-  const { token, providerKey, userEmail } = await createNangoConnectSession(provider)
+  const { token, providerKey } = await createNangoConnectSession(provider)
   const nango = new NangoFrontend({ connectSessionToken: token })
 
   let result: { connectionId?: string; isPending?: boolean }
@@ -387,7 +387,6 @@ async function connectViaNango(provider: ConnectionProvider) {
     result = (await nango.auth(providerKey, {
       params: {
         prompt: 'select_account consent',
-        login_hint: userEmail,
       },
     })) as { connectionId?: string; isPending?: boolean }
   } catch (err) {
