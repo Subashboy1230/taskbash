@@ -60,6 +60,8 @@ export interface MockItem {
   sort_order?: number | null
   // Populated for gmail items so the shell can filter the Unread tab
   gmail_thread_id?: string | null
+  // Raw source reference — used to carry meeting_url for calendar prep items
+  source_ref?: Record<string, unknown> | null
 }
 
 export interface MockDigestSummary {

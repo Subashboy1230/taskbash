@@ -2765,6 +2765,7 @@ function PrepCard({
   const sourcesUsed: string[] = (brief as any)?.sources_used ?? []
   const talkingPoints: string[] = (brief as any)?.talking_points ?? []
   const hasBrief = brief && (brief.why || brief.know?.length)
+  const meetingUrl = (item.source_ref as { meeting_url?: string } | null)?.meeting_url ?? null
 
   return (
     <div
@@ -2786,6 +2787,18 @@ function PrepCard({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {meetingUrl && (
+            <a
+              href={meetingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[12px] font-semibold text-canvas hover:opacity-90"
+            >
+              Join
+              <ExternalLink size={11} />
+            </a>
+          )}
           {sourcesUsed.length > 0 && (
             <span className="text-[10px] text-ink-faint">
               {sourcesUsed.join(' · ')}

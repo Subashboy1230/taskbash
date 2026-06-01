@@ -118,6 +118,7 @@ export async function extractCalendarPrepItems(
       source_ref: {
         google_calendar_event_id: event.id,
         google_calendar_event_start: startIso,
+        ...(event.hangoutLink ? { meeting_url: event.hangoutLink } : {}),
       },
       parent_context: buildParentContext(event),
       title: `Prep: ${event.summary || 'Untitled meeting'}`,
