@@ -517,33 +517,17 @@ export async function executeProposedAction(
  *   - No step.run() durability — a partial failure just retries on next click
  */
 export async function requestRefresh(): Promise<
-  | {
-      ok: true
-      summary: {
-        new: number
-        carryover: number
-        completed: number
-        suppressed: number
-        sources: string[]
-      }
-    }
-  | { ok: false; error: string }
+  { ok: true } | { ok: false; error: string }
 > {
   try {
     const userId = await resolveUserId()
-    const userEmail = await resolveUserEmail(userId)
-    const summary = await runDigestForUser({ userId, userEmail })
-    revalidatePath('/today')
-    return {
-      ok: true,
-      summary: {
-        new: summary.new,
-        carryover: summary.carryover,
-        completed: summary.completed,
-        suppressed: summary.suppressed,
-        sources: summary.sources_run,
-      },
-    }
+    // Fire the Inngest digest event — runs out-of-band so we return instantly
+    // instead of timing out after Vercel's 10s serverless limit.
+    await inngest.send({
+      name: EVENTS.digestRequested,
+      data: { userId },
+    })
+    return { ok: true }
   } catch (err) {
     console.error('requestRefresh failed:', err)
     return {

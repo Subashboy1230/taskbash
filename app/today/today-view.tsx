@@ -268,7 +268,15 @@ export function TodayView({
         setRefreshError(result.error || 'Re-run failed')
         return
       }
-      // Server already revalidated /today; trigger a client re-fetch.
+      // Digest runs async via Inngest (~30-60s). Poll every 5s for up to 90s.
+      const start = Date.now()
+      while (Date.now() - start < 90_000) {
+        await new Promise(r => setTimeout(r, 5000))
+        router.refresh()
+        // Keep spinning until useTransition settles — the refresh itself
+        // will re-render with new data if the digest has completed.
+        if (Date.now() - start > 30_000) break
+      }
       router.refresh()
     })
   }
