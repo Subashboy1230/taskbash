@@ -597,7 +597,13 @@ export function TodayView({
               )}
             </>
           ) : tab === 'unread' ? (
-            <UnreadTab threads={unreadThreads} onSelectItem={setSelectedItem} functionsById={functionsById} now={nowDate} />
+            <UnreadTab
+              threads={unreadThreads}
+              onSelectItem={setSelectedItem}
+              functionsById={functionsById}
+              now={nowDate}
+              openItems={digest.open_items}
+            />
           ) : (
             <ClearedTab
               items={digest.completed_today}
@@ -3032,19 +3038,72 @@ function PrepCard({
 
 // ─── Unread Gmail tab ────────────────────────────────────────────────────
 
+function predictPriority(
+  thread: UnreadThread,
+  openItems: MockItem[]
+): 'P0' | 'P1' | 'P2' | 'P3' | null {
+  const prioritized = openItems.filter(i => i.priority != null)
+  if (prioritized.length === 0) return null
+
+  // 1. Match by sender email against gmail items' source context.
+  const senderEmail = thread.fromEmail.toLowerCase()
+  for (const item of prioritized) {
+    const ref = item.source_ref as Record<string, unknown> | null
+    const threadFrom = ref?.from_email as string | undefined
+    if (threadFrom && threadFrom.toLowerCase() === senderEmail) {
+      return item.priority as 'P0' | 'P1' | 'P2' | 'P3'
+    }
+  }
+
+  // 2. Keyword overlap between email subject and task titles.
+  const subjectWords = thread.subject
+    .toLowerCase()
+    .split(/\W+/)
+    .filter(w => w.length > 3)
+
+  let bestScore = 0
+  let bestPriority: 'P0' | 'P1' | 'P2' | 'P3' | null = null
+  for (const item of prioritized) {
+    const titleWords = item.title.toLowerCase().split(/\W+/)
+    const overlap = subjectWords.filter(w => titleWords.includes(w)).length
+    if (overlap > bestScore) {
+      bestScore = overlap
+      bestPriority = item.priority as 'P0' | 'P1' | 'P2' | 'P3'
+    }
+  }
+  if (bestScore >= 2) return bestPriority
+
+  // 3. Urgency signals in subject line.
+  const subjectLower = thread.subject.toLowerCase()
+  if (/urgent|asap|critical|emergency|immediately/.test(subjectLower)) return 'P0'
+  if (/important|priority|deadline|time.sensitive/.test(subjectLower)) return 'P1'
+
+  return null
+}
+
 function UnreadTab({
   threads,
   onSelectItem,
   functionsById,
   now,
+  openItems = [],
 }: {
   threads: UnreadThread[]
   onSelectItem: (item: MockItem) => void
   functionsById?: Map<string, UserFunction>
   now: Date
+  openItems?: MockItem[]
 }) {
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [errorId, setErrorId] = useState<string | null>(null)
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+
+  function handleDismiss(e: React.MouseEvent, threadId: string) {
+    e.stopPropagation()
+    setDismissedIds(prev => new Set(prev).add(threadId))
+  }
+
+  const visibleThreads = threads.filter(t => !dismissedIds.has(t.id))
 
   async function handleOpen(thread: UnreadThread) {
     setLoadingId(thread.id)
@@ -3072,7 +3131,7 @@ function UnreadTab({
     }
   }
 
-  if (threads.length === 0) {
+  if (visibleThreads.length === 0) {
     return (
       <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
         <p className="m-0 text-[15px] font-medium text-ink">Inbox zero</p>
@@ -3085,13 +3144,15 @@ function UnreadTab({
   return (
     <div className="mt-4">
       <ul className="list-none p-0 m-0 divide-y divide-line/70">
-        {threads.map(thread => (
+        {visibleThreads.map(thread => (
           <UnreadThreadRow
             key={thread.id}
             thread={thread}
             isLoading={loadingId === thread.id}
             hasError={errorId === thread.id}
             onClick={() => handleOpen(thread)}
+            onDismiss={(e) => handleDismiss(e, thread.id)}
+            predictedPriority={predictPriority(thread, openItems)}
             functionsById={functionsById}
             now={now}
           />
@@ -3101,11 +3162,20 @@ function UnreadTab({
   )
 }
 
+const PRIORITY_STYLES: Record<string, string> = {
+  P0: 'bg-red-500/15 text-red-400 ring-1 ring-red-500/30',
+  P1: 'bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/30',
+  P2: 'bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/30',
+  P3: 'bg-zinc-500/15 text-zinc-400 ring-1 ring-zinc-500/30',
+}
+
 function UnreadThreadRow({
   thread,
   isLoading,
   hasError,
   onClick,
+  onDismiss,
+  predictedPriority,
   functionsById: _functionsById,
   now: _now,
 }: {
@@ -3113,6 +3183,8 @@ function UnreadThreadRow({
   isLoading: boolean
   hasError: boolean
   onClick: () => void
+  onDismiss?: (e: React.MouseEvent) => void
+  predictedPriority?: 'P0' | 'P1' | 'P2' | 'P3' | null
   functionsById?: Map<string, UserFunction>
   now: Date
 }) {
@@ -3135,6 +3207,11 @@ function UnreadThreadRow({
           <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-tag-reply-bg text-tag-reply-fg">
             Reply
           </span>
+          {predictedPriority && (
+            <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold', PRIORITY_STYLES[predictedPriority])}>
+              {predictedPriority}
+            </span>
+          )}
           <span className="text-[11px] text-ink-faint">{thread.date}</span>
         </div>
         <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
@@ -3148,7 +3225,19 @@ function UnreadThreadRow({
         {isLoading ? (
           <Loader2 size={14} className="animate-spin text-ink-faint" />
         ) : (
-          <span className="text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 transition-opacity">Open →</span>
+          <>
+            <span className="text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 transition-opacity">Open →</span>
+            {onDismiss && (
+              <button
+                type="button"
+                onClick={onDismiss}
+                aria-label="Dismiss"
+                className="ml-1 rounded p-1 text-ink-faint opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-muted hover:text-ink"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </>
         )}
       </div>
     </li>
