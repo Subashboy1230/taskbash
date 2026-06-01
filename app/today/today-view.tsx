@@ -1031,7 +1031,7 @@ function TaskRow({
                     </button>
                     <span
                       className={cn(
-                        'truncate text-ink transition-colors',
+                        'truncate text-[13px] text-ink transition-colors',
                         isDone && 'line-through text-ink-faint'
                       )}
                     >
@@ -2217,7 +2217,7 @@ function SubtasksSection({
             </button>
             <span
               className={cn(
-                'flex-1 text-[13px] leading-relaxed text-ink transition-colors',
+                'flex-1 text-[13px] text-ink transition-colors',
                 sub.completed && 'line-through text-ink-faint'
               )}
             >
