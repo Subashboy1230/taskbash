@@ -39,8 +39,6 @@ export async function getActiveConnection(
     .eq('user_id', userId)
     .eq('provider', provider)
     .eq('status', 'active')
-    .order('updated_at', { ascending: false })
-    .limit(1)
     .maybeSingle()
   if (error) {
     throw new Error(`getActiveConnection(${provider}) failed: ${error.message}`)
