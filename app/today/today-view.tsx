@@ -324,7 +324,34 @@ export function TodayView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [digest.open_items])
   const visibleOpen = orderedOpen
-  const visiblePrep = orderedPrep
+
+  // Split prep into upcoming vs past-their-end-time.
+  // A meeting is "past" when its due_at (= meeting start) is more than
+  // 60 minutes ago (generous buffer for long meetings). Past items are
+  // auto-completed once and moved to the bottom of the prep list.
+  const nowMs2 = nowTimestamp
+  const [autoCompletedPrepIds, setAutoCompletedPrepIds] = useState<Set<string>>(new Set())
+  const upcomingPrep = orderedPrep.filter(i => {
+    if (!i.due_at) return true
+    return new Date(i.due_at).getTime() > nowMs2 - 60 * 60 * 1000
+  })
+  const pastPrep = orderedPrep.filter(i => {
+    if (!i.due_at) return false
+    return new Date(i.due_at).getTime() <= nowMs2 - 60 * 60 * 1000
+  })
+
+  // Auto-complete past meetings once (fire-and-forget, optimistic via hiddenIds)
+  useEffect(() => {
+    for (const item of pastPrep) {
+      if (autoCompletedPrepIds.has(item.id)) continue
+      setAutoCompletedPrepIds(prev => new Set(prev).add(item.id))
+      completeItem(item.id).then(() => router.refresh()).catch(() => {})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastPrep.map(i => i.id).join(',')])
+
+  // Upcoming first, then past (faded, completed)
+  const visiblePrep = [...upcomingPrep, ...pastPrep]
 
   // Which sources actually appear in this digest — drives the chip row so
   // we don't show "Linear" as a filter option when there's no Linear data.
@@ -474,6 +501,7 @@ export function TodayView({
               onDismiss={handleDismiss}
               onSnooze={handleSnooze}
               functionsById={functionsById}
+              nowMs={nowTimestamp}
             />
           ) : tab === 'open' ? (
             <>
@@ -2736,6 +2764,7 @@ function PrepTab({
   onDismiss,
   onSnooze,
   functionsById,
+  nowMs,
 }: {
   items: MockItem[]
   selectedId?: string
@@ -2744,7 +2773,12 @@ function PrepTab({
   onDismiss: (id: string) => void
   onSnooze: (id: string, hours: number) => void
   functionsById?: Map<string, UserFunction>
+  nowMs?: number
 }) {
+  const _nowMs = nowMs ?? Date.now()
+  const upcoming = items.filter(i => !i.due_at || new Date(i.due_at).getTime() > _nowMs - 60 * 60 * 1000)
+  const past = items.filter(i => i.due_at && new Date(i.due_at).getTime() <= _nowMs - 60 * 60 * 1000)
+
   if (items.length === 0) {
     return (
       <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
@@ -2757,7 +2791,7 @@ function PrepTab({
   }
   return (
     <div className="mt-4 space-y-3">
-      {items.map(item => (
+      {upcoming.map(item => (
         <PrepCard
           key={item.id}
           item={item}
@@ -2765,8 +2799,25 @@ function PrepTab({
           onSelect={() => onSelect(item)}
           onComplete={() => onComplete(item.id)}
           onDismiss={() => onDismiss(item.id)}
+          isPast={false}
         />
       ))}
+      {past.length > 0 && (
+        <>
+          <p className="m-0 pt-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Cleared</p>
+          {past.map(item => (
+            <PrepCard
+              key={item.id}
+              item={item}
+              isSelected={selectedId === item.id}
+              onSelect={() => onSelect(item)}
+              onComplete={() => onComplete(item.id)}
+              onDismiss={() => onDismiss(item.id)}
+              isPast={true}
+            />
+          ))}
+        </>
+      )}
     </div>
   )
 }
@@ -2777,12 +2828,14 @@ function PrepCard({
   onSelect,
   onComplete,
   onDismiss,
+  isPast = false,
 }: {
   item: MockItem
   isSelected: boolean
   onSelect: () => void
   onComplete: () => void
   onDismiss: () => void
+  isPast?: boolean
 }) {
   const [generating, setGenerating] = useState(false)
   const [brief, setBrief] = useState(item.brief)
@@ -2809,12 +2862,15 @@ function PrepCard({
   const sourcesUsed: string[] = (brief as any)?.sources_used ?? []
   const talkingPoints: string[] = (brief as any)?.talking_points ?? []
   const hasBrief = brief && (brief.why || brief.know?.length)
-  const meetingUrl = (item.source_ref as { meeting_url?: string } | null)?.meeting_url ?? null
+  const meetingUrl = (item.source_ref as { meeting_url?: string } | null)?.meeting_url
+    ?? (item.proposed_action as { meeting_url?: string } | null)?.meeting_url
+    ?? null
 
   return (
     <div
       className={cn(
         'rounded-lg border bg-surface transition-colors cursor-pointer',
+        isPast ? 'opacity-50' : '',
         isSelected ? 'border-ink/30' : 'border-line hover:border-line/80'
       )}
       onClick={onSelect}
