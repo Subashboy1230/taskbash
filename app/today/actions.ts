@@ -6,7 +6,7 @@
 import { revalidatePath } from 'next/cache'
 import { createHash } from 'node:crypto'
 import { supabase } from '@/lib/supabase'
-import { resolveUserId } from '@/lib/supabase-server'
+import { resolveUserId, resolveUserEmail } from '@/lib/supabase-server'
 import { runDigestForUser } from '@/lib/digest/run'
 import { inngest, EVENTS } from '@/inngest/client'
 import type { Priority } from '@/lib/types'
@@ -364,6 +364,7 @@ export async function executeProposedAction(
   | { ok: false; error: string }
 > {
   const userId = await resolveUserId()
+  const userEmail = await resolveUserEmail(userId)
   const { data, error } = await supabase
     .from('items')
     .select('id, proposed_action, status')
@@ -400,7 +401,7 @@ export async function executeProposedAction(
     // appears in the user's Gmail Drafts folder before being sent.
     if (!draftId) {
       try {
-        const fromEmail = 'subash@sigiq.ai'
+        const fromEmail = userEmail
         const { draftId: newDraftId } = await createGmailDraft({
           fromEmail,
           threadId: action.thread_id ?? '',
@@ -464,7 +465,7 @@ export async function executeProposedAction(
 
     if (!draftId) {
       try {
-        const fromEmail = 'subash@sigiq.ai'
+        const fromEmail = userEmail
         const { draftId: newDraftId } = await createGmailDraft({
           fromEmail,
           threadId: action.thread_id ?? '',
@@ -530,8 +531,7 @@ export async function requestRefresh(): Promise<
 > {
   try {
     const userId = await resolveUserId()
-    // TODO(week5): load userEmail from the public.users row.
-    const userEmail = 'subash@sigiq.ai'
+    const userEmail = await resolveUserEmail(userId)
     const summary = await runDigestForUser({ userId, userEmail })
     revalidatePath('/today')
     return {
@@ -585,7 +585,7 @@ export async function openUnreadThread(args: {
 }): Promise<{ ok: true; item: import('@/lib/mock-items').MockItem } | { ok: false; error: string }> {
   try {
     const userId = await resolveUserId()
-    const userEmail = 'subash@sigiq.ai'
+    const userEmail = await resolveUserEmail(userId)
 
     // ─── 1. Fetch full thread body ──────────────────────────────────────
     const { nangoProxy } = await import('@/lib/nango')
@@ -710,7 +710,8 @@ export async function openUnreadThread(args: {
           to: replyToEmail,
           threadId: args.threadId,
           messageId: args.latestMessageId,
-          userName: 'Subash',
+          userName: userEmail.split('@')[0],
+          userId,
           userRole: userIsCcOnly ? 'cc_only' : 'to',
         })
       } catch (err) {
@@ -833,7 +834,7 @@ export async function enrichPrepItem(itemId: string): Promise<{
 } | { ok: false; error: string }> {
   try {
     const userId = await resolveUserId()
-    const userEmail = 'subash@sigiq.ai'
+    const userEmail = await resolveUserEmail(userId)
 
     // Load the item to get its calendar event id and metadata
     const { data: item, error: itemErr } = await supabase

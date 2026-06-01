@@ -16,7 +16,7 @@ import { tracedMessage } from '../llm-trace'
 import type { ProposedAction } from '../types'
 import { extractJsonObject } from '../extract/parse'
 
-const USER_ID = process.env.APP_USER_ID!
+// USER_ID resolved per-call — no module-level hardcode
 
 const DEFAULT_VOICE = `You write direct, concise emails. Open with "Hi <First>,"
 and close with "Best regards,". Keep paragraphs short and action-oriented.`
@@ -31,8 +31,8 @@ interface DraftArgs {
   meetingContext: string
   /** Attendees from the meeting — recipient candidates. */
   attendees: Array<{ name: string; email: string }>
-  /** User's own email so we don't draft a reply to themselves. */
   userEmail: string
+  userId?: string
 }
 
 /**
@@ -48,7 +48,7 @@ export async function draftFollowup(args: DraftArgs): Promise<ProposedAction | n
   )
   if (candidates.length === 0) return null // No external attendees, internal task
 
-  const voice = await loadVoice()
+  const voice = await loadVoice(args.userId)
 
   const system = `You decide whether a meeting commitment warrants a pre-drafted
 follow-up email, and if so, draft it in the user's voice.
@@ -115,7 +115,7 @@ Decide and output JSON.`
     {
       prompt_id: 'draft.followup',
       prompt_version: 1,
-      user_id: process.env.APP_USER_ID ?? null,
+      user_id: args.userId ?? process.env.APP_USER_ID ?? null,
     },
     {
       model: MODELS.classifier,
@@ -153,11 +153,13 @@ Decide and output JSON.`
   }
 }
 
-async function loadVoice(): Promise<string> {
+async function loadVoice(userId?: string): Promise<string> {
+  const uid = userId ?? process.env.APP_USER_ID
+  if (!uid) return DEFAULT_VOICE
   const { data } = await supabase
     .from('users')
     .select('communication_style')
-    .eq('id', USER_ID)
+    .eq('id', uid)
     .maybeSingle()
   return (data?.communication_style as string | null) || DEFAULT_VOICE
 }

@@ -93,9 +93,16 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   const carryover = openItems.length - newToday
   const overdue = openItems.filter(i => i.due_at && new Date(i.due_at) < now).length
 
+  // Derive display name from email (e.g. subash@sigiq.ai → Subash)
+  const { data: userRow } = await supabase.from('users').select('email').eq('id', USER_ID).maybeSingle()
+  const userDisplayName = userRow?.email
+    ? userRow.email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
+    : 'You'
+  const userInitials = userDisplayName.split(' ').map((w: string) => w[0] ?? '').join('').slice(0, 2).toUpperCase()
+
   return {
-    user_name: 'Subash',
-    user_initials: 'SR',
+    user_name: userDisplayName,
+    user_initials: userInitials,
     greeting: pickGreeting(openItems.length, completedItems.length, parseInt(new Date().toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: 'America/Los_Angeles' }))),
     date_iso: now.toISOString().split('T')[0],
     active_tasks_label:

@@ -11,29 +11,20 @@ import { supabase } from '../supabase'
 import { tracedMessage } from '../llm-trace'
 import type { ProposedAction } from '../types'
 
-const USER_ID = process.env.APP_USER_ID!
+// USER_ID resolved at call time via loadVoice(userId) — no module-level hardcode
 
 const DEFAULT_VOICE = `You write in a direct, concise, professional style.
 Emails are usually short and action-oriented, with a clear ask or next step.
 Open with "Hi [Name]," and close with "Best regards,". Keep paragraphs short.`
 
 interface DraftArgs {
-  /** Raw text of the email thread (latest message + relevant history). */
   threadText: string
-  /** Subject of the latest message in the thread. */
   subject: string
-  /** Email of the person to reply to. */
   to: string
-  /** Optional thread/message IDs to thread the reply back into Gmail. */
   threadId?: string
   messageId?: string
-  /** User's name — used to sign the draft. */
   userName?: string
-  /**
-   * 'cc_only' means the user was CC'd but not the primary recipient —
-   * they are an adjacent manager or observer weighing in, not the main party.
-   * 'to' (default) means the email was addressed directly to the user.
-   */
+  userId?: string
   userRole?: 'to' | 'cc_only'
 }
 
@@ -42,7 +33,7 @@ interface DraftArgs {
  * persist on the item row.
  */
 export async function draftReply(args: DraftArgs): Promise<ProposedAction> {
-  const voice = await loadVoice()
+  const voice = await loadVoice(args.userId)
 
   const ccOnlyContext = args.userRole === 'cc_only'
     ? `\nIMPORTANT: The user was CC'd on this thread, not the primary recipient. They are an adjacent manager or observer who wants to weigh in. Draft the reply from THEIR perspective as a manager/colleague chiming in - not as if they were the direct report or main party in the conversation. The tone should be that of a senior stakeholder offering guidance or acknowledgment, not the person being managed or instructed.`
@@ -86,7 +77,7 @@ Draft the reply.`
     {
       prompt_id: 'draft.reply',
       prompt_version: 1,
-      user_id: process.env.APP_USER_ID ?? null,
+      user_id: args.userId ?? null,
     },
     {
       model: MODELS.classifier,
@@ -120,11 +111,13 @@ Draft the reply.`
  * Load the user's communication style profile from the DB. Falls back
  * to the default when it's not yet been generated.
  */
-async function loadVoice(): Promise<string> {
+async function loadVoice(userId?: string): Promise<string> {
+  const uid = userId ?? process.env.APP_USER_ID
+  if (!uid) return DEFAULT_VOICE
   const { data, error } = await supabase
     .from('users')
     .select('communication_style')
-    .eq('id', USER_ID)
+    .eq('id', uid)
     .maybeSingle()
   if (error) return DEFAULT_VOICE
   return (data?.communication_style as string | null) || DEFAULT_VOICE
