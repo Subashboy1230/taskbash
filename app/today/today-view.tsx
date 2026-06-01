@@ -2862,9 +2862,15 @@ function PrepCard({
   const sourcesUsed: string[] = (brief as any)?.sources_used ?? []
   const talkingPoints: string[] = (brief as any)?.talking_points ?? []
   const hasBrief = brief && (brief.why || brief.know?.length)
-  const meetingUrl = (item.source_ref as { meeting_url?: string } | null)?.meeting_url
-    ?? (item.proposed_action as { meeting_url?: string } | null)?.meeting_url
-    ?? null
+  // Try source_ref first (new extractions), then scan parent_context and
+  // source_excerpt for a Zoom/Meet/Teams URL (fallback for existing items).
+  const meetingUrl = (() => {
+    const fromRef = (item.source_ref as { meeting_url?: string } | null)?.meeting_url
+    if (fromRef) return fromRef
+    const urlPattern = /https:\/\/(?:[a-z0-9-]+\.)?(?:zoom\.us\/j\/[^\s"'>]+|meet\.google\.com\/[^\s"'>]+|teams\.microsoft\.com\/l\/meetup-join\/[^\s"'>]+)/i
+    const searchIn = [item.parent_context, item.source_excerpt].filter(Boolean).join(' ')
+    return searchIn.match(urlPattern)?.[0] ?? null
+  })()
 
   return (
     <div

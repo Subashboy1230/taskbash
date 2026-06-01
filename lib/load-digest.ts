@@ -168,6 +168,7 @@ function toUIItem(
     sub_items: subtasks ?? [],
     sort_order: (item as { sort_order?: number | null }).sort_order ?? null,
     gmail_thread_id: (item as any).source_ref?.gmail_thread_id ?? null,
+    source_ref: (item as any).source_ref ?? null,
   }
 }
 
