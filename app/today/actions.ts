@@ -1043,6 +1043,8 @@ export async function addManualTask(args: {
   title: string
   dueAt?: string | null
   functionIds?: string[]
+  priority?: string | null
+  subtasks?: string[]
 }) {
   const trimmed = args.title.trim()
   if (!trimmed) throw new Error('Task title is empty.')
@@ -1051,6 +1053,20 @@ export async function addManualTask(args: {
     .update(`manual|${userId}|${trimmed}|${Date.now()}`)
     .digest('hex')
     .slice(0, 16)
+
+  // Pin new manual tasks to the top: find the lowest existing sort_order and
+  // subtract 1000. If no items exist yet, start at 1000.
+  const { data: topItem } = await supabase
+    .from('items')
+    .select('sort_order')
+    .eq('user_id', userId)
+    .in('status', ['open', 'in_progress'])
+    .order('sort_order', { ascending: true, nullsFirst: false })
+    .limit(1)
+    .maybeSingle()
+  const topOrder = (topItem as { sort_order?: number | null } | null)?.sort_order ?? 2000
+  const newSortOrder = topOrder - 1000
+
   const { data, error } = await supabase
     .from('items')
     .insert({
@@ -1063,6 +1079,8 @@ export async function addManualTask(args: {
       semantic_hash,
       status: 'open',
       due_at: args.dueAt ?? null,
+      priority: args.priority ?? null,
+      sort_order: newSortOrder,
       function_ids: args.functionIds && args.functionIds.length > 0
         ? args.functionIds
         : null,
@@ -1070,8 +1088,92 @@ export async function addManualTask(args: {
     .select('id, title, status')
     .single()
   if (error) throw new Error(`addManualTask failed: ${error.message}`)
+
+  // Insert subtasks as child rows
+  const subtitles = (args.subtasks ?? []).map(s => s.trim()).filter(Boolean)
+  for (const subTitle of subtitles) {
+    const subHash = createHash('sha256')
+      .update(`manual|${data.id}|${subTitle}|${Date.now()}`)
+      .digest('hex')
+      .slice(0, 16)
+    await supabase.from('items').insert({
+      user_id: userId,
+      title: subTitle,
+      task_type: 'manual',
+      tag: 'action',
+      source: 'manual',
+      source_ref: { manual_subtask: true },
+      parent_id: data.id,
+      role: 'subtask',
+      semantic_hash: subHash,
+      status: 'open',
+    })
+  }
+
   revalidatePath('/today')
   return data
+}
+
+/**
+ * Extract structured tasks from freeform text (brain dump, meeting notes,
+ * pasted content) using Claude Haiku. Returns an array of task objects the
+ * UI can preview before committing.
+ */
+export async function extractTasksFromText(args: {
+  text: string
+}): Promise<{ ok: true; tasks: Array<{ title: string; subtasks: string[]; due_at: string | null; priority: string | null }> } | { ok: false; error: string }> {
+  try {
+    const text = args.text.trim()
+    if (!text) return { ok: false, error: 'No text provided.' }
+
+    const { anthropic, MODELS } = await import('@/lib/anthropic')
+    const response = await anthropic.messages.create({
+      model: MODELS.classifier,
+      max_tokens: 1024,
+      system: `You extract action items from freeform text — brain dumps, voice transcripts, meeting notes, or any unstructured input.
+
+Return STRICT JSON only. No prose, no markdown fences.
+
+Schema:
+{
+  "tasks": [
+    {
+      "title": "string. Imperative form ('Send X', 'Review Y', 'Schedule Z'). Max 80 chars.",
+      "subtasks": ["string", ...],
+      "due_at": "ISO 8601 date string or null",
+      "priority": "P0" | "P1" | "P2" | "P3" | null
+    }
+  ]
+}
+
+Rules:
+- Extract only concrete, actionable tasks. Skip vague intentions.
+- Cap subtasks at 5 per task.
+- Set priority P0 for urgent/blocking items, P1 for high-stakes, P2 for normal, P3 for low/nice-to-have. Null if unclear.
+- Set due_at only when the text explicitly mentions a date or deadline. Use today's date (${new Date().toISOString().slice(0, 10)}) as reference for relative dates.
+- NEVER use em-dashes in any string. Use hyphens or rewrite.
+- If no actionable tasks, return { "tasks": [] }.`,
+      messages: [{ role: 'user', content: `Extract tasks from:\n\n${text}` }],
+    })
+
+    const raw = response.content
+      .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+      .map(b => b.text)
+      .join('\n')
+
+    const { extractJsonObject } = await import('@/lib/extract/parse')
+    const parsed = JSON.parse(extractJsonObject(raw)) as { tasks?: Array<{ title: string; subtasks?: string[]; due_at?: string | null; priority?: string | null }> }
+    const tasks = (parsed.tasks ?? []).map(t => ({
+      title: t.title ?? '',
+      subtasks: t.subtasks ?? [],
+      due_at: t.due_at ?? null,
+      priority: t.priority ?? null,
+    })).filter(t => t.title.trim())
+
+    return { ok: true, tasks }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Extraction failed' }
+  }
 }
 
 /**
