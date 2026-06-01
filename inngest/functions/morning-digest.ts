@@ -33,7 +33,7 @@ export const morningDigest = inngest.createFunction(
     logger.info(`running digest for ${userEmail} (${userId})`)
 
     const summary = await step.run('run-digest', async () =>
-      runDigestForUser({ userId, userEmail })
+      runDigestForUser({ userId, userEmail, trigger: 'cron' })
     )
 
     logger.info('digest complete', summary)

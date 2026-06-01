@@ -3,9 +3,6 @@
 // open items in the DB, persists new/carryover/completed transitions.
 // Used by the on-demand "Refresh" button on /today and by the Inngest
 // cron job (which wraps it in step.run blocks for durability).
-//
-// Skips the runs / agent_events log writes for the sync path to keep the
-// round-trip fast; the Inngest path keeps those for audit history.
 
 import { supabase } from '../supabase'
 import { extractGranolaActionItems } from '../extract/granola'
@@ -37,12 +34,24 @@ export interface DigestRunOpts {
   userEmail: string
   /** Lookback window (days) for sources that take one. Default 7. */
   days?: number
+  /** 'cron' (Inngest morning job) or 'manual' (Re-run button). Default 'manual'. */
+  trigger?: 'cron' | 'manual'
 }
 
 export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSummary> {
   const t0 = Date.now()
   const { userId, userEmail } = opts
   const days = opts.days ?? 7
+  const trigger = opts.trigger ?? 'manual'
+
+  // Insert a runs row immediately so the Activity page shows an in-progress
+  // entry even if the run fails halfway through.
+  const { data: runRow } = await supabase
+    .from('runs')
+    .insert({ user_id: userId, trigger, status: 'running', sources_run: [] })
+    .select('id')
+    .single()
+  const runId: string | null = runRow?.id ?? null
 
   // ─── Auto-unsnooze items whose snooze window has passed ──────────────
   await supabase
@@ -82,6 +91,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   // Gate each source on connection state so a disconnected source neither
   // throws nor causes the diff to auto-complete its items.
   const sourcesRun: Source[] = []
+  const sourcesFailed: Source[] = []
   const allFresh: ExtractedItem[] = []
 
   await tryRun('granola', async () => {
@@ -142,6 +152,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
       sourcesRun.push(source)
     } catch (err) {
       console.error(`[runDigest] ${source} failed:`, err)
+      sourcesFailed.push(source)
     }
   }
 
@@ -317,7 +328,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   // exits. No-op when Langfuse isn't configured.
   await flushLangfuse()
 
-  return {
+  const summary: DigestRunSummary = {
     sources_run: sourcesRun,
     fresh: allFresh.length,
     new: newCount,
@@ -326,4 +337,19 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     suppressed: suppressedCount,
     durationMs: Date.now() - t0,
   }
+
+  if (runId) {
+    void supabase.from('runs').update({
+      status: sourcesFailed.length > 0 && sourcesRun.length === 0 ? 'failed' : 'succeeded',
+      completed_at: new Date().toISOString(),
+      sources_run: sourcesRun,
+      sources_failed: sourcesFailed,
+      fresh_count: allFresh.length,
+      new_count: newCount,
+      carryover_count: carryoverCount,
+      completed_count: completedCount,
+    }).eq('id', runId)
+  }
+
+  return summary
 }

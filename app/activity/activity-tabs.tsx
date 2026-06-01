@@ -51,7 +51,7 @@ export function ActivityTabs({
 
   return (
     <Tabs value={activeTab} onValueChange={v => setActiveTab(v as TabId)}>
-      <TabsList className="mb-6 flex w-full gap-0 rounded-none border-b border-line bg-transparent p-0">
+      <TabsList className="mb-6 flex w-full gap-0 rounded-none border-b border-line bg-transparent p-0 justify-start">
         {TAB_IDS.map(id => (
           <TabsTrigger
             key={id}
