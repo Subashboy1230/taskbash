@@ -13,6 +13,7 @@ import { TodayShell } from './today-shell'
 export const dynamic = 'force-dynamic'
 
 export default async function TodayPage() {
+  const nowFromServer = new Date().toISOString()
   const [digest, functions, events, calConn, unreadThreads] = await Promise.all([
     loadDigest(),
     loadUserFunctions().catch(() => []),
@@ -34,6 +35,7 @@ export default async function TodayPage() {
       events={events}
       calendarConnected={!!calConn?.nango_connection_id}
       unreadThreads={unreadThreads}
+      nowFromServer={nowFromServer}
     />
   )
 }

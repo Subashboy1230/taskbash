@@ -62,6 +62,7 @@ export function TodayShell({
   events,
   calendarConnected,
   unreadThreads = [],
+  nowFromServer,
 }: {
   digest: MockDigestSummary
   userEmail?: string
@@ -69,6 +70,7 @@ export function TodayShell({
   events: DayEvent[]
   calendarConnected: boolean
   unreadThreads?: UnreadThread[]
+  nowFromServer?: string
 }) {
   // `displayedItem` is what the panel renders. It lags behind during close
   // so the panel content doesn't vanish before the slide-out finishes.
@@ -162,6 +164,7 @@ export function TodayShell({
           onAddTask={() => setAddOpen(true)}
           mainExpanded={calendarCollapsed || panelVisible}
           unreadThreads={filteredUnread}
+          nowFromServer={nowFromServer}
         />
       </main>
 
@@ -173,6 +176,7 @@ export function TodayShell({
               key={displayedItem.id}
               item={displayedItem}
               onClose={closePanel}
+              now={nowFromServer ? new Date(nowFromServer) : undefined}
               onComplete={() => {
                 if (!displayedItem) return
                 const id = displayedItem.id

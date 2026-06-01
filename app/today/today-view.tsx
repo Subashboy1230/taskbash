@@ -33,6 +33,7 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatDeadline, nowMs } from '@/lib/format-datetime'
 import { AppHeader } from '@/app/_components/app-header'
 import { BrandLogo } from '@/app/_components/brand-logo'
 import { StatusPill, type StatusPillKind } from '@/app/_components/status-pill'
@@ -91,6 +92,7 @@ export function TodayView({
   onAddTask,
   mainExpanded = false,
   unreadThreads = [],
+  nowFromServer,
 }: {
   digest: MockDigestSummary
   userEmail?: string
@@ -113,7 +115,11 @@ export function TodayView({
   // breathing room. Removes the 820px content cap.
   mainExpanded?: boolean
   unreadThreads?: UnreadThread[]
+  /** ISO string from the server — passed to all deadline formatters to avoid hydration mismatch. */
+  nowFromServer?: string
 }) {
+  const nowTimestamp = nowMs(nowFromServer)
+  const nowDate = useMemo(() => new Date(nowTimestamp), [nowTimestamp])
   const [selectedItemInternal, setSelectedItemInternal] = useState<MockItem | null>(null)
   // When the parent shell provides an externalSelectedItemId, resolve
   // it to the actual item from the digest. Otherwise use our internal
@@ -346,7 +352,7 @@ export function TodayView({
     return m
   }, [functions])
 
-  const groups = useMemo(() => groupItems(filteredOpen, groupBy, functionsById), [filteredOpen, groupBy, functionsById])
+  const groups = useMemo(() => groupItems(filteredOpen, groupBy, nowTimestamp, functionsById), [filteredOpen, groupBy, nowTimestamp, functionsById])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -532,6 +538,7 @@ export function TodayView({
                               onDismiss={() => handleDismiss(item.id)}
                               onSnooze={hours => handleSnooze(item.id, hours)}
                               functionsById={functionsById}
+                              now={nowDate}
                               onReorder={(draggedId, position) => {
                                 if (position === 'before') {
                                   const beforeId = idx > 0 ? allItems[idx - 1].id : null
@@ -551,11 +558,13 @@ export function TodayView({
               )}
             </>
           ) : tab === 'unread' ? (
-            <UnreadTab threads={unreadThreads} onSelectItem={setSelectedItem} />
+            <UnreadTab threads={unreadThreads} onSelectItem={setSelectedItem} functionsById={functionsById} now={nowDate} />
           ) : (
             <ClearedTab
               items={digest.completed_today}
               totalCount={digest.completed_today_count}
+              functionsById={functionsById}
+              now={nowDate}
             />
           )}
         </main>
@@ -784,41 +793,12 @@ function StatsRow({
 
 // ─── Deadline helpers ───────────────────────────────────────────────────
 
-type DeadlineTone = 'overdue' | 'today' | 'soon' | 'future'
+// Re-export the type alias so the rest of this file can reference it without
+// importing from the lib directly on every usage.
+type DeadlineTone = import('@/lib/format-datetime').DeadlineTone
 
-function formatDeadline(dueIso: string): { label: string; tone: DeadlineTone } | null {
-  const due = new Date(dueIso)
-  if (isNaN(due.getTime())) return null
-  const now = new Date()
-  const diffMs = due.getTime() - now.getTime()
-  const diffHours = diffMs / (1000 * 60 * 60)
-  const diffDays = diffHours / 24
-
-  if (diffMs < 0) {
-    const overdueHrs = Math.abs(Math.round(diffHours))
-    if (overdueHrs >= 24) {
-      const days = Math.round(overdueHrs / 24)
-      return { label: `Overdue ${days}d`, tone: 'overdue' }
-    }
-    return { label: `Overdue ${overdueHrs}h`, tone: 'overdue' }
-  }
-  if (diffHours < 12) {
-    const hours = Math.max(1, Math.round(diffHours))
-    return { label: `Due in ${hours}h`, tone: 'today' }
-  }
-  if (diffDays < 1.5) {
-    return { label: 'Due tomorrow', tone: 'soon' }
-  }
-  if (diffDays < 7) {
-    const dayName = due.toLocaleDateString('en-US', { weekday: 'long' })
-    return { label: `Due ${dayName}`, tone: 'soon' }
-  }
-  const dateStr = due.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  return { label: `Due ${dateStr}`, tone: 'future' }
-}
-
-function DeadlineBadge({ dueIso }: { dueIso: string }) {
-  const formatted = formatDeadline(dueIso)
+function DeadlineBadge({ dueIso, now }: { dueIso: string; now: Date }) {
+  const formatted = formatDeadline(dueIso, now)
   if (!formatted) return null
   const toneCls =
     formatted.tone === 'overdue'
@@ -867,6 +847,7 @@ function TaskRow({
   onSnooze,
   functionsById,
   onReorder,
+  now,
 }: {
   item: MockItem
   isSelected: boolean
@@ -876,6 +857,7 @@ function TaskRow({
   onSnooze: (hours: number) => void
   functionsById?: Map<string, UserFunction>
   onReorder?: (draggedId: string, position: 'before' | 'after') => void
+  now: Date
 }) {
   const [completed, setCompleted] = useState(false)
   const [dragOver, setDragOver] = useState<'before' | 'after' | null>(null)
@@ -984,7 +966,7 @@ function TaskRow({
             <PriorityChip
               itemId={item.id}
               explicit={item.priority ?? null}
-              resolved={effectivePriority(item)}
+              resolved={effectivePriority(item, now.getTime())}
             />
             <span
               className={cn(
@@ -1012,7 +994,7 @@ function TaskRow({
               if (!fn) return null
               return <FunctionPill key={fid} fn={fn} />
             })}
-            {item.due_at && <DeadlineBadge dueIso={item.due_at} />}
+            {item.due_at && <DeadlineBadge dueIso={item.due_at} now={now} />}
           </div>
 
           <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
@@ -1438,12 +1420,11 @@ const PRIORITY_RANK: Record<PrioritySet, number> = { P0: 0, P1: 1, P2: 2, P3: 3 
  *  - FYI tag → P3
  *  - Everything else → P2
  */
-function defaultPriority(item: MockItem): PrioritySet {
-  const now = Date.now()
+function defaultPriority(item: MockItem, nowTimestamp: number): PrioritySet {
   if (item.due_at) {
     const due = new Date(item.due_at).getTime()
     if (!isNaN(due)) {
-      const hours = (due - now) / (1000 * 60 * 60)
+      const hours = (due - nowTimestamp) / (1000 * 60 * 60)
       if (hours < 6) return 'P0'
       if (hours < 24) return 'P1'
     }
@@ -1458,8 +1439,8 @@ function defaultPriority(item: MockItem): PrioritySet {
  * The priority the row should sort + display by. Falls back to default
  * when the user hasn't set one explicitly.
  */
-function effectivePriority(item: MockItem): PrioritySet {
-  return (item.priority as PrioritySet | null) ?? defaultPriority(item)
+function effectivePriority(item: MockItem, nowTimestamp: number): PrioritySet {
+  return (item.priority as PrioritySet | null) ?? defaultPriority(item, nowTimestamp)
 }
 
 function PriorityChip({
@@ -1581,36 +1562,53 @@ const SOURCE_LABEL: Record<Source, string> = {
 
 // ─── Completed row ──────────────────────────────────────────────────────
 
-function CompletedRow({ item }: { item: MockItem }) {
-  const outcome = item.reply_outcome
-  const pill =
-    outcome === 'approved' ? (
-      <span className="shrink-0 rounded-full bg-success-bg px-2.5 py-0.5 text-[12px] font-medium text-success-fg">
-        Approved
-      </span>
-    ) : outcome === 'rejected' ? (
-      <span className="shrink-0 rounded-full bg-danger-bg px-2.5 py-0.5 text-[12px] font-medium text-danger-fg">
-        Rejected
-      </span>
-    ) : (
-      <span className="shrink-0 rounded-full bg-success-bg px-2.5 py-0.5 text-[12px] font-medium text-success-fg">
-        Done
-      </span>
-    )
+function CompletedRow({
+  item,
+  functionsById,
+  now,
+}: {
+  item: MockItem
+  functionsById?: Map<string, UserFunction>
+  now: Date
+}) {
+  const subItems = item.sub_items ?? []
+  const subTotal = subItems.length
+  const subCompleted = subItems.filter(s => s.completed).length
+
   return (
-    <li className="relative flex items-start gap-3 pl-12 pr-2 py-4 border-b border-line/50">
+    <li className="relative flex items-start gap-3 pl-12 pr-2 py-4 border-b border-line/50 opacity-60">
       <div className="absolute left-3 top-4 flex shrink-0 items-center justify-center" style={{ width: 22, height: 22 }}>
         <BrandLogo brand={item.source} size={18} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="m-0 text-[15px] font-semibold leading-snug text-ink-faint line-through">
-          {item.title}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <PriorityChip
+            itemId={item.id}
+            explicit={item.priority ?? null}
+            resolved={effectivePriority(item, now.getTime())}
+          />
+          <span className="text-[15px] font-semibold leading-snug text-ink-faint line-through">
+            {item.title}
+          </span>
+          {subTotal > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-success-bg text-success-fg">
+              {subCompleted}/{subTotal}
+            </span>
+          )}
+          {(item.function_ids ?? []).map(fid => {
+            const fn = functionsById?.get(fid)
+            if (!fn) return null
+            return <FunctionPill key={fid} fn={fn} />
+          })}
+          {item.due_at && <DeadlineBadge dueIso={item.due_at} now={now} />}
+        </div>
         <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
           {item.subtitle || item.brief?.why || item.description || item.parent_context || `From ${item.source}`}
         </p>
       </div>
-      {pill}
+      <span className="shrink-0 rounded-full bg-success-bg px-2.5 py-0.5 text-[12px] font-medium text-success-fg">
+        Done
+      </span>
     </li>
   )
 }
@@ -1681,13 +1679,16 @@ export function DetailPanel({
   onComplete,
   onDismiss,
   allFunctions = [],
+  now,
 }: {
   item: MockItem
   onClose: () => void
   onComplete: () => void
   onDismiss?: () => void
   allFunctions?: UserFunction[]
+  now?: Date
 }) {
+  const _now = now ?? new Date()
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(item.title)
   const [editDesc, setEditDesc] = useState(item.description ?? '')
@@ -1821,7 +1822,7 @@ export function DetailPanel({
             {item.detail_status}
           </span>
         )}
-        {item.due_at && <DeadlineBadge dueIso={item.due_at} />}
+        {item.due_at && <DeadlineBadge dueIso={item.due_at} now={_now} />}
       </div>
 
       {/* Approval queue: when the agent drafted an action (e.g. an email
@@ -2557,6 +2558,7 @@ interface ItemGroup {
 function groupItems(
   items: MockItem[],
   groupBy: 'none' | 'source' | 'due' | 'function' | 'priority',
+  nowTimestamp: number,
   functionsById?: Map<string, UserFunction>
 ): ItemGroup[] {
   if (groupBy === 'none') {
@@ -2624,7 +2626,7 @@ function groupItems(
   if (groupBy === 'priority') {
     const buckets: Record<string, MockItem[]> = { P0: [], P1: [], P2: [], P3: [] }
     for (const it of items) {
-      const p = it.priority ?? defaultPriority(it)
+      const p = it.priority ?? defaultPriority(it, nowTimestamp)
       ;(buckets[p] ?? buckets.P2).push(it)
     }
     const PRIORITY_LABEL: Record<string, string> = { P0: 'P0 - Critical', P1: 'P1 - High', P2: 'P2 - Medium', P3: 'P3 - Low' }
@@ -2633,7 +2635,7 @@ function groupItems(
       .map(p => ({ key: `p-${p}`, label: PRIORITY_LABEL[p], items: buckets[p] }))
   }
   // groupBy === 'due'
-  const now = Date.now()
+  const now = nowTimestamp
   const tomorrow = now + 24 * 60 * 60 * 1000
   const endOfWeek = now + 7 * 24 * 60 * 60 * 1000
   const overdue: MockItem[] = []
@@ -2873,9 +2875,13 @@ function PrepCard({
 function UnreadTab({
   threads,
   onSelectItem,
+  functionsById,
+  now,
 }: {
   threads: UnreadThread[]
   onSelectItem: (item: MockItem) => void
+  functionsById?: Map<string, UserFunction>
+  now: Date
 }) {
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [errorId, setErrorId] = useState<string | null>(null)
@@ -2926,6 +2932,8 @@ function UnreadTab({
             isLoading={loadingId === thread.id}
             hasError={errorId === thread.id}
             onClick={() => handleOpen(thread)}
+            functionsById={functionsById}
+            now={now}
           />
         ))}
       </ul>
@@ -2938,17 +2946,21 @@ function UnreadThreadRow({
   isLoading,
   hasError,
   onClick,
+  functionsById: _functionsById,
+  now: _now,
 }: {
   thread: UnreadThread
   isLoading: boolean
   hasError: boolean
   onClick: () => void
+  functionsById?: Map<string, UserFunction>
+  now: Date
 }) {
   return (
     <li
       onClick={isLoading ? undefined : onClick}
       className={cn(
-        'group relative flex items-start gap-3 pl-12 pr-2 py-4 transition-colors',
+        'group relative flex items-start gap-3 pl-12 pr-2 py-4 transition-colors border-b border-line/50',
         isLoading ? 'cursor-wait opacity-70' : 'cursor-pointer hover:bg-surface-muted/50',
       )}
     >
@@ -2960,6 +2972,10 @@ function UnreadThreadRow({
           <span className="text-[15px] font-semibold leading-snug text-ink">
             {thread.subject}
           </span>
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-tag-reply-bg text-tag-reply-fg">
+            Reply
+          </span>
+          <span className="text-[11px] text-ink-faint">{thread.date}</span>
         </div>
         <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
           {thread.fromName} &middot; {thread.snippet}
@@ -2968,12 +2984,11 @@ function UnreadThreadRow({
           <p className="mt-1 text-[12px] text-danger-fg m-0">Failed to open - try again</p>
         )}
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        <span className="text-[11px] text-ink-faint">{thread.date}</span>
+      <div className="flex shrink-0 items-center gap-2 ml-2">
         {isLoading ? (
           <Loader2 size={14} className="animate-spin text-ink-faint" />
         ) : (
-          <StatusPill kind="draft" label="Unread" />
+          <span className="text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 transition-opacity">Open →</span>
         )}
       </div>
     </li>
@@ -2985,9 +3000,13 @@ function UnreadThreadRow({
 function ClearedTab({
   items,
   totalCount,
+  functionsById,
+  now,
 }: {
   items: MockItem[]
   totalCount: number
+  functionsById?: Map<string, UserFunction>
+  now: Date
 }) {
   if (items.length === 0) {
     return (
@@ -3001,9 +3020,9 @@ function ClearedTab({
   }
   return (
     <div className="mt-4">
-      <ul className="list-none p-0 m-0">
+      <ul className="list-none p-0 m-0 divide-y divide-line/70">
         {items.map(item => (
-          <CompletedRow key={item.id} item={item} />
+          <CompletedRow key={item.id} item={item} functionsById={functionsById} now={now} />
         ))}
       </ul>
       {totalCount > items.length && (

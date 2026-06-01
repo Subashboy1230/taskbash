@@ -73,11 +73,21 @@ export function diff(currentItems: Item[], freshItems: ExtractedItem[]): DiffRes
   // Build dual lookup maps from current items, keyed by source_ref AND
   // semantic_hash. source_ref wins when both are present because it's
   // stable across LLM title variation.
-  const currentByRef = new Map<string, Item>()
+  //
+  // currentByRef is a MULTI-MAP: many items from the same container
+  // (e.g. a Granola meeting with 3 action items) all share one source_ref
+  // key. We store the full list and consume entries one-at-a-time so each
+  // fresh item claims a distinct existing row rather than all collapsing
+  // onto whichever row happened to be last in the build loop.
+  const currentByRef = new Map<string, Item[]>()
   const currentByHash = new Map<string, Item>()
   for (const item of currentItems) {
     const refKey = sourceRefKey(item.source, item.source_ref as SourceRef | null)
-    if (refKey) currentByRef.set(refKey, item)
+    if (refKey) {
+      const bucket = currentByRef.get(refKey) ?? []
+      bucket.push(item)
+      currentByRef.set(refKey, bucket)
+    }
     currentByHash.set(item.semantic_hash, item)
   }
 
@@ -89,6 +99,11 @@ export function diff(currentItems: Item[], freshItems: ExtractedItem[]): DiffRes
   // "auto-complete vanished" set at the end. We only consider OPEN ones
   // since cleared items are already in a terminal state.
   const matchedOpenIds = new Set<string>()
+  // Tracks which existing item IDs have already been claimed by a fresh
+  // item via the source_ref multi-map. Prevents two fresh items from the
+  // same container (e.g., the same meeting) from both matching the same
+  // existing row.
+  const consumedByRef = new Set<string>()
 
   for (const fresh of freshItems) {
     const refKey = sourceRefKey(fresh.source, fresh.source_ref as SourceRef | null)
@@ -100,13 +115,18 @@ export function diff(currentItems: Item[], freshItems: ExtractedItem[]): DiffRes
 
     // Lookup precedence:
     //   1. semantic_hash — most specific (per-item identity)
-    //   2. source_ref   — fallback for LLM title variation across runs
-    // Doing it in this order avoids collapsing multi-item containers
-    // (a Granola meeting with 3 action items shares a source_ref but
-    // each item has its own semantic_hash).
-    const existing =
-      currentByHash.get(freshHash) ??
-      (refKey ? currentByRef.get(refKey) : undefined)
+    //   2. source_ref   — fallback for LLM title variation across runs.
+    //      Uses the first unconsumed candidate in the bucket so each fresh
+    //      item from a multi-item container claims a distinct existing row.
+    const existingByRef = refKey
+      ? (currentByRef.get(refKey) ?? []).find(c => !consumedByRef.has(c.id))
+      : undefined
+    const existing = currentByHash.get(freshHash) ?? existingByRef
+    // Mark the matched row consumed so later fresh items from the same
+    // container don't also claim it.
+    if (existing && refKey && existingByRef?.id === existing.id) {
+      consumedByRef.add(existing.id)
+    }
 
     if (!existing) {
       newItems.push(fresh)

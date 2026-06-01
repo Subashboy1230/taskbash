@@ -14,6 +14,6 @@ export const anthropic = new Anthropic({
 export const MODELS = {
   // Cheap classifier model — Haiku. Used for tagging email/Slack later.
   classifier: 'claude-haiku-4-5-20251001',
-  // Workhorse synthesis model — Sonnet 4.6.
-  synthesis: 'claude-sonnet-4-6',
+  // Synthesis model — Opus 4.7. Used for briefs and meeting prep.
+  synthesis: 'claude-opus-4-7',
 } as const

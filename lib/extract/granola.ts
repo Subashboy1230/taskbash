@@ -67,6 +67,8 @@ export interface GranolaNoteDetail {
 interface ExtractActionItemsArgs {
   userEmail: string
   days: number
+  /** Granola meeting IDs that already have a proposed_action in the DB — skip draftFollowup for these. */
+  meetingIdsWithDraft?: Set<string>
 }
 
 export async function extractGranolaActionItems(
@@ -116,7 +118,11 @@ export async function extractGranolaActionItems(
     const note = await fetchNoteDetail(apiKey, noteRef.id)
     if (!note) continue
 
-    const noteItems = await extractItemsFromNote(note, args.userEmail)
+    const noteItems = await extractItemsFromNote(
+      note,
+      args.userEmail,
+      args.meetingIdsWithDraft
+    )
     items.push(...noteItems)
   }
 
@@ -142,7 +148,8 @@ export async function fetchNoteDetail(
 
 async function extractItemsFromNote(
   note: GranolaNoteDetail,
-  userEmail: string
+  userEmail: string,
+  meetingIdsWithDraft?: Set<string>
 ): Promise<ExtractedItem[]> {
   const sourceText = note.summary_markdown || note.summary_text || ''
   if (!sourceText.trim()) return []
@@ -194,10 +201,14 @@ async function extractItemsFromNote(
     date: note.created_at,
     summary: sourceText,
   })
+  // If every item from this meeting already has a draft in the DB, skip
+  // all draftFollowup calls — they would be discarded on the carryover
+  // path anyway, and they account for most of the per-digest LLM spend.
+  const skipDraft = meetingIdsWithDraft?.has(note.id) ?? false
   let draftsDone = 0
   for (const item of items) {
     item.source_excerpt = excerpt
-    if (draftsDone >= 2) continue
+    if (skipDraft || draftsDone >= 2) continue
     if (item.tag !== 'commit' && item.tag !== 'reply' && item.tag !== 'action') continue
     try {
       const action = await draftFollowup({

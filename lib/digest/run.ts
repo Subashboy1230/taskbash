@@ -87,7 +87,21 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   await tryRun('granola', async () => {
     const conn = await getActiveConnection('granola')
     if (!conn?.api_key) return null
-    const items = await extractGranolaActionItems({ userEmail, days })
+    // Build the set of Granola meeting IDs that already have a proposed_action
+    // stored in the DB. The extractor skips draftFollowup for these meetings so
+    // we don't burn tokens generating drafts that the carryover path would throw away.
+    const { data: draftedRows } = await supabase
+      .from('items')
+      .select('source_ref')
+      .eq('user_id', userId)
+      .eq('source', 'granola')
+      .not('proposed_action', 'is', null)
+    const meetingIdsWithDraft = new Set<string>(
+      (draftedRows ?? [])
+        .map(r => (r.source_ref as { granola_meeting_id?: string } | null)?.granola_meeting_id)
+        .filter((id): id is string => typeof id === 'string')
+    )
+    const items = await extractGranolaActionItems({ userEmail, days, meetingIdsWithDraft })
     return items
   })
 
@@ -244,6 +258,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
               source: 'manual' as const,
               source_ref: { auto_subtask: true } as Record<string, unknown>,
               parent_id: inserted.id,
+              role: 'subtask' as const,
               parent_context: null as string | null,
               semantic_hash: subHash,
               status: 'open' as const,
@@ -255,14 +270,19 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
       // Ignore unique-index race (23505) — treat as carryover silently.
     }
 
-    // Carryover — update last_seen_at
-    const carryoverIds = result.carryover.map(c => c.existing.id)
-    if (carryoverIds.length > 0) {
-      await supabase
-        .from('items')
-        .update({ last_seen_at: new Date().toISOString() })
-        .in('id', carryoverIds)
-      carryoverCount += carryoverIds.length
+    // Carryover — update last_seen_at, and write proposed_action if the
+    // fresh item has one but the existing DB row doesn't (first time a
+    // draft is generated for a meeting that was previously seen without one).
+    for (const { existing, fresh } of result.carryover) {
+      const update: Record<string, unknown> = { last_seen_at: new Date().toISOString() }
+      if (fresh.proposed_action && !existing.proposed_action) {
+        update.proposed_action = fresh.proposed_action
+        if ((fresh.proposed_action as { gmail_draft_id?: string })?.gmail_draft_id) {
+          update.gmail_draft_id = (fresh.proposed_action as { gmail_draft_id?: string }).gmail_draft_id
+        }
+      }
+      await supabase.from('items').update(update).eq('id', existing.id)
+      carryoverCount += 1
     }
 
     // Suppressed = fresh items the user already cleared (completed,

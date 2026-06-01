@@ -14,7 +14,7 @@ async function main() {
   for (const file of migrations) {
     const sql = fs.readFileSync(`migrations/${file}`, 'utf8')
     console.log(`Applying ${file}...`)
-    const { error } = await sb.rpc('exec_sql', { sql }).single().catch(() => ({ error: { message: 'rpc not available' } }))
+    const { error } = await sb.rpc('exec_sql', { sql }).single().then(r => r, () => ({ data: null, error: { message: 'rpc not available' } }))
     if (error) {
       // Try direct query via REST
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
