@@ -141,7 +141,18 @@ export function TodayView({
     setSelectedItemInternal(item)
     onSelectItem?.(item)
   }
-  const [tab, setTab] = useState<'open' | 'prep' | 'cleared' | 'unread'>('open')
+  const TAB_KEY = 'taskbash:todayTab'
+  const [tab, setTabRaw] = useState<'open' | 'prep' | 'cleared' | 'unread'>(() => {
+    try {
+      const saved = localStorage.getItem(TAB_KEY)
+      if (saved === 'open' || saved === 'prep' || saved === 'cleared' || saved === 'unread') return saved
+    } catch { /* ignore */ }
+    return 'open'
+  })
+  const setTab = (t: 'open' | 'prep' | 'cleared' | 'unread') => {
+    try { localStorage.setItem(TAB_KEY, t) } catch { /* ignore */ }
+    setTabRaw(t)
+  }
   // Filter chips — null = "All". Persist in localStorage so the user's
   // filter survives a reload.
   const [sourceFilter, setSourceFilter] = useState<Set<Source>>(new Set())
