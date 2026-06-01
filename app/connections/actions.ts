@@ -57,7 +57,12 @@ export async function createNangoConnectSession(
     })) as { data?: { token?: string }; token?: string }
   } catch (err: unknown) {
     const axErr = err as { response?: { data?: unknown }; message?: string }
-    const detail = axErr?.response?.data ? JSON.stringify(axErr.response.data) : axErr?.message
+    const data = axErr?.response?.data as { error?: { code?: string; message?: string } } | undefined
+    const code = data?.error?.code
+    if (code === 'resource_capped') {
+      throw new Error('Connection limit reached on Nango free plan. Delete unused connections at app.nango.dev or upgrade your plan.')
+    }
+    const detail = data ? JSON.stringify(data) : axErr?.message
     throw new Error(`Nango createConnectSession failed (${providerKey}): ${detail}`)
   }
 
