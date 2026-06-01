@@ -87,6 +87,13 @@ export function TodayShell({
   const [, startTransition] = useTransition()
   const [calendarCollapsed, setCalendarCollapsed] = useState(false)
 
+  // Buffer unread threads in state so a transient empty server re-render
+  // (e.g. immediately after sending an email) never wipes the visible list.
+  const [bufferedUnread, setBufferedUnread] = useState<UnreadThread[]>(unreadThreads)
+  useEffect(() => {
+    if (unreadThreads.length > 0) setBufferedUnread(unreadThreads)
+  }, [unreadThreads])
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem(CALENDAR_COLLAPSED_KEY)
@@ -134,8 +141,8 @@ export function TodayShell({
   }, [digest, shellHiddenIds])
 
   const filteredUnread = useMemo(
-    () => unreadThreads.filter(t => !clearedThreadIds.has(t.id)),
-    [unreadThreads, clearedThreadIds]
+    () => bufferedUnread.filter(t => !clearedThreadIds.has(t.id)),
+    [bufferedUnread, clearedThreadIds]
   )
 
   const filteredDigest = useMemo(() => shellHiddenIds.size > 0 ? {
