@@ -30,9 +30,10 @@ export const NANGO_PROVIDER_KEY: Record<ConnectionProvider, string | null> = {
  * Returns null if no active connection exists.
  */
 export async function getActiveConnection(
-  provider: ConnectionProvider
+  provider: ConnectionProvider,
+  explicitUserId?: string
 ): Promise<Connection | null> {
-  const userId = await resolveUserId()
+  const userId = explicitUserId ?? await resolveUserId()
   const { data, error } = await supabase
     .from('connections')
     .select('*')
@@ -54,8 +55,9 @@ export async function upsertConnection(args: {
   nango_connection_id?: string | null
   api_key?: string | null
   scopes?: string[] | null
+  userId?: string
 }): Promise<Connection> {
-  const userId = await resolveUserId()
+  const userId = args.userId ?? await resolveUserId()
   const { data, error } = await supabase
     .from('connections')
     .upsert(
@@ -81,9 +83,10 @@ export async function upsertConnection(args: {
  * in one round-trip without a race between SELECT and UPDATE.
  */
 export async function deactivateConnection(
-  provider: ConnectionProvider
+  provider: ConnectionProvider,
+  explicitUserId?: string
 ): Promise<void> {
-  const userId = await resolveUserId()
+  const userId = explicitUserId ?? await resolveUserId()
 
   // Atomically expire AND read back the nango_connection_id in one query.
   const { data: updated, error } = await supabase
@@ -110,8 +113,8 @@ export async function deactivateConnection(
 /**
  * List the current user's ACTIVE connections for the /connections UI.
  */
-export async function listUserConnections(): Promise<Connection[]> {
-  const userId = await resolveUserId()
+export async function listUserConnections(explicitUserId?: string): Promise<Connection[]> {
+  const userId = explicitUserId ?? await resolveUserId()
   const { data, error } = await supabase
     .from('connections')
     .select('*')

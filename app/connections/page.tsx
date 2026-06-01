@@ -12,16 +12,17 @@ import { ConnectionsView } from './connections-view'
 export const dynamic = 'force-dynamic'
 
 export default async function ConnectionsPage() {
-  const [connections, events, calConn, supabase] = await Promise.all([
-    listUserConnections(),
-    loadTodayEvents().catch(() => []),
-    getActiveConnection('calendar').catch(() => null),
-    createSupabaseServerClient(),
-  ])
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const supabase = await createSupabaseServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const userId = user?.id
   const initial = (user?.email ?? 'U').charAt(0).toUpperCase()
+
+  const [connections, events, calConn] = await Promise.all([
+    userId ? listUserConnections(userId) : Promise.resolve([]),
+    loadTodayEvents().catch(() => []),
+    userId ? getActiveConnection('calendar', userId).catch(() => null) : Promise.resolve(null),
+  ])
+
   return (
     <PageShell
       userEmail={user?.email ?? undefined}

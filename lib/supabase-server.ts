@@ -64,7 +64,7 @@ export async function resolveUserId(): Promise<string> {
   try {
     return await getCurrentUserId()
   } catch {
-    const envId = process.env.APP_USER_ID
+    const envId = process.env.APP_USER_ID?.trim()
     if (!envId) {
       throw new Error(
         'No authenticated user and APP_USER_ID env var is not set.'

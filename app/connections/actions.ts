@@ -20,8 +20,16 @@ import {
   deactivateConnection,
   NANGO_PROVIDER_KEY,
 } from '@/lib/connections'
-import { resolveUserId, createSupabaseServerClient } from '@/lib/supabase-server'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
 import type { ConnectionProvider } from '@/lib/types'
+
+/** Read the current session user — always available on the /connections page. */
+async function getSessionUser() {
+  const client = await createSupabaseServerClient()
+  const { data: { user } } = await client.auth.getUser()
+  if (!user?.id) throw new Error('Not authenticated.')
+  return user
+}
 
 /**
  * Mint a one-shot Nango Connect session token. The frontend SDK uses this
@@ -39,14 +47,10 @@ export async function createNangoConnectSession(
     throw new Error(`${provider} doesn't use Nango OAuth.`)
   }
 
-  // Read the real authenticated user's email — never hardcode.
-  const supabaseClient = await createSupabaseServerClient()
-  const { data: { user } } = await supabaseClient.auth.getUser()
-  const userEmail = user?.email ?? 'subash@sigiq.ai'
-  const userId = await resolveUserId()
+  const user = await getSessionUser()
 
   const session = (await nango.createConnectSession({
-    end_user: { id: userId, email: userEmail },
+    end_user: { id: user.id, email: user.email ?? '' },
     allowed_integrations: [providerKey],
   })) as { data?: { token?: string }; token?: string }
 
@@ -54,7 +58,7 @@ export async function createNangoConnectSession(
   if (!token) {
     throw new Error('Nango createConnectSession did not return a token.')
   }
-  return { token, providerKey, userEmail }
+  return { token, providerKey, userEmail: user.email ?? '' }
 }
 
 /**
@@ -69,7 +73,8 @@ export async function recordNangoConnection(
     if (NANGO_PROVIDER_KEY[provider] === null) {
       return { ok: false, error: `${provider} doesn't use Nango OAuth.` }
     }
-    await upsertConnection({ provider, nango_connection_id: nangoConnectionId })
+    const user = await getSessionUser()
+    await upsertConnection({ provider, nango_connection_id: nangoConnectionId, userId: user.id })
     revalidatePath('/connections')
     return { ok: true }
   } catch (err) {
@@ -88,7 +93,8 @@ export async function recordGranolaApiKey(apiKey: string): Promise<void> {
   if (!trimmed.startsWith('grn_')) {
     throw new Error('That doesn\'t look like a Granola API key (should start with "grn_").')
   }
-  await upsertConnection({ provider: 'granola', api_key: trimmed })
+  const user = await getSessionUser()
+  await upsertConnection({ provider: 'granola', api_key: trimmed, userId: user.id })
   revalidatePath('/connections')
 }
 
@@ -101,7 +107,8 @@ export async function recordLinearApiKey(apiKey: string): Promise<void> {
   if (!trimmed.startsWith('lin_api_')) {
     throw new Error('That doesn\'t look like a Linear Personal API key (should start with "lin_api_").')
   }
-  await upsertConnection({ provider: 'linear', api_key: trimmed })
+  const user = await getSessionUser()
+  await upsertConnection({ provider: 'linear', api_key: trimmed, userId: user.id })
   revalidatePath('/connections')
 }
 
@@ -112,7 +119,8 @@ export async function disconnectProvider(
   provider: ConnectionProvider
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await deactivateConnection(provider)
+    const user = await getSessionUser()
+    await deactivateConnection(provider, user.id)
     revalidatePath('/connections')
     return { ok: true }
   } catch (err) {
