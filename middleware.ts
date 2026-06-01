@@ -47,7 +47,8 @@ export async function middleware(request: NextRequest) {
     path.startsWith('/auth') ||
     path.startsWith('/privacy') ||
     path.startsWith('/terms') ||
-    path.startsWith('/api/inngest') // Inngest webhook — never gated
+    path.startsWith('/api/inngest') || // Inngest webhook — never gated
+    path.startsWith('/api/whatsapp/webhook') // Twilio webhook — verified by signature
 
   if (!user && !isPublic) {
     const loginUrl = new URL('/login', request.url)
