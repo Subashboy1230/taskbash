@@ -23,6 +23,7 @@ import { BrandLogo } from '@/app/_components/brand-logo'
 import {
   createNangoConnectSession,
   recordNangoConnection,
+  findNangoConnection,
   recordGranolaApiKey,
   recordLinearApiKey,
   disconnectProvider,
@@ -382,25 +383,30 @@ async function connectViaNango(provider: ConnectionProvider) {
   const { token, providerKey } = await createNangoConnectSession(provider)
   const nango = new NangoFrontend({ connectSessionToken: token })
 
-  let result: { connectionId?: string; isPending?: boolean }
+  let connectionId: string | undefined
+
   try {
-    result = (await nango.auth(providerKey, {
-      params: {
-        prompt: 'select_account consent',
-      },
+    const result = (await nango.auth(providerKey, {
+      params: { prompt: 'select_account consent' },
     })) as { connectionId?: string; isPending?: boolean }
+    connectionId = result?.connectionId
   } catch (err) {
-    // windowClosed = user closed popup before completing — not an error we show
     const msg = err instanceof Error ? err.message : String(err)
-    if (msg.includes('windowClosed') || msg.includes('closed')) {
-      throw new Error('Window closed before completing — please try again.')
+    // windowClosed means user closed the popup — fall through to server-side check
+    // because the OAuth may have completed before they closed it.
+    if (!msg.includes('windowClosed') && !msg.includes('closed')) {
+      throw err
     }
-    throw err
   }
 
-  const connectionId = result?.connectionId
-  if (!connectionId || typeof connectionId !== 'string') {
-    throw new Error(`OAuth completed but Nango returned no connection ID. Result: ${JSON.stringify(result)}`)
+  // If the WebSocket didn't deliver a connectionId (race / WS drop / popup close),
+  // ask the server to look up whether Nango already has a connection for this user.
+  if (!connectionId) {
+    const found = await findNangoConnection(provider)
+    if (!found) {
+      throw new Error('OAuth window closed before completing - please try again.')
+    }
+    connectionId = found
   }
 
   const saved = await recordNangoConnection(provider, connectionId)

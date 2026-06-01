@@ -74,6 +74,41 @@ export async function createNangoConnectSession(
 }
 
 /**
+ * Look up whether Nango already has a connection for the current user +
+ * provider. Used as a fallback when the WebSocket doesn't deliver the
+ * connectionId back to the browser (race, popup close, WS drop).
+ * Returns the connectionId string if found, null otherwise.
+ */
+export async function findNangoConnection(
+  provider: ConnectionProvider
+): Promise<string | null> {
+  try {
+    const providerKey = NANGO_PROVIDER_KEY[provider]
+    if (!providerKey) return null
+    const user = await getSessionUser()
+    const raw = await nango.listConnections() as any
+    const list: unknown[] = Array.isArray(raw) ? raw : raw?.connections ?? raw?.data ?? []
+    // Find a connection belonging to this session user for this provider
+    for (const c of list) {
+      const entry = c as {
+        provider_config_key?: string; providerConfigKey?: string
+        connection_id?: string; connectionId?: string
+        end_user?: { id?: string }; endUser?: { id?: string }
+      }
+      const key = entry.provider_config_key ?? entry.providerConfigKey
+      const connId = entry.connection_id ?? entry.connectionId
+      const endUserId = entry.end_user?.id ?? entry.endUser?.id
+      if (key === providerKey && connId && endUserId === user.id) {
+        return connId
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Persist a freshly-completed Nango OAuth connection to our DB. Called by
  * the frontend after Nango.auth() resolves with a connectionId.
  */
