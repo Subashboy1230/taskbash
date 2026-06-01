@@ -2905,7 +2905,21 @@ function PrepCard({
             {item.title.replace(/^Prep:\s*/i, '')}
           </p>
           {item.parent_context && (
-            <p className="m-0 mt-0.5 text-[12px] text-ink-faint">{item.parent_context}</p>
+            <p className="m-0 mt-0.5 text-[12px] text-ink-faint" suppressHydrationWarning>
+              {(() => {
+                // Re-render the time portion in the browser's local timezone.
+                // parent_context is "Mon, Jun 1, 8:00 PM with ..." — replace
+                // the date/time prefix with one formatted from due_at locally.
+                if (!item.due_at) return item.parent_context
+                const localTime = new Date(item.due_at).toLocaleString(undefined, {
+                  weekday: 'short', month: 'short', day: 'numeric',
+                  hour: 'numeric', minute: '2-digit',
+                })
+                // Keep the attendee portion (everything after " with ")
+                const withPart = item.parent_context.match(/ with .+/)
+                return localTime + (withPart ? withPart[0] : '')
+              })()}
+            </p>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
