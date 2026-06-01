@@ -214,13 +214,13 @@ function ConnectionAction({
           onClick={() =>
             startBusy(async () => {
               setError(null)
-              try {
-                await disconnectProvider(
-                  source.provider as ConnectionProvider
-                )
+              const result = await disconnectProvider(
+                source.provider as ConnectionProvider
+              )
+              if (!result.ok) {
+                setError(result.error)
+              } else {
                 router.refresh()
-              } catch (err) {
-                setError(err instanceof Error ? err.message : 'Disconnect failed')
               }
             })
           }
@@ -379,16 +379,23 @@ async function connectViaNango(provider: ConnectionProvider) {
   // Dynamic import so the @nangohq/frontend SDK doesn't ship in the SSR bundle.
   const NangoFrontend = (await import('@nangohq/frontend')).default
 
-  const { token, providerKey } = await createNangoConnectSession(provider)
+  // Get the session token AND the authenticated user's real email (never hardcoded).
+  const { token, providerKey, userEmail } = await createNangoConnectSession(provider)
   const nango = new NangoFrontend({ connectSessionToken: token })
 
-  const result = (await nango.auth(providerKey)) as {
+  const result = (await nango.auth(providerKey, {
+    params: {
+      // Force the account picker to appear and pre-select the correct account.
+      prompt: 'select_account consent',
+      login_hint: userEmail,
+    },
+  })) as {
     connectionId?: string
     connection_id?: string
   }
-  const connectionId = result.connectionId ?? result.connection_id
-  if (!connectionId) {
-    throw new Error('Nango auth completed but did not return a connection ID.')
+  const connectionId = result?.connectionId ?? result?.connection_id
+  if (!connectionId || typeof connectionId !== 'string') {
+    throw new Error(`OAuth for ${provider} completed but returned no connection ID.`)
   }
   await recordNangoConnection(provider, connectionId)
 }

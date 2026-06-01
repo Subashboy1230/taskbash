@@ -9,9 +9,9 @@
 //   3. After the popup closes, frontend calls recordNangoConnection(provider,
 //      connectionId) to persist the new connection to our DB.
 //
-// API-key providers (Granola):
+// API-key providers (Granola, Linear):
 //   1. Frontend collects the API key from a form.
-//   2. Submits to recordGranolaApiKey(apiKey) — stored directly in DB.
+//   2. Submits to recordGranolaApiKey/recordLinearApiKey — stored directly in DB.
 
 import { revalidatePath } from 'next/cache'
 import { nango } from '@/lib/nango'
@@ -20,26 +20,33 @@ import {
   deactivateConnection,
   NANGO_PROVIDER_KEY,
 } from '@/lib/connections'
-import { resolveUserId } from '@/lib/supabase-server'
+import { resolveUserId, createSupabaseServerClient } from '@/lib/supabase-server'
 import type { ConnectionProvider } from '@/lib/types'
 
 /**
  * Mint a one-shot Nango Connect session token. The frontend SDK uses this
  * token to authorize a single OAuth flow for a single user + integration.
  * Tokens are short-lived; created fresh on each Connect click.
+ *
+ * Uses the authenticated user's actual email as the Nango end_user so
+ * the OAuth account picker pre-selects the right account.
  */
 export async function createNangoConnectSession(
   provider: ConnectionProvider
-): Promise<{ token: string; providerKey: string }> {
+): Promise<{ token: string; providerKey: string; userEmail: string }> {
   const providerKey = NANGO_PROVIDER_KEY[provider]
   if (!providerKey) {
     throw new Error(`${provider} doesn't use Nango OAuth.`)
   }
 
-  // @nangohq/node returns the session object directly in newer versions; we
-  // pull the token defensively so this still works on older SDKs.
+  // Read the real authenticated user's email — never hardcode.
+  const supabaseClient = await createSupabaseServerClient()
+  const { data: { user } } = await supabaseClient.auth.getUser()
+  const userEmail = user?.email ?? 'subash@sigiq.ai'
+  const userId = await resolveUserId()
+
   const session = (await nango.createConnectSession({
-    end_user: { id: await resolveUserId(), email: 'subashraj411@gmail.com' },
+    end_user: { id: userId, email: userEmail },
     allowed_integrations: [providerKey],
   })) as { data?: { token?: string }; token?: string }
 
@@ -47,7 +54,7 @@ export async function createNangoConnectSession(
   if (!token) {
     throw new Error('Nango createConnectSession did not return a token.')
   }
-  return { token, providerKey }
+  return { token, providerKey, userEmail }
 }
 
 /**
@@ -66,8 +73,7 @@ export async function recordNangoConnection(
 }
 
 /**
- * Store a Granola API key (API-key auth, no OAuth). Trims whitespace; rejects
- * obviously-wrong keys (Granola keys start with `grn_`).
+ * Store a Granola API key (API-key auth, no OAuth).
  */
 export async function recordGranolaApiKey(apiKey: string): Promise<void> {
   const trimmed = apiKey.trim()
@@ -93,12 +99,17 @@ export async function recordLinearApiKey(apiKey: string): Promise<void> {
 }
 
 /**
- * Mark a connection as expired so the extractor skips it. The Connect flow
- * can reactivate it later.
+ * Disconnect a provider: expires the DB row and revokes the Nango token.
  */
 export async function disconnectProvider(
   provider: ConnectionProvider
-): Promise<void> {
-  await deactivateConnection(provider)
-  revalidatePath('/connections')
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await deactivateConnection(provider)
+    revalidatePath('/connections')
+    return { ok: true }
+  } catch (err) {
+    console.error(`[disconnectProvider] failed for ${provider}:`, err)
+    return { ok: false, error: err instanceof Error ? err.message : 'Disconnect failed' }
+  }
 }

@@ -1,9 +1,6 @@
 // Connections — the single source of truth for OAuth tokens (via Nango) and
 // API keys per user. Extractors call getActiveConnection() to read credentials
 // from the DB instead of hardcoded env vars.
-//
-// Still single-user (uses APP_USER_ID env var). When auth lands in a future
-// week, the user_id arg becomes the authenticated user's id.
 
 import { supabase } from './supabase'
 import { nango } from './nango'
@@ -30,8 +27,7 @@ export const NANGO_PROVIDER_KEY: Record<ConnectionProvider, string | null> = {
 
 /**
  * Look up the active connection for a given provider for the current user.
- * Returns null if no active connection exists — callers handle the missing
- * case (typically by skipping the source extraction).
+ * Returns null if no active connection exists.
  */
 export async function getActiveConnection(
   provider: ConnectionProvider
@@ -43,6 +39,8 @@ export async function getActiveConnection(
     .eq('user_id', userId)
     .eq('provider', provider)
     .eq('status', 'active')
+    .order('updated_at', { ascending: false })
+    .limit(1)
     .maybeSingle()
   if (error) {
     throw new Error(`getActiveConnection(${provider}) failed: ${error.message}`)
@@ -51,8 +49,7 @@ export async function getActiveConnection(
 }
 
 /**
- * Insert or update the connection for the current user + provider. Used by
- * the Connect flow when a user finishes OAuth or pastes an API key.
+ * Insert or update the connection for the current user + provider.
  */
 export async function upsertConnection(args: {
   provider: ConnectionProvider
@@ -81,23 +78,39 @@ export async function upsertConnection(args: {
 }
 
 /**
- * Mark a connection as disconnected (soft delete — preserves history). The
- * Connect flow can re-activate it later by upserting with status='active'.
+ * Mark a connection as disconnected and revoke the token from Nango.
+ * Uses a single atomic UPDATE...RETURNING so we get the nango_connection_id
+ * in one round-trip without a race between SELECT and UPDATE.
  */
 export async function deactivateConnection(
   provider: ConnectionProvider
 ): Promise<void> {
   const userId = await resolveUserId()
-  const { error } = await supabase
+
+  // Atomically expire AND read back the nango_connection_id in one query.
+  const { data: updated, error } = await supabase
     .from('connections')
     .update({ status: 'expired' })
     .eq('user_id', userId)
     .eq('provider', provider)
+    .select('nango_connection_id')
   if (error) throw new Error(`deactivateConnection failed: ${error.message}`)
+
+  // Revoke the token in Nango so it can't be resurrected by syncOAuth.
+  const nangoKey = NANGO_PROVIDER_KEY[provider]
+  const nangoConnectionId = (updated?.[0] as { nango_connection_id?: string | null } | undefined)?.nango_connection_id
+  if (nangoKey && nangoConnectionId) {
+    try {
+      await nango.deleteConnection(nangoKey, nangoConnectionId)
+    } catch (err) {
+      // Non-fatal: DB row is already expired. Log for observability.
+      console.error(`[deactivateConnection] Nango deleteConnection(${provider}) failed:`, err)
+    }
+  }
 }
 
 /**
- * List all of the current user's connections for the /connections UI.
+ * List the current user's ACTIVE connections for the /connections UI.
  */
 export async function listUserConnections(): Promise<Connection[]> {
   const userId = await resolveUserId()
@@ -105,6 +118,7 @@ export async function listUserConnections(): Promise<Connection[]> {
     .from('connections')
     .select('*')
     .eq('user_id', userId)
+    .eq('status', 'active')
     .order('created_at', { ascending: true })
   if (error) throw new Error(`listUserConnections failed: ${error.message}`)
   return (data as Connection[]) ?? []
@@ -115,8 +129,8 @@ export async function listUserConnections(): Promise<Connection[]> {
  * Run before showing the /connections page so freshly-completed OAuth flows
  * are picked up even when the frontend SDK's popup→postMessage path glitches.
  *
- * Best-effort: any Nango API error is swallowed (we still render whatever's
- * in our DB). Returns the list of providers that got updated, for debugging.
+ * Skips any provider the user has explicitly disconnected (status=expired) so
+ * a disconnect is never undone by the sync.
  */
 export async function syncOAuthConnectionsFromNango(): Promise<{
   updated: ConnectionProvider[]
@@ -135,7 +149,19 @@ export async function syncOAuthConnectionsFromNango(): Promise<{
   const wrapper = raw as { connections?: unknown[]; data?: unknown[] } | unknown[]
   const list: unknown[] = Array.isArray(wrapper)
     ? wrapper
-    : wrapper.connections ?? wrapper.data ?? []
+    : (wrapper as { connections?: unknown[]; data?: unknown[] }).connections
+      ?? (wrapper as { connections?: unknown[]; data?: unknown[] }).data
+      ?? []
+
+  // Load providers the user has explicitly disconnected — never resurrect them.
+  const { data: expiredRows } = await supabase
+    .from('connections')
+    .select('provider')
+    .eq('user_id', userId)
+    .eq('status', 'expired')
+  const expiredProviders = new Set(
+    (expiredRows ?? []).map((r: { provider: string }) => r.provider)
+  )
 
   const updated: ConnectionProvider[] = []
   for (const entry of list) {
@@ -152,12 +178,16 @@ export async function syncOAuthConnectionsFromNango(): Promise<{
     const endUserId = c.end_user?.id ?? c.endUser?.id ?? null
 
     if (!nangoKey || !nangoConnectionId) continue
-    // If the response includes end-user info, filter to ours. Otherwise
-    // accept everything (single-user mode — there's only this user).
-    if (endUserId !== null && endUserId !== userId) continue
+
+    // Only accept connections belonging to this user. If Nango doesn't
+    // return end_user info we skip rather than accept blindly.
+    if (!endUserId || endUserId !== userId) continue
 
     const internalProvider = PROVIDER_FROM_NANGO_KEY[nangoKey]
     if (!internalProvider) continue
+
+    // Never re-activate a provider the user explicitly disconnected.
+    if (expiredProviders.has(internalProvider)) continue
 
     try {
       await upsertConnection({
