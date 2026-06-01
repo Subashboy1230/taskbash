@@ -1880,6 +1880,22 @@ export function DetailPanel({
             <Clock size={11} /> Add due date
           </button>
         )}
+        {/* Join meeting button — shown for calendar prep items with a meeting URL */}
+        {(() => {
+          const url = (item.source_ref as { meeting_url?: string } | null)?.meeting_url
+          if (!url) return null
+          return (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1 text-[12px] font-semibold text-canvas hover:opacity-90"
+            >
+              Join meeting
+              <ExternalLink size={11} />
+            </a>
+          )
+        })()}
       </div>
 
       {/* Approval queue: when the agent drafted an action (e.g. an email
