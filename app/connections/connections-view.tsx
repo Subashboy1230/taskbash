@@ -379,23 +379,33 @@ async function connectViaNango(provider: ConnectionProvider) {
   // Dynamic import so the @nangohq/frontend SDK doesn't ship in the SSR bundle.
   const NangoFrontend = (await import('@nangohq/frontend')).default
 
-  // Get the session token AND the authenticated user's real email (never hardcoded).
   const { token, providerKey, userEmail } = await createNangoConnectSession(provider)
   const nango = new NangoFrontend({ connectSessionToken: token })
 
-  const result = (await nango.auth(providerKey, {
-    params: {
-      // Force the account picker to appear and pre-select the correct account.
-      prompt: 'select_account consent',
-      login_hint: userEmail,
-    },
-  })) as {
-    connectionId?: string
-    connection_id?: string
+  let result: { connectionId?: string; isPending?: boolean }
+  try {
+    result = (await nango.auth(providerKey, {
+      params: {
+        prompt: 'select_account consent',
+        login_hint: userEmail,
+      },
+    })) as { connectionId?: string; isPending?: boolean }
+  } catch (err) {
+    // windowClosed = user closed popup before completing — not an error we show
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('windowClosed') || msg.includes('closed')) {
+      throw new Error('Window closed before completing — please try again.')
+    }
+    throw err
   }
-  const connectionId = result?.connectionId ?? result?.connection_id
+
+  const connectionId = result?.connectionId
   if (!connectionId || typeof connectionId !== 'string') {
-    throw new Error(`OAuth for ${provider} completed but returned no connection ID.`)
+    throw new Error(`OAuth completed but Nango returned no connection ID. Result: ${JSON.stringify(result)}`)
   }
-  await recordNangoConnection(provider, connectionId)
+
+  const saved = await recordNangoConnection(provider, connectionId)
+  if (!saved.ok) {
+    throw new Error(`Connected but failed to save: ${saved.error}`)
+  }
 }

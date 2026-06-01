@@ -64,12 +64,19 @@ export async function createNangoConnectSession(
 export async function recordNangoConnection(
   provider: ConnectionProvider,
   nangoConnectionId: string
-): Promise<void> {
-  if (NANGO_PROVIDER_KEY[provider] === null) {
-    throw new Error(`${provider} doesn't use Nango OAuth.`)
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    if (NANGO_PROVIDER_KEY[provider] === null) {
+      return { ok: false, error: `${provider} doesn't use Nango OAuth.` }
+    }
+    await upsertConnection({ provider, nango_connection_id: nangoConnectionId })
+    revalidatePath('/connections')
+    return { ok: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[recordNangoConnection] failed for ${provider}:`, msg)
+    return { ok: false, error: msg }
   }
-  await upsertConnection({ provider, nango_connection_id: nangoConnectionId })
-  revalidatePath('/connections')
 }
 
 /**
