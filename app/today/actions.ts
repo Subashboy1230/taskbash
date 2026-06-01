@@ -1019,11 +1019,12 @@ export async function reorderItem(
  */
 export async function updateItemDescription(
   itemId: string,
-  args: { title?: string; description?: string }
+  args: { title?: string; description?: string; due_at?: string | null }
 ) {
-  const update: Record<string, string> = {}
+  const update: Record<string, unknown> = {}
   if (args.title !== undefined) update.title = args.title.trim()
   if (args.description !== undefined) update.parent_context = args.description.trim()
+  if (args.due_at !== undefined) update.due_at = args.due_at ? new Date(args.due_at).toISOString() : null
   if (Object.keys(update).length === 0) return
   const { error } = await supabase
     .from('items')

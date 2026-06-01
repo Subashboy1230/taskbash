@@ -1700,16 +1700,24 @@ export function DetailPanel({
   now?: Date
 }) {
   const _now = now ?? new Date()
-  const [editing, setEditing] = useState(false)
-  const [editTitle, setEditTitle] = useState(item.title)
-  const [editDesc, setEditDesc] = useState(item.description ?? '')
-  const [saving, setSaving] = useState(false)
 
   // Local description state — updated optimistically after generation
   const [description, setDescription] = useState<string | null>(item.description ?? null)
+  // Local title state — updated optimistically after inline edit
+  const [localTitle, setLocalTitle] = useState(item.title)
+  // Local due_at state
+  const [localDueAt, setLocalDueAt] = useState<string | null>(item.due_at ?? null)
+
   // Subtasks state for optimistic update after generation
   const [generatedSubs, setGeneratedSubs] = useState<Array<{ id: string; title: string; completed: boolean }> | null>(null)
   const [generating, setGenerating] = useState(false)
+
+  // Inline edit states
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [editTitleVal, setEditTitleVal] = useState(item.title)
+  const [editingDesc, setEditingDesc] = useState(false)
+  const [editDescVal, setEditDescVal] = useState('')
+  const [editingDue, setEditingDue] = useState(false)
 
   // Auto-generate on first open when no description + no subtasks
   const subItems = item.sub_items ?? []
@@ -1728,31 +1736,32 @@ export function DetailPanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function startEdit() {
-    setEditTitle(item.title)
-    setEditDesc(description ?? '')
-    setEditing(true)
+  async function commitTitle() {
+    const trimmed = editTitleVal.trim()
+    if (!trimmed || trimmed === localTitle) { setEditingTitle(false); return }
+    setLocalTitle(trimmed)
+    setEditingTitle(false)
+    await updateItemDescription(item.id, { title: trimmed }).catch(() => setLocalTitle(localTitle))
   }
 
-  async function saveEdit() {
-    setSaving(true)
-    try {
-      await updateItemDescription(item.id, {
-        title: editTitle,
-        description: editDesc,
-      })
-      setDescription(editDesc)
-      setEditing(false)
-    } finally {
-      setSaving(false)
-    }
+  async function commitDesc() {
+    const trimmed = editDescVal.trim()
+    setDescription(trimmed || null)
+    setEditingDesc(false)
+    await updateItemDescription(item.id, { description: trimmed }).catch(() => setDescription(description))
   }
 
-  function cancelEdit() {
-    setEditing(false)
-    setEditTitle(item.title)
-    setEditDesc(description ?? '')
+  async function commitDue(val: string) {
+    setEditingDue(false)
+    const newDue = val ? new Date(val).toISOString() : null
+    setLocalDueAt(newDue)
+    await updateItemDescription(item.id, { due_at: val || null }).catch(() => setLocalDueAt(localDueAt))
   }
+
+  // Keep legacy editing state for pencil-icon compat (no-op now, kept to avoid removing the button)
+  const editing = false
+  function startEdit() { setEditingTitle(true); setEditTitleVal(localTitle) }
+  function cancelEdit() { setEditingTitle(false) }
 
   return (
     <aside className="h-full w-full overflow-y-auto bg-surface px-5 py-5 animate-fade-in">
@@ -1781,44 +1790,27 @@ export function DetailPanel({
         </Button>
       </div>
 
-      {editing ? (
-        <div className="mb-3">
+      {/* Inline-editable title */}
+      <div className="mb-3">
+        {editingTitle ? (
           <input
             autoFocus
-            value={editTitle}
-            onChange={e => setEditTitle(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }}
-            className="mb-2 w-full rounded-md border border-line bg-surface-muted px-3 py-1.5 text-[18px] font-medium text-ink outline-none focus:ring-1 focus:ring-line"
+            value={editTitleVal}
+            onChange={e => setEditTitleVal(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={e => { if (e.key === 'Enter') commitTitle(); if (e.key === 'Escape') { setEditingTitle(false); setEditTitleVal(localTitle) } }}
+            className="w-full rounded-md border border-line bg-surface-muted px-3 py-1.5 text-[18px] font-medium text-ink outline-none focus:ring-1 focus:ring-line"
           />
-          <textarea
-            value={editDesc}
-            onChange={e => setEditDesc(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Escape') cancelEdit() }}
-            rows={3}
-            placeholder="Description (optional)"
-            className="w-full resize-none rounded-md border border-line bg-surface-muted px-3 py-1.5 text-[13px] text-ink outline-none focus:ring-1 focus:ring-line"
-          />
-          <div className="mt-2 flex gap-2">
-            <button
-              onClick={saveEdit}
-              disabled={saving || !editTitle.trim()}
-              className="rounded-md bg-success-fg px-3 py-1 text-[13px] font-medium text-canvas hover:opacity-90 disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              onClick={cancelEdit}
-              className="rounded-md border border-line px-3 py-1 text-[13px] font-medium text-ink hover:bg-surface-muted"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="mb-3">
-          <h2 className="m-0 text-[18px] font-medium leading-snug text-ink">{item.title}</h2>
-        </div>
-      )}
+        ) : (
+          <h2
+            className="m-0 cursor-text text-[18px] font-medium leading-snug text-ink hover:bg-surface-muted/40 rounded px-1 -mx-1 transition-colors"
+            onClick={() => { setEditingTitle(true); setEditTitleVal(localTitle) }}
+            title="Click to edit title"
+          >
+            {localTitle}
+          </h2>
+        )}
+      </div>
 
       <div className="mb-4 flex items-center gap-2">
         {item.detail_status && (
@@ -1833,7 +1825,33 @@ export function DetailPanel({
             {item.detail_status}
           </span>
         )}
-        {item.due_at && <DeadlineBadge dueIso={item.due_at} now={_now} />}
+        {/* Inline-editable due date */}
+        {editingDue ? (
+          <input
+            autoFocus
+            type="date"
+            defaultValue={localDueAt ? new Date(localDueAt).toISOString().slice(0, 10) : ''}
+            onBlur={e => commitDue(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') commitDue((e.target as HTMLInputElement).value); if (e.key === 'Escape') setEditingDue(false) }}
+            className="rounded-md border border-line bg-surface-muted px-2 py-0.5 text-[12px] text-ink outline-none focus:ring-1 focus:ring-line"
+          />
+        ) : localDueAt ? (
+          <span
+            className="cursor-pointer"
+            onClick={() => setEditingDue(true)}
+            title="Click to edit due date"
+          >
+            <DeadlineBadge dueIso={localDueAt} now={_now} />
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditingDue(true)}
+            className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[12px] text-ink-faint hover:bg-surface-muted hover:text-ink"
+          >
+            <Clock size={11} /> Add due date
+          </button>
+        )}
       </div>
 
       {/* Approval queue: when the agent drafted an action (e.g. an email
@@ -1857,18 +1875,44 @@ export function DetailPanel({
         allFunctions={allFunctions}
       />
 
-      {/* AI-generated description — shown inline, editable via the pencil icon */}
+      {/* Inline-editable description */}
       {generating ? (
         <div className="mb-4 flex items-center gap-2 rounded-md border border-line/60 bg-surface-muted/40 px-3.5 py-3">
           <Loader2 size={13} className="animate-spin text-ink-faint" />
           <span className="text-[13px] text-ink-faint">Generating description and subtasks…</span>
         </div>
+      ) : editingDesc ? (
+        <div className="mb-4 rounded-md border border-line bg-surface-muted/40 px-3.5 py-3">
+          <p className="m-0 mb-1 text-[11px] font-medium uppercase tracking-wider text-ink-faint">Description</p>
+          <textarea
+            autoFocus
+            value={editDescVal}
+            onChange={e => setEditDescVal(e.target.value)}
+            onBlur={commitDesc}
+            onKeyDown={e => { if (e.key === 'Escape') { setEditingDesc(false); setEditDescVal(description ?? '') } }}
+            rows={3}
+            placeholder="Add a description…"
+            className="w-full resize-none bg-transparent text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-faint"
+          />
+        </div>
       ) : description ? (
-        <div className="mb-4 rounded-md border border-line/60 bg-surface-muted/40 px-3.5 py-3">
+        <div
+          className="mb-4 cursor-text rounded-md border border-line/60 bg-surface-muted/40 px-3.5 py-3 hover:border-line transition-colors"
+          onClick={() => { setEditingDesc(true); setEditDescVal(description ?? '') }}
+          title="Click to edit description"
+        >
           <p className="m-0 mb-1 text-[11px] font-medium uppercase tracking-wider text-ink-faint">Description</p>
           <p className="m-0 text-[13px] leading-relaxed text-ink">{description}</p>
         </div>
-      ) : null}
+      ) : (
+        <button
+          type="button"
+          onClick={() => { setEditingDesc(true); setEditDescVal('') }}
+          className="mb-4 flex w-full items-center gap-1.5 rounded-md border border-dashed border-line/60 px-3.5 py-2.5 text-[13px] text-ink-faint hover:border-line hover:text-ink transition-colors"
+        >
+          <Plus size={13} /> Add description
+        </button>
+      )}
 
       {/* Subtasks — the headline interaction. Stored as child items in the
           DB; toggle persists; add input creates a new manual item. */}
