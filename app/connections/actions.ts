@@ -49,10 +49,17 @@ export async function createNangoConnectSession(
 
   const user = await getSessionUser()
 
-  const session = (await nango.createConnectSession({
-    end_user: { id: user.id, email: user.email ?? '' },
-    allowed_integrations: [providerKey],
-  })) as { data?: { token?: string }; token?: string }
+  let session: { data?: { token?: string }; token?: string }
+  try {
+    session = (await nango.createConnectSession({
+      end_user: { id: user.id, email: user.email ?? '' },
+      allowed_integrations: [providerKey],
+    })) as { data?: { token?: string }; token?: string }
+  } catch (err: unknown) {
+    const axErr = err as { response?: { data?: unknown }; message?: string }
+    const detail = axErr?.response?.data ? JSON.stringify(axErr.response.data) : axErr?.message
+    throw new Error(`Nango createConnectSession failed (${providerKey}): ${detail}`)
+  }
 
   const token = session?.data?.token ?? session?.token
   if (!token) {
