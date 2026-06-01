@@ -292,6 +292,13 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
           update.gmail_draft_id = (fresh.proposed_action as { gmail_draft_id?: string }).gmail_draft_id
         }
       }
+      // Backfill meeting_url into source_ref on carryover so existing prep
+      // items pick up the join link without needing a full re-insert.
+      const freshMeetingUrl = (fresh.source_ref as { meeting_url?: string } | null)?.meeting_url
+      const existingMeetingUrl = (existing.source_ref as { meeting_url?: string } | null)?.meeting_url
+      if (freshMeetingUrl && !existingMeetingUrl) {
+        update.source_ref = { ...(existing.source_ref as object ?? {}), meeting_url: freshMeetingUrl }
+      }
       await supabase.from('items').update(update).eq('id', existing.id)
       carryoverCount += 1
     }
