@@ -119,7 +119,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
         .map(r => (r.source_ref as { granola_meeting_id?: string } | null)?.granola_meeting_id)
         .filter((id): id is string => typeof id === 'string')
     )
-    const items = await extractGranolaActionItems({ userEmail, days, meetingIdsWithDraft })
+    const items = await extractGranolaActionItems({ userEmail, userId, days, meetingIdsWithDraft })
     return items
   })
 
@@ -128,7 +128,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     if (!conn?.nango_connection_id) return null
     const [inbox, sent] = await Promise.all([
       extractGmailActionItems({ userEmail, userId, days }),
-      extractGmailSentCommitments({ userEmail, days }),
+      extractGmailSentCommitments({ userEmail, userId, days }),
     ])
     return [...inbox, ...sent]
   })
@@ -136,13 +136,13 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   await tryRun('calendar', async () => {
     const conn = await getActiveConnection('calendar')
     if (!conn?.nango_connection_id) return null
-    return extractCalendarPrepItems({ userEmail })
+    return extractCalendarPrepItems({ userEmail, userId })
   })
 
   await tryRun('linear', async () => {
     const conn = await getActiveConnection('linear')
     if (!conn?.api_key) return null
-    return extractLinearActionItems({ userEmail })
+    return extractLinearActionItems({ userEmail, userId })
   })
 
   async function tryRun(

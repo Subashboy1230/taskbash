@@ -87,13 +87,14 @@ interface QAIssuesResponse {
 
 interface ExtractArgs {
   userEmail: string
+  userId?: string
   days?: number // unused for Linear — Linear's state is the "freshness" signal
 }
 
 export async function extractLinearActionItems(
   args: ExtractArgs // eslint-disable-line @typescript-eslint/no-unused-vars
 ): Promise<ExtractedItem[]> {
-  const conn = await getActiveConnection('linear')
+  const conn = await getActiveConnection('linear', args.userId)
   if (!conn || !conn.api_key) {
     throw new Error('Linear not connected — visit /connections to paste a Personal API key.')
   }

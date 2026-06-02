@@ -57,13 +57,14 @@ interface GoogleCalendarEventsResponse {
 
 interface ExtractArgs {
   userEmail: string
+  userId?: string
   days?: number // unused for Calendar — we always look HOURS_AHEAD
 }
 
 export async function extractCalendarPrepItems(
   args: ExtractArgs
 ): Promise<ExtractedItem[]> {
-  const conn = await getActiveConnection('calendar')
+  const conn = await getActiveConnection('calendar', args.userId)
   if (!conn || !conn.nango_connection_id) {
     throw new Error(
       'Calendar not connected — visit /connections to set it up.'

@@ -66,6 +66,7 @@ export interface GranolaNoteDetail {
 
 interface ExtractActionItemsArgs {
   userEmail: string
+  userId?: string
   days: number
   /** Granola meeting IDs that already have a proposed_action in the DB — skip draftFollowup for these. */
   meetingIdsWithDraft?: Set<string>
@@ -74,7 +75,7 @@ interface ExtractActionItemsArgs {
 export async function extractGranolaActionItems(
   args: ExtractActionItemsArgs
 ): Promise<ExtractedItem[]> {
-  const conn = await getActiveConnection('granola')
+  const conn = await getActiveConnection('granola', args.userId)
   if (!conn || !conn.api_key) {
     throw new Error(
       'Granola not connected — visit /connections to set it up.'

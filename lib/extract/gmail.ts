@@ -103,7 +103,7 @@ interface ExtractActionItemsArgs {
 export async function extractGmailActionItems(
   args: ExtractActionItemsArgs
 ): Promise<ExtractedItem[]> {
-  const conn = await getActiveConnection('gmail')
+  const conn = await getActiveConnection('gmail', args.userId)
   if (!conn || !conn.nango_connection_id) {
     throw new Error(
       'Gmail not connected — visit /connections to set it up.'
@@ -629,7 +629,7 @@ Rules:
 export async function extractGmailSentCommitments(
   args: ExtractActionItemsArgs
 ): Promise<ExtractedItem[]> {
-  const conn = await getActiveConnection('gmail')
+  const conn = await getActiveConnection('gmail', args.userId)
   if (!conn || !conn.nango_connection_id) return []
   const providerConfigKey = NANGO_PROVIDER_KEY.gmail!
   const connectionId = conn.nango_connection_id
