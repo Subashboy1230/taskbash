@@ -104,7 +104,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   const allFresh: ExtractedItem[] = []
 
   await tryRun('granola', async () => {
-    const conn = await getActiveConnection('granola')
+    const conn = await getActiveConnection('granola', userId)
     if (!conn?.api_key) return null
     // Build the set of Granola meeting IDs that already have a proposed_action
     // stored in the DB. The extractor skips draftFollowup for these meetings so
@@ -125,7 +125,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   })
 
   await tryRun('gmail', async () => {
-    const conn = await getActiveConnection('gmail')
+    const conn = await getActiveConnection('gmail', userId)
     if (!conn?.nango_connection_id) return null
     const [inbox, sent] = await Promise.all([
       extractGmailActionItems({ userEmail, userId, days }),
@@ -135,13 +135,13 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   })
 
   await tryRun('calendar', async () => {
-    const conn = await getActiveConnection('calendar')
+    const conn = await getActiveConnection('calendar', userId)
     if (!conn?.nango_connection_id) return null
     return extractCalendarPrepItems({ userEmail, userId })
   })
 
   await tryRun('linear', async () => {
-    const conn = await getActiveConnection('linear')
+    const conn = await getActiveConnection('linear', userId)
     if (!conn?.api_key) return null
     return extractLinearActionItems({ userEmail, userId })
   })
