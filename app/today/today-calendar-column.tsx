@@ -464,8 +464,10 @@ function classifyEvents(events: DayEvent[]): EventVariant[] {
 }
 
 function EventList({ events }: { events: DayEvent[] }) {
+  // Initialize as all-future so SSR and first client render agree.
+  // useEffect immediately reclassifies based on actual clock.
   const [variants, setVariants] = useState<EventVariant[]>(() =>
-    classifyEvents(events)
+    events.map(() => 'future' as EventVariant)
   )
 
   useEffect(() => {

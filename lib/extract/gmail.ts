@@ -25,6 +25,7 @@ import { tracedMessage } from '../llm-trace'
 import type { ExtractedItem, DraftConfidence } from '../types'
 import { WORK_ONLY_RULE } from './filters'
 import { extractJsonObject } from './parse'
+import { decodeEntities } from '../html'
 import { supabase } from '../supabase'
 
 // Bump when you change SYSTEM_PROMPT or buildExtractionPrompt — used by
@@ -200,7 +201,7 @@ async function extractItemsFromThread(
       const from = headerValue(m, 'From') || 'unknown sender'
       const date = headerValue(m, 'Date') || ''
       const body = extractPlainText(m.payload).slice(0, MAX_CHARS_PER_MESSAGE)
-      return `--- Message ${i + 1} ---\nFrom: ${from}\nDate: ${date}\n${body || m.snippet || ''}`
+      return `--- Message ${i + 1} ---\nFrom: ${from}\nDate: ${date}\n${body || decodeEntities(m.snippet ?? '') || ''}`
     })
     .join('\n\n')
 
@@ -569,7 +570,7 @@ function parseExtractionResponse(
       source_ref,
       parent_context: subject,
       title: raw.title,
-      subtitle: raw.subtitle ?? null,
+      subtitle: raw.subtitle ? decodeEntities(raw.subtitle) : null,
       entities: raw.entities ?? [],
       task_type: 'review',
       tag,
@@ -671,7 +672,7 @@ async function extractCommitmentsFromThread(
       const from = headerValue(m, 'From') || 'unknown'
       const date = headerValue(m, 'Date') || ''
       const body = extractPlainText(m.payload).slice(0, MAX_CHARS_PER_MESSAGE)
-      return `--- Message ${i + 1} ---\nFrom: ${from}\nDate: ${date}\n${body || m.snippet || ''}`
+      return `--- Message ${i + 1} ---\nFrom: ${from}\nDate: ${date}\n${body || decodeEntities(m.snippet ?? '') || ''}`
     })
     .join('\n\n')
 
@@ -723,7 +724,7 @@ Extract any explicit commitments the user made in their most recent sent message
       },
       parent_context: subject,
       title: raw.title,
-      subtitle: raw.subtitle ?? null,
+      subtitle: raw.subtitle ? decodeEntities(raw.subtitle) : null,
       task_type: 'review' as const,
       tag: 'commit' as const,
       due_at: normalizeDueAt(raw.due_at),

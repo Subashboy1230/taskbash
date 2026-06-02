@@ -44,6 +44,14 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   const days = opts.days ?? 7
   const trigger = opts.trigger ?? 'manual'
 
+  // Mark any stale "running" rows as failed so they don't pollute the
+  // Activity feed when a previous run crashed before finishing.
+  await supabase
+    .from('runs')
+    .update({ status: 'failed', completed_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .eq('status', 'running')
+
   // Insert a runs row immediately so the Activity page shows an in-progress
   // entry even if the run fails halfway through.
   const { data: runRow } = await supabase
@@ -346,7 +354,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   }
 
   if (runId) {
-    void supabase.from('runs').update({
+    await supabase.from('runs').update({
       status: sourcesFailed.length > 0 && sourcesRun.length === 0 ? 'failed' : 'succeeded',
       completed_at: new Date().toISOString(),
       sources_run: sourcesRun,
