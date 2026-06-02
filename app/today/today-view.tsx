@@ -2083,10 +2083,13 @@ function DraftCard({
           setNotice('Sent via Gmail.')
           onSent()
         } else {
-          // Either "Open in Gmail" was clicked, or Send now fell back because
-          // gmail.modify scope is not yet granted. Open the draft either way.
-          window.open(result.openUrl, '_blank', 'noopener,noreferrer')
-          setNotice(sendDirect ? 'Opening draft in Gmail - send scope not yet active.' : 'Draft opened in Gmail.')
+          // Either "Open" was clicked, or Send fell back because
+          // gmail.modify scope is not yet granted. Open the draft or thread.
+          const threadUrl = (action as { thread_id?: string }).thread_id
+            ? `https://mail.google.com/mail/u/0/#all/${(action as { thread_id?: string }).thread_id}`
+            : result.openUrl
+          window.open(sendDirect ? result.openUrl : threadUrl, '_blank', 'noopener,noreferrer')
+          setNotice(sendDirect ? 'Opening draft in Gmail.' : 'Opening thread in Gmail.')
           setBusyMode(null)
         }
       } catch (e) {
@@ -2142,28 +2145,28 @@ function DraftCard({
           disabled={busy}
           onClick={() => handleAction(false)}
           className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-surface-muted disabled:opacity-50"
-          title="Open in Gmail compose to review before sending"
+          title="Open the email thread in Gmail"
         >
           {busy && busyMode === 'open' ? (
             <Loader2 size={12} className="animate-spin" />
           ) : (
             <ExternalLink size={12} />
           )}
-          Open in Gmail
+          Open
         </button>
         <button
           type="button"
           disabled={busy}
           onClick={() => handleAction(true)}
           className="inline-flex items-center gap-1.5 rounded-md bg-success-fg px-3 py-1.5 text-[13px] font-semibold text-canvas hover:opacity-90 disabled:opacity-50"
-          title="Send via Gmail API immediately"
+          title="Send this reply via Gmail"
         >
           {busy && busyMode === 'send' ? (
             <Loader2 size={12} className="animate-spin" />
           ) : (
             <Check size={12} />
           )}
-          Send now
+          Send
         </button>
       </div>
     </div>
