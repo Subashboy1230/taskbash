@@ -41,6 +41,7 @@ export interface DigestRunOpts {
 export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSummary> {
   const t0 = Date.now()
   const { userId, userEmail } = opts
+  if (!userId?.trim()) throw new Error('runDigestForUser: userId is required but was empty or missing')
   const days = opts.days ?? 7
   const trigger = opts.trigger ?? 'manual'
 

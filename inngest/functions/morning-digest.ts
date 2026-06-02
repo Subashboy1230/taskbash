@@ -14,20 +14,36 @@ export const morningDigest = inngest.createFunction(
     { event: EVENTS.digestRequested },             // also manual
   ],
   async ({ event, step, logger }) => {
-    // Manual trigger passes userId in event.data; cron falls back to APP_USER_ID
-    const userId = (event.data as { userId?: string } | undefined)?.userId?.trim()
+    // Manual trigger passes userId in event.data; cron falls back to APP_USER_ID.
+    // If both are missing, look up the single active user from the DB (single-tenant).
+    const rawUserId = (event.data as { userId?: string } | undefined)?.userId?.trim()
       || process.env.APP_USER_ID?.trim()
-    if (!userId) throw new Error('APP_USER_ID is not set')
 
-    // Load the user's email from the DB — never hardcoded.
-    const userEmail = await step.run('load-user-email', async () => {
-      const { data } = await supabase
-        .from('users')
-        .select('email')
-        .eq('id', userId)
+    const { userId, userEmail } = await step.run('load-user', async () => {
+      if (rawUserId) {
+        const { data } = await supabase
+          .from('users')
+          .select('id, email')
+          .eq('id', rawUserId)
+          .maybeSingle()
+        if (!data?.email) throw new Error(`No user found for id ${rawUserId}`)
+        return { userId: data.id as string, userEmail: data.email as string }
+      }
+      // Fallback: pick the user that has active connections (single-tenant app)
+      const { data: conn } = await supabase
+        .from('connections')
+        .select('user_id')
+        .eq('status', 'active')
+        .limit(1)
         .maybeSingle()
-      if (!data?.email) throw new Error(`No email found for user ${userId}`)
-      return data.email as string
+      if (!conn?.user_id) throw new Error('No active connections found and APP_USER_ID is not set')
+      const { data: user } = await supabase
+        .from('users')
+        .select('id, email')
+        .eq('id', conn.user_id)
+        .maybeSingle()
+      if (!user?.email) throw new Error(`No user found for connection owner ${conn.user_id}`)
+      return { userId: user.id as string, userEmail: user.email as string }
     })
 
     logger.info(`running digest for ${userEmail} (${userId})`)
