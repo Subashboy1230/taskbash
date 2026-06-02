@@ -987,14 +987,13 @@ function TaskRow({
           isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
         )}
       >
-        <button
-          type="button"
-          aria-label="Dismiss"
-          onClick={handleDismissClick}
-          className="flex size-6 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-danger-fg hover:text-danger-fg"
-        >
-          <X size={12} />
-        </button>
+        <SlopMenu
+          itemId={item.id}
+          onMarked={() => {
+            setCompleted(true)
+            setTimeout(() => onDismiss(), 250)
+          }}
+        />
         <button
           type="button"
           aria-label="Complete"
@@ -1124,14 +1123,6 @@ function TaskRow({
               isSelected && 'opacity-100'
             )}
           >
-            <SlopMenu
-              itemId={item.id}
-              onMarked={() => {
-                // Fade the row then let the parent revalidate it away.
-                setCompleted(true)
-                setTimeout(() => onDismiss(), 250)
-              }}
-            />
             <SnoozeMenu onSnooze={hours => onSnoozeWithHours(hours)} />
           </div>
         </div>
