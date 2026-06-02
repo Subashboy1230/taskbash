@@ -3199,6 +3199,28 @@ function UnreadThreadRow({
         isLoading ? 'cursor-wait opacity-70' : 'cursor-pointer hover:bg-surface-muted/50',
       )}
     >
+      {/* Hover-triage micro-buttons — same pattern as TaskRow */}
+      <div className="absolute left-1.5 top-3.5 flex flex-col gap-1 transition-opacity opacity-0 group-hover:opacity-100">
+        {onDismiss && (
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={onDismiss}
+            className="flex size-6 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-danger-fg hover:text-danger-fg"
+          >
+            <X size={12} />
+          </button>
+        )}
+        <button
+          type="button"
+          aria-label="Open"
+          onClick={isLoading ? undefined : onClick}
+          className="flex size-6 items-center justify-center rounded-md border border-success-fg/40 bg-success-bg text-success-fg hover:bg-success-fg hover:text-canvas"
+        >
+          <Check size={12} />
+        </button>
+      </div>
+
       <div className="absolute left-3 top-4 flex shrink-0 items-center justify-center" style={{ width: 22, height: 22 }}>
         <BrandLogo brand="gmail" size={18} />
       </div>
@@ -3224,25 +3246,11 @@ function UnreadThreadRow({
           <p className="mt-1 text-[12px] text-danger-fg m-0">Failed to open - try again</p>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-2 ml-2">
-        {isLoading ? (
+      {isLoading && (
+        <div className="flex shrink-0 items-center ml-2">
           <Loader2 size={14} className="animate-spin text-ink-faint" />
-        ) : (
-          <>
-            <span className="text-[11px] text-ink-faint opacity-0 group-hover:opacity-100 transition-opacity">Open →</span>
-            {onDismiss && (
-              <button
-                type="button"
-                onClick={onDismiss}
-                aria-label="Dismiss"
-                className="ml-1 rounded p-1 text-ink-faint opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface-muted hover:text-ink"
-              >
-                <X size={13} />
-              </button>
-            )}
-          </>
-        )}
-      </div>
+        </div>
+      )}
     </li>
   )
 }
