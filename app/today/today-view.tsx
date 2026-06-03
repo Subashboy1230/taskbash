@@ -1314,7 +1314,12 @@ function SlopMenu({
               {SLOP_OPTIONS.map(o => (
                 <DropdownMenuItem
                   key={o.key}
-                  onSelect={() => pick(o.key)}
+                  onSelect={e => {
+                    if (o.key === 'duplicate' || o.key === 'should_be_subtask') {
+                      e.preventDefault() // keep dropdown open, switch to picker
+                    }
+                    pick(o.key)
+                  }}
                   className="flex flex-col items-start gap-0.5"
                 >
                   <span className="text-[12px] font-medium text-ink">{o.label}</span>
@@ -1327,7 +1332,7 @@ function SlopMenu({
               <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-line/60">
                 <button
                   type="button"
-                  onClick={() => { setPickMode(null); setSearch('') }}
+                  onClick={e => { e.stopPropagation(); setPickMode(null); setSearch('') }}
                   className="text-ink-faint hover:text-ink"
                 >
                   <ChevronLeft size={12} />
