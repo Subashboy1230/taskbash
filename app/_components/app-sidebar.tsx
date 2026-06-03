@@ -82,7 +82,7 @@ export function AppSidebar({
             className={cn('shrink-0 hover:opacity-80', collapsed && 'mx-auto')}
           >
             <img
-              src="/logo.svg"
+              src="/logo-new.png"
               alt="taskbash"
               width={collapsed ? 24 : 32}
               height={collapsed ? 24 : 32}
