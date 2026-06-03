@@ -66,6 +66,7 @@ import {
   dismissItem,
   executeProposedAction,
   generateItemDetails,
+  makeItemSubtask,
   markItemSlop,
   openUnreadThread,
   rejectDraft,
@@ -578,6 +579,7 @@ export function TodayView({
                               onSnooze={hours => handleSnooze(item.id, hours)}
                               functionsById={functionsById}
                               now={nowDate}
+                              allOpenItems={visibleOpen}
                               onReorder={(draggedId, position) => {
                                 if (position === 'before') {
                                   const beforeId = idx > 0 ? allItems[idx - 1].id : null
@@ -893,6 +895,7 @@ function TaskRow({
   functionsById,
   onReorder,
   now,
+  allOpenItems,
 }: {
   item: MockItem
   isSelected: boolean
@@ -903,6 +906,7 @@ function TaskRow({
   functionsById?: Map<string, UserFunction>
   onReorder?: (draggedId: string, position: 'before' | 'after') => void
   now: Date
+  allOpenItems?: MockItem[]
 }) {
   const [completed, setCompleted] = useState(false)
   const [dragOver, setDragOver] = useState<'before' | 'after' | null>(null)
@@ -989,6 +993,7 @@ function TaskRow({
       >
         <SlopMenu
           itemId={item.id}
+          allItems={allOpenItems}
           onMarked={() => {
             setCompleted(true)
             setTimeout(() => onDismiss(), 250)
@@ -1228,6 +1233,7 @@ type SlopReason =
   | 'not_my_focus'
   | 'misread_title'
   | 'duplicate'
+  | 'should_be_subtask'
   | 'old_task'
   | 'other'
 
@@ -1236,7 +1242,8 @@ const SLOP_OPTIONS: Array<{ key: SlopReason; label: string; hint: string }> = [
   { key: 'spam', label: 'Spam / noise', hint: 'Marketing, automated, junk' },
   { key: 'low_signal', label: 'Low signal', hint: "Real, but doesn't need my attention" },
   { key: 'not_my_focus', label: "Not my focus", hint: "Somebody else's responsibility" },
-  { key: 'duplicate', label: 'Repeat', hint: 'Already exists as another task' },
+  { key: 'duplicate', label: 'Repeat', hint: 'Already exists as another task — pick it' },
+  { key: 'should_be_subtask', label: 'Should be a subtask', hint: 'Belongs under another task — pick it' },
   { key: 'old_task', label: 'Old task', hint: 'Stale, no longer relevant' },
   { key: 'misread_title', label: 'Misread', hint: 'Title or details are wrong' },
   { key: 'other', label: 'Other', hint: 'Just wrong' },
@@ -1245,22 +1252,53 @@ const SLOP_OPTIONS: Array<{ key: SlopReason; label: string; hint: string }> = [
 function SlopMenu({
   itemId,
   onMarked,
+  allItems = [],
 }: {
   itemId: string
   onMarked: () => void
+  allItems?: MockItem[]
 }) {
   const [busy, setBusy] = useState(false)
+  // 'duplicate' or 'should_be_subtask' — show parent-picker UI
+  const [pickMode, setPickMode] = useState<'duplicate' | 'should_be_subtask' | null>(null)
+  const [search, setSearch] = useState('')
 
   function pick(reason: SlopReason) {
+    if (reason === 'duplicate' || reason === 'should_be_subtask') {
+      setPickMode(reason)
+      setSearch('')
+      return
+    }
     setBusy(true)
     markItemSlop(itemId, reason)
       .then(() => onMarked())
       .catch(() => setBusy(false))
   }
 
+  async function pickParent(parentItem: MockItem) {
+    setBusy(true)
+    try {
+      if (pickMode === 'should_be_subtask') {
+        await makeItemSubtask(itemId, parentItem.id)
+      } else {
+        // duplicate — mark slop with reason, no reparent
+        await markItemSlop(itemId, 'duplicate')
+      }
+      onMarked()
+    } catch {
+      setBusy(false)
+      setPickMode(null)
+    }
+  }
+
+  const candidates = allItems
+    .filter(i => i.id !== itemId && !i.id.startsWith('temp-'))
+    .filter(i => !search.trim() || i.title.toLowerCase().includes(search.toLowerCase()))
+    .slice(0, 8)
+
   return (
     <div onClick={e => e.stopPropagation()}>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={open => { if (!open) { setPickMode(null); setSearch('') } }}>
         <DropdownMenuTrigger
           aria-label="Mark as slop (wrong / irrelevant)"
           disabled={busy}
@@ -1269,18 +1307,63 @@ function SlopMenu({
         >
           <Trash2 size={12} />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>Why is this slop?</DropdownMenuLabel>
-          {SLOP_OPTIONS.map(o => (
-            <DropdownMenuItem
-              key={o.key}
-              onSelect={() => pick(o.key)}
-              className="flex flex-col items-start gap-0.5"
-            >
-              <span className="text-[12px] font-medium text-ink">{o.label}</span>
-              <span className="text-[11px] text-ink-faint">{o.hint}</span>
-            </DropdownMenuItem>
-          ))}
+        <DropdownMenuContent align="end" className="w-64">
+          {!pickMode ? (
+            <>
+              <DropdownMenuLabel>Why is this slop?</DropdownMenuLabel>
+              {SLOP_OPTIONS.map(o => (
+                <DropdownMenuItem
+                  key={o.key}
+                  onSelect={() => pick(o.key)}
+                  className="flex flex-col items-start gap-0.5"
+                >
+                  <span className="text-[12px] font-medium text-ink">{o.label}</span>
+                  <span className="text-[11px] text-ink-faint">{o.hint}</span>
+                </DropdownMenuItem>
+              ))}
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-line/60">
+                <button
+                  type="button"
+                  onClick={() => { setPickMode(null); setSearch('') }}
+                  className="text-ink-faint hover:text-ink"
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                <span className="text-[11px] font-medium text-ink-faint uppercase tracking-wider">
+                  {pickMode === 'duplicate' ? 'Which task is the repeat?' : 'Move under which task?'}
+                </span>
+              </div>
+              <div className="px-2 py-1.5 border-b border-line/60">
+                <input
+                  autoFocus
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  onClick={e => e.stopPropagation()}
+                  placeholder="Search tasks…"
+                  className="w-full bg-transparent text-[12px] text-ink placeholder:text-ink-faint outline-none"
+                />
+              </div>
+              {candidates.length === 0 ? (
+                <p className="px-3 py-2 text-[12px] text-ink-faint">No matching tasks</p>
+              ) : (
+                candidates.map(i => (
+                  <DropdownMenuItem
+                    key={i.id}
+                    onSelect={() => pickParent(i)}
+                    className="flex flex-col items-start gap-0.5"
+                  >
+                    <span className="text-[12px] font-medium text-ink leading-snug">{i.title}</span>
+                    {i.parent_context && (
+                      <span className="text-[11px] text-ink-faint truncate max-w-[220px]">{i.parent_context}</span>
+                    )}
+                  </DropdownMenuItem>
+                ))
+              )}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

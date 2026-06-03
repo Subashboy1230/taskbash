@@ -48,6 +48,7 @@ export async function markItemSlop(
     | 'not_my_focus'
     | 'misread_title'
     | 'duplicate'
+    | 'should_be_subtask'
     | 'old_task'
     | 'other',
   note?: string
@@ -274,6 +275,22 @@ export async function deleteSubtask(subtaskId: string) {
     .eq('id', subtaskId)
     .eq('user_id', await resolveUserId())
   if (error) throw new Error(`deleteSubtask failed: ${error.message}`)
+  revalidatePath('/today')
+}
+
+/**
+ * Reparent an item as a subtask of another. Sets parent_id and role='subtask',
+ * clears sort_order so it doesn't appear in the top-level list.
+ */
+export async function makeItemSubtask(itemId: string, parentId: string) {
+  const userId = await resolveUserId()
+  const { error } = await supabase
+    .from('items')
+    .update({ parent_id: parentId, role: 'subtask', sort_order: null })
+    .eq('id', itemId)
+    .eq('user_id', userId)
+    .neq('id', parentId) // can't be its own parent
+  if (error) throw new Error(`makeItemSubtask failed: ${error.message}`)
   revalidatePath('/today')
 }
 
