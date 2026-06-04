@@ -107,6 +107,21 @@ export function TodayShell({
     } catch { /* ignore */ }
   }, [calendarCollapsed])
 
+  // Close the detail panel on Esc — matches Radix Dialog convention.
+  useEffect(() => {
+    if (!panelOpen) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        // Skip when the user is editing inline text in the panel
+        const tag = (e.target as HTMLElement)?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return
+        closePanel()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [panelOpen])
+
   function openPanel(item: MockItem) {
     // Cancel any in-progress close
     if (closeTimerRef.current) {

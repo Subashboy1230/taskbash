@@ -167,7 +167,8 @@ function ManualForm({
         router.refresh()
         onClose()
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to add task')
+        const msg = err instanceof Error ? err.message : String(err)
+        setError(`Couldn't save the task: ${msg}. Check your connection and try Create again.`)
       }
     })
   }
@@ -347,7 +348,7 @@ function AIForm({
       const previewUrl = URL.createObjectURL(file)
       setImage({ base64, mediaType, previewUrl })
     } catch {
-      setError('Could not read image. Try a JPEG or PNG.')
+      setError("Couldn't read that image. Try a JPEG or PNG under 10MB.")
     }
   }
 
@@ -399,7 +400,8 @@ function AIForm({
       router.refresh()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create tasks')
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(`Couldn't save the extracted tasks: ${msg}. Try again.`)
       setCommitting(false)
     }
   }
@@ -478,6 +480,7 @@ function AIForm({
             type="button"
             onClick={removeImage}
             className="absolute right-2 top-2 rounded-full bg-surface p-1 text-ink-faint hover:text-danger-fg shadow"
+            aria-label="Remove attached image"
             title="Remove image"
           >
             <X size={14} />
@@ -488,7 +491,11 @@ function AIForm({
           onDrop={handleDrop}
           onDragOver={e => e.preventDefault()}
           onClick={() => fileInputRef.current?.click()}
-          className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-line bg-canvas px-4 py-5 text-center hover:border-ink-faint transition-colors"
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click() } }}
+          role="button"
+          tabIndex={0}
+          aria-label="Attach a screenshot. Click or drop a file here."
+          className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-line bg-canvas px-4 py-5 text-center hover:border-ink-faint transition-colors focus:outline-none focus:ring-2 focus:ring-ink-faint"
         >
           <ImageIcon size={20} className="text-ink-faint" />
           <p className="m-0 text-[12px] text-ink-faint">

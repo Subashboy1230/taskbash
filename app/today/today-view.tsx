@@ -23,7 +23,6 @@ import {
   Clock,
   Edit3,
   ExternalLink,
-  History,
   Layers,
   Loader2,
   Plus,
@@ -988,7 +987,8 @@ function TaskRow({
       <div
         className={cn(
           'absolute left-1.5 top-3.5 flex flex-col gap-1 transition-opacity',
-          isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          // Always visible on touch (no hover); fade in on hover for desktop.
+          isSelected ? 'opacity-100' : 'opacity-100 md:opacity-0 md:group-hover:opacity-100'
         )}
       >
         <SlopMenu
@@ -1124,7 +1124,8 @@ function TaskRow({
           <div
             className={cn(
               'flex gap-1 transition-opacity',
-              'opacity-0 group-hover:opacity-100',
+              // Always visible on touch; fade in on hover for desktop.
+              'opacity-100 md:opacity-0 md:group-hover:opacity-100',
               isSelected && 'opacity-100'
             )}
           >
@@ -1242,8 +1243,8 @@ const SLOP_OPTIONS: Array<{ key: SlopReason; label: string; hint: string }> = [
   { key: 'spam', label: 'Spam / noise', hint: 'Marketing, automated, junk' },
   { key: 'low_signal', label: 'Low signal', hint: "Real, but doesn't need my attention" },
   { key: 'not_my_focus', label: "Not my focus", hint: "Somebody else's responsibility" },
-  { key: 'duplicate', label: 'Repeat', hint: 'Already exists as another task — pick it' },
-  { key: 'should_be_subtask', label: 'Should be a subtask', hint: 'Belongs under another task — pick it' },
+  { key: 'duplicate', label: 'Repeat', hint: 'Already exists as another task. Pick it.' },
+  { key: 'should_be_subtask', label: 'Should be a subtask', hint: 'Belongs under another task. Pick it.' },
   { key: 'old_task', label: 'Old task', hint: 'Stale, no longer relevant' },
   { key: 'misread_title', label: 'Misread', hint: 'Title or details are wrong' },
   { key: 'other', label: 'Other', hint: 'Just wrong' },
@@ -2037,7 +2038,7 @@ export function DetailPanel({
         <button
           type="button"
           onClick={() => { setEditingDesc(true); setEditDescVal('') }}
-          className="mb-4 flex w-full items-center gap-1.5 rounded-md border border-dashed border-line/60 px-3.5 py-2.5 text-[13px] text-ink-faint hover:border-line hover:text-ink transition-colors"
+          className="mb-4 flex w-full items-center gap-1.5 rounded-md border border-dashed border-line px-3.5 py-2.5 text-[13px] text-ink-muted hover:border-line-strong hover:text-ink transition-colors"
         >
           <Plus size={13} /> Add description
         </button>
@@ -3279,7 +3280,7 @@ function UnreadThreadRow({
       )}
     >
       {/* Hover-triage micro-buttons — same pattern as TaskRow */}
-      <div className="absolute left-1.5 top-3.5 flex flex-col gap-1 transition-opacity opacity-0 group-hover:opacity-100">
+      <div className="absolute left-1.5 top-3.5 flex flex-col gap-1 transition-opacity opacity-100 md:opacity-0 md:group-hover:opacity-100">
         {onDismiss && (
           <button
             type="button"

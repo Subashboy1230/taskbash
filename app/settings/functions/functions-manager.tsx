@@ -88,10 +88,15 @@ export function FunctionsManager({ initial }: { initial: UserFunction[] }) {
   }
 
   function handleDelete(fn: UserFunction) {
+    const ok = window.confirm(
+      `Delete "${fn.name}"? This removes the tag from every task it's assigned to. This cannot be undone.`
+    )
+    if (!ok) return
+    setError(null)
     setList(prev => prev.filter(f => f.id !== fn.id))
-    deleteFunction(fn.id).catch(() => {
+    deleteFunction(fn.id).catch(err => {
       setList(prev => [...prev, fn])
-      setError('Delete failed')
+      setError(err instanceof Error ? err.message : `Couldn't delete "${fn.name}". Check your connection and try again.`)
     })
   }
 

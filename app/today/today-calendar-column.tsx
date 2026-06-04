@@ -15,6 +15,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Loader2,
   Plug,
   Video,
 } from 'lucide-react'
@@ -321,9 +322,10 @@ function SelectedDaySection({
           Events
         </p>
         {loading ? (
-          <p className="m-0 rounded-md border border-dashed border-line bg-canvas/60 px-3 py-3 text-[12px] text-ink-faint">
-            Loading events...
-          </p>
+          <div className="flex items-center gap-2 rounded-md border border-dashed border-line bg-canvas/60 px-3 py-3 text-[12px] text-ink-faint">
+            <Loader2 size={12} className="animate-spin" />
+            <span>Loading events</span>
+          </div>
         ) : hasEvents ? (
           <ul className="m-0 list-none space-y-2 p-0">
             {dayEvents.map(e => (

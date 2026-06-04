@@ -10,6 +10,7 @@ import { loadTodayEvents } from '@/lib/load-day-events'
 import { getActiveConnection } from '@/lib/connections'
 import { PageShell } from '@/app/_components/page-shell'
 import { StatusPill } from '@/app/_components/status-pill'
+import { formatTimeOfDay } from '@/lib/format-datetime'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,10 +54,10 @@ export default async function HandledPage() {
         {days.length === 0 ? (
           <div className="rounded-lg border border-line/60 bg-surface px-6 py-10 text-center">
             <p className="m-0 text-[15px] font-medium text-ink">
-              Nothing here yet
+              Nothing handled yet
             </p>
             <p className="mt-1 text-[13px] text-ink-muted m-0">
-              Approved and auto-completed tasks land here once they ship.
+              Tasks you complete or dismiss in <Link href="/today" className="underline hover:text-ink">today</Link> show up here.
             </p>
           </div>
         ) : (
@@ -87,12 +88,7 @@ export default async function HandledPage() {
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <span className="text-[12px] text-ink-faint tabular-nums">
-                          {item.completed_at
-                            ? new Date(item.completed_at).toLocaleTimeString(
-                                'en-US',
-                                { hour: 'numeric', minute: '2-digit' }
-                              )
-                            : ''}
+                          {formatTimeOfDay(item.completed_at)}
                         </span>
                         <StatusPill
                           kind={

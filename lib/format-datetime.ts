@@ -49,3 +49,24 @@ export function nowMs(nowFromServer?: Date | string): number {
   const d = nowFromServer instanceof Date ? nowFromServer : new Date(nowFromServer)
   return isNaN(d.getTime()) ? Date.now() : d.getTime()
 }
+
+/** "3:42 PM" — local time of day, used in activity feeds and handled log. */
+export function formatTimeOfDay(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
+/** "May 28, 3:42 PM" — local timestamp, used on profile and detail surfaces. */
+export function formatTimestamp(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}

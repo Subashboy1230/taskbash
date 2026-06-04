@@ -273,7 +273,7 @@ function ConnectionAction({
               router.refresh()
             } catch (err) {
               setError(
-                err instanceof Error ? err.message : 'Connection failed'
+                `Couldn't connect ${source.name}: ${err instanceof Error ? err.message : 'unknown error'}. Try again.`
               )
             }
           })
@@ -335,7 +335,7 @@ function ApiKeyForm({
             await cfg.save(apiKey)
             router.refresh()
           } catch (err) {
-            onError(err instanceof Error ? err.message : 'Save failed')
+            onError(`Couldn't save the API key: ${err instanceof Error ? err.message : 'unknown error'}. Double-check the key and try again.`)
           }
         })
       }}
