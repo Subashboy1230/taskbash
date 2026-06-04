@@ -33,7 +33,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-canvas flex items-center justify-center px-6">
-      <div className="w-full max-w-[400px] text-center">
+      <div className="w-full max-w-[400px] text-center animate-fade-in-up">
         <h1 className="m-0 text-[34px] font-semibold tracking-tight text-ink">
           taskbash
         </h1>

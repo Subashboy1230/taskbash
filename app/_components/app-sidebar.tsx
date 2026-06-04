@@ -70,7 +70,7 @@ export function AppSidebar({
 
   return (
     <aside
-      className="sticky top-0 flex h-screen shrink-0 flex-col justify-between border-r border-line bg-canvas transition-[width] duration-200"
+      className="sticky top-0 flex h-screen shrink-0 flex-col justify-between border-r border-line bg-canvas transition-[width] duration-200 ease-out"
       style={{ width: collapsed ? WIDTH_COLLAPSED : WIDTH_EXPANDED }}
     >
       <div className={cn(collapsed ? 'px-2 pt-5' : 'px-4 pt-5')}>
@@ -123,13 +123,13 @@ export function AppSidebar({
                 href={item.href}
                 title={collapsed ? item.label : undefined}
                 className={cn(
-                  'flex items-center gap-2.5 rounded-md text-[13px] transition-colors',
+                  'flex items-center gap-2.5 rounded-md text-[13px] transition-all duration-150 ease-out',
                   collapsed
                     ? 'h-9 w-9 mx-auto justify-center px-0'
                     : 'px-2 py-1.5',
                   active
                     ? 'bg-surface-muted/60 font-medium text-ink'
-                    : 'text-ink-muted hover:bg-surface-muted/30 hover:text-ink'
+                    : 'text-ink-muted hover:bg-surface-muted/30 hover:text-ink hover:translate-x-0.5'
                 )}
               >
                 <Icon size={15} className={active ? 'text-ink' : 'text-ink-faint'} />

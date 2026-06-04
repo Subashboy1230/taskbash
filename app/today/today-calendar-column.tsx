@@ -382,7 +382,7 @@ function DayCell({
         type="button"
         onClick={onClick}
         className={cn(
-          'flex size-7 items-center justify-center rounded-full text-[12px] transition-colors',
+          'flex size-7 items-center justify-center rounded-full text-[12px] transition-all duration-150 ease-out active:scale-90',
           // Today (not selected) — solid white circle with DARK text so the number reads.
           cell.isToday && !selected && 'bg-accent text-canvas font-semibold',
           // Selected (not today) — outlined ring, transparent bg, number stays visible.
@@ -391,7 +391,7 @@ function DayCell({
           selected && cell.isToday && 'bg-accent text-canvas font-semibold ring-2 ring-ink ring-offset-1 ring-offset-canvas',
           !cell.isToday && !selected && cell.inMonth && 'text-ink',
           !cell.isToday && !selected && !cell.inMonth && 'text-ink-faint',
-          !cell.isToday && !selected && 'hover:bg-surface-muted cursor-pointer'
+          !cell.isToday && !selected && 'hover:bg-surface-muted cursor-pointer hover:scale-110'
         )}
       >
         {cell.date.getDate()}
@@ -508,13 +508,13 @@ function EventCard({ event, variant = 'future' }: { event: DayEvent; variant?: E
     : `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ''}`
 
   return (
-    <li suppressHydrationWarning>
+    <li suppressHydrationWarning className="animate-fade-in-up">
       <div suppressHydrationWarning className={cn(
-        'rounded-md px-3 py-2',
-        variant === 'current' && 'bg-emerald-500/10 ring-1 ring-emerald-500/30',
-        variant === 'next'    && 'bg-blue-500/10 ring-1 ring-blue-500/25',
-        variant === 'past'    && 'bg-canvas/30 ring-1 ring-line/40 opacity-50',
-        variant === 'future'  && 'bg-accent-soft/60 ring-1 ring-accent/15',
+        'rounded-md px-3 py-2 transition-all duration-200 hover:ring-2',
+        variant === 'current' && 'bg-emerald-500/10 ring-1 ring-emerald-500/30 hover:ring-emerald-500/50',
+        variant === 'next'    && 'bg-blue-500/10 ring-1 ring-blue-500/25 hover:ring-blue-500/45',
+        variant === 'past'    && 'bg-canvas/30 ring-1 ring-line/40 opacity-50 hover:opacity-70',
+        variant === 'future'  && 'bg-accent-soft/60 ring-1 ring-accent/15 hover:ring-accent/30',
       )}>
         <p className={cn(
           'm-0 text-[13px] font-medium leading-snug',

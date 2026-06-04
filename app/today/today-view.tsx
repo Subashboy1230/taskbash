@@ -491,6 +491,7 @@ export function TodayView({
             </div>
           )}
 
+          <div key={tab} className="animate-fade-in-up">
           {tab === 'prep' ? (
             <PrepTab
               items={visiblePrep}
@@ -612,6 +613,7 @@ export function TodayView({
               now={nowDate}
             />
           )}
+          </div>
         </main>
 
         {!hideDetailPanel && selectedItem && (

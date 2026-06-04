@@ -141,7 +141,21 @@ details > summary::-webkit-details-marker {
   color: var(--color-ink);
 }
 
-/* ─── Animations ─── */
+/* ─── Animations ─────────────────────────────────────────────────────────
+   Easing tokens kept tight: ease-out for entrance, ease-in for exit.
+   Durations: micro 120ms, short 180ms, base 220ms, slow 320ms.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* Default smooth transition on interactive primitives. Keeps colors,
+   border, opacity, and small transforms in sync without over-animating
+   layout properties. */
+button, a, [role="button"] {
+  transition-property: background-color, border-color, color, fill,
+    stroke, opacity, box-shadow, transform;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-duration: 160ms;
+}
+
 @keyframes slide-in-right {
   from { transform: translateX(100%); opacity: 0; }
   to   { transform: translateX(0);    opacity: 1; }
@@ -154,12 +168,76 @@ details > summary::-webkit-details-marker {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in-down {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes row-pop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.01); }
+  100% { transform: scale(1); }
+}
+
 .animate-slide-in-right  { animation: slide-in-right 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-slide-out-right { animation: slide-out-right 180ms cubic-bezier(0.55, 0, 1, 0.45) both; }
 .animate-fade-in         { animation: fade-in 180ms ease both; }
+.animate-fade-in-up      { animation: fade-in-up 240ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-fade-in-down    { animation: fade-in-down 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-scale-in        { animation: scale-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-row-pop         { animation: row-pop 320ms ease both; }
+
+/* Stagger helper: list items receive sequential entrance delays.
+   Wrap a list in `.stagger` and child elements get progressive delays. */
+.stagger > * { animation-delay: 0ms; }
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 25ms; }
+.stagger > *:nth-child(3) { animation-delay: 50ms; }
+.stagger > *:nth-child(4) { animation-delay: 75ms; }
+.stagger > *:nth-child(5) { animation-delay: 100ms; }
+.stagger > *:nth-child(6) { animation-delay: 125ms; }
+.stagger > *:nth-child(7) { animation-delay: 150ms; }
+.stagger > *:nth-child(8) { animation-delay: 175ms; }
+.stagger > *:nth-child(n+9) { animation-delay: 200ms; }
 
 /* Data-attribute driven panel animation — immune to React className reconciliation */
 [data-panel="opening"] { animation: slide-in-right 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 [data-panel="closing"] { animation: slide-out-right 180ms cubic-bezier(0.55, 0, 1, 0.45) both; }
 [data-panel="open"]    { animation: none; }
 .animate-task-dismiss    { opacity: 0; transform: translateX(12px); transition: opacity 200ms ease, transform 200ms ease; }
+
+/* Skeleton shimmer for loading states */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-muted) 0%,
+    var(--color-surface) 50%,
+    var(--color-surface-muted) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* Respect users who request reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
