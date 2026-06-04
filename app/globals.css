@@ -1,6 +1,14 @@
 @import "tailwindcss";
 
 /* ─────────────────────────────────────────────────────────────────────────
+   Z-index layers (pick from these, do not invent new tiers).
+     z-20  hover popovers above row content
+     z-30  inline edit menus (priority chip, etc.)
+     z-50  sheet, dropdown menu, toast
+     z-60  calendar day-cell hover popover (above sticky header)
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ─────────────────────────────────────────────────────────────────────────
    Design tokens — Vercel-style dark dashboard.
    Near-black canvas, slightly raised cards, white/gray text, light-on-dark
    accent buttons. Tag tones desaturated to fit dark mode.

@@ -460,7 +460,6 @@ export function TodayView({
                   size="sm"
                   onClick={onAddTask}
                   aria-label="Add task"
-                  title="Add a manual task"
                   className="gap-1.5"
                 >
                   <Plus size={14} />
@@ -1301,9 +1300,9 @@ function SlopMenu({
     <div onClick={e => e.stopPropagation()}>
       <DropdownMenu onOpenChange={open => { if (!open) { setPickMode(null); setSearch('') } }}>
         <DropdownMenuTrigger
-          aria-label="Mark as slop (wrong / irrelevant)"
+          aria-label="Mark as wrong"
           disabled={busy}
-          title="This shouldn't be here. Help the agent learn"
+          title="Mark as wrong. Helps the agent learn what to skip next time."
           className="flex size-6 items-center justify-center rounded-md border border-line bg-surface text-ink-faint outline-none hover:border-danger-fg hover:text-danger-fg disabled:opacity-40"
         >
           <Trash2 size={12} />
@@ -1311,7 +1310,7 @@ function SlopMenu({
         <DropdownMenuContent align="end" className="w-64">
           {!pickMode ? (
             <>
-              <DropdownMenuLabel>Why is this slop?</DropdownMenuLabel>
+              <DropdownMenuLabel>What's wrong with it?</DropdownMenuLabel>
               {SLOP_OPTIONS.map(o => (
                 <DropdownMenuItem
                   key={o.key}
@@ -1378,7 +1377,7 @@ function SlopMenu({
 
 // ─── Function pill ──────────────────────────────────────────────────
 // Small colored chip showing a function name. Rendered next to the row
-// title; clickable to scope the row's filter (TODO).
+// title; click to scope the row's filter.
 
 function FunctionPill({ fn, onClick }: { fn: UserFunction; onClick?: () => void }) {
   const c = functionColor(fn)

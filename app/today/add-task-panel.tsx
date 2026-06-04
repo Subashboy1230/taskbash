@@ -201,10 +201,10 @@ function ManualForm({
               onClick={() => setPriority(priority === p ? null : p)}
               disabled={busy}
               className={cn(
-                'rounded px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider border transition-all',
+                'rounded px-2.5 py-1 text-[12px] font-bold uppercase tracking-wider border transition-all',
                 priority === p
                   ? PRIORITY_STYLE[p]
-                  : 'border-line bg-transparent text-ink-faint hover:text-ink'
+                  : 'border-line bg-transparent text-ink-muted hover:text-ink'
               )}
             >
               {p}
