@@ -70,7 +70,7 @@ export function AppSidebar({
 
   return (
     <aside
-      className="sticky top-0 flex h-screen shrink-0 flex-col justify-between border-r border-line bg-canvas transition-[width] duration-200 ease-out"
+      className="sticky top-0 hidden h-screen shrink-0 flex-col justify-between border-r border-line bg-canvas transition-[width] duration-200 ease-out md:flex"
       style={{ width: collapsed ? WIDTH_COLLAPSED : WIDTH_EXPANDED }}
     >
       <div className={cn(collapsed ? 'px-2 pt-5' : 'px-4 pt-5')}>

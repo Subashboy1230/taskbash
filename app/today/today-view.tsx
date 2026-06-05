@@ -11,7 +11,7 @@
 //   7. Smart deadline display ("Overdue 15h" / "Due in 5h" / "Due tomorrow" / "Due Friday")
 //   8. Mark-as-done strikes through the parent task and fades it
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -21,7 +21,6 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
-  Edit3,
   ExternalLink,
   Layers,
   Loader2,
@@ -31,6 +30,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { formatDeadline, nowMs } from '@/lib/format-datetime'
 import { AppHeader } from '@/app/_components/app-header'
@@ -142,17 +142,49 @@ export function TodayView({
     onSelectItem?.(item)
   }
   const TAB_KEY = 'taskbash:todayTab'
-  const [tab, setTabRaw] = useState<'open' | 'prep' | 'cleared' | 'unread'>(() => {
+  type TabKey = 'open' | 'prep' | 'cleared' | 'unread'
+  const [tab, setTabRaw] = useState<TabKey>(() => {
     try {
       const saved = localStorage.getItem(TAB_KEY)
       if (saved === 'open' || saved === 'prep' || saved === 'cleared' || saved === 'unread') return saved
     } catch { /* ignore */ }
     return 'open'
   })
-  const setTab = (t: 'open' | 'prep' | 'cleared' | 'unread') => {
+  // Per-tab scroll position memory. Find the closest scrollable ancestor
+  // and remember its scrollTop as we leave each tab; restore when we come
+  // back.
+  const scrollContainerRef = useRef<HTMLElement | null>(null)
+  const tabScrollPositions = useRef<Record<TabKey, number>>({ open: 0, prep: 0, cleared: 0, unread: 0 })
+  const tabRootRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!tabRootRef.current) return
+    let el: HTMLElement | null = tabRootRef.current
+    while (el) {
+      const overflowY = window.getComputedStyle(el).overflowY
+      if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+        scrollContainerRef.current = el
+        return
+      }
+      el = el.parentElement
+    }
+    scrollContainerRef.current = document.scrollingElement as HTMLElement | null
+  }, [])
+  const setTab = (t: TabKey) => {
+    if (scrollContainerRef.current) {
+      tabScrollPositions.current[tab] = scrollContainerRef.current.scrollTop
+    }
     try { localStorage.setItem(TAB_KEY, t) } catch { /* ignore */ }
     setTabRaw(t)
   }
+  // After tab swap, restore the scroll position we remembered.
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    const target = tabScrollPositions.current[tab] ?? 0
+    requestAnimationFrame(() => {
+      el.scrollTop = target
+    })
+  }, [tab])
   // Filter chips — null = "All". Persist in localStorage so the user's
   // filter survives a reload.
   const [sourceFilter, setSourceFilter] = useState<Set<Source>>(new Set())
@@ -238,63 +270,82 @@ export function TodayView({
       }
       return next
     })
-    reorderItem(draggedId, beforeId, afterId).catch(() => {
-      // revert on error — reset from server data
+    reorderItem(draggedId, beforeId, afterId).catch(err => {
       setOrderedOpen(allVisible.filter(i => !isPrep(i)))
+      toast.error("Couldn't reorder", {
+        description: err instanceof Error ? err.message : 'Try again.',
+      })
+    })
+  }
+
+  function revertHidden(id: string) {
+    setHiddenIds(s => {
+      const next = new Set(s)
+      next.delete(id)
+      return next
     })
   }
 
   function handleComplete(id: string) {
     setHiddenIds(s => new Set(s).add(id))
-    completeItem(id).catch(() => {
-      // revert on error
-      setHiddenIds(s => {
-        const next = new Set(s)
-        next.delete(id)
-        return next
+    completeItem(id)
+      .then(() => toast.success('Marked done'))
+      .catch(err => {
+        revertHidden(id)
+        toast.error("Couldn't mark done", {
+          description: err instanceof Error ? err.message : 'Try again.',
+        })
       })
-    })
   }
   function handleDismiss(id: string) {
     setHiddenIds(s => new Set(s).add(id))
-    dismissItem(id).catch(() => {
-      setHiddenIds(s => {
-        const next = new Set(s)
-        next.delete(id)
-        return next
+    dismissItem(id)
+      .then(() => toast.success('Dismissed'))
+      .catch(err => {
+        revertHidden(id)
+        toast.error("Couldn't dismiss", {
+          description: err instanceof Error ? err.message : 'Try again.',
+        })
       })
-    })
   }
   function handleSnooze(id: string, hours: number = 24) {
     setHiddenIds(s => new Set(s).add(id))
-    snoozeItem(id, hours).catch(() => {
-      setHiddenIds(s => {
-        const next = new Set(s)
-        next.delete(id)
-        return next
+    snoozeItem(id, hours)
+      .then(() => {
+        const label = hours === 1 ? '1 hour'
+          : hours < 24 ? `${hours} hours`
+          : hours <= 25 ? 'tomorrow'
+          : 'next week'
+        toast.success(`Snoozed for ${label}`)
       })
-    })
+      .catch(err => {
+        revertHidden(id)
+        toast.error("Couldn't snooze", {
+          description: err instanceof Error ? err.message : 'Try again.',
+        })
+      })
   }
-  const [refreshError, setRefreshError] = useState<string | null>(null)
-
   function handleRefresh() {
-    setRefreshError(null)
     startRefresh(async () => {
       const result = await requestRefresh()
       if (!result.ok) {
-        setRefreshError(result.error || 'Re-run failed')
+        toast.error("Couldn't start the digest", {
+          description: result.error || 'Try again.',
+        })
         return
       }
+      const tid = toast.loading('Pulling tasks from your sources…', {
+        description: 'This usually takes 30–60 seconds.',
+      })
       // Digest runs async via Inngest (~30-60s). Poll every 5s for up to 90s.
       const start = Date.now()
       while (Date.now() - start < 90_000) {
         await new Promise(r => setTimeout(r, 5000))
         router.refresh()
-        // Keep spinning until useTransition settles — the refresh itself
-        // will re-render with new data if the digest has completed.
         if (Date.now() - start > 30_000) break
       }
       router.refresh()
+      toast.success('Digest complete', { id: tid })
     })
   }
 
@@ -390,6 +441,86 @@ export function TodayView({
     return m
   }, [functions])
 
+  // ─── Keyboard shortcuts ────────────────────────────────────────────
+  // j/k: prev/next row in the active list
+  // e: mark done (selected row)
+  // x: dismiss (selected row)
+  // s: snooze 24h (selected row)
+  // /: focus the (future) search; for now opens command palette
+  // ?: show shortcut help toast
+  // Cmd+K / Ctrl+K: command palette stub
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      // Don't hijack typing in inputs / contenteditable / textareas.
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target?.isContentEditable
+      ) return
+      const meta = e.metaKey || e.ctrlKey
+
+      // Cmd/Ctrl+K — open command palette stub
+      if (meta && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        toast.info('Command palette coming soon', { description: 'Use j/k to navigate, e to complete, x to dismiss, s to snooze.' })
+        return
+      }
+
+      if (meta || e.altKey) return
+
+      const list = tab === 'open' ? filteredOpen
+        : tab === 'prep' ? visiblePrep
+        : tab === 'cleared' ? digest.completed_today
+        : []
+
+      const currentIdx = list.findIndex(i => i.id === selectedItem?.id)
+
+      switch (e.key) {
+        case '?':
+          e.preventDefault()
+          toast('Keyboard shortcuts', {
+            description: 'j/k navigate • e done • x dismiss • s snooze • Esc close panel • Cmd+K palette',
+            duration: 6000,
+          })
+          break
+        case 'j':
+          e.preventDefault()
+          if (list.length === 0) return
+          if (currentIdx === -1) setSelectedItem(list[0])
+          else setSelectedItem(list[Math.min(list.length - 1, currentIdx + 1)])
+          break
+        case 'k':
+          e.preventDefault()
+          if (list.length === 0) return
+          if (currentIdx === -1) setSelectedItem(list[0])
+          else setSelectedItem(list[Math.max(0, currentIdx - 1)])
+          break
+        case 'e':
+          if (!selectedItem) return
+          e.preventDefault()
+          handleComplete(selectedItem.id)
+          break
+        case 'x':
+          if (!selectedItem) return
+          e.preventDefault()
+          handleDismiss(selectedItem.id)
+          break
+        case 's':
+          if (!selectedItem) return
+          e.preventDefault()
+          handleSnooze(selectedItem.id, 24)
+          break
+        default:
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, filteredOpen, selectedItem])
+
   const groups = useMemo(() => groupItems(filteredOpen, groupBy, nowTimestamp, functionsById), [filteredOpen, groupBy, nowTimestamp, functionsById])
 
   useEffect(() => {
@@ -414,6 +545,7 @@ export function TodayView({
 
       <div className="flex">
         <main
+          ref={tabRootRef}
           className={cn(
             'transition-all duration-200',
             hideHeader ? '' : 'mx-auto px-8 pt-4 pb-16',
@@ -484,12 +616,6 @@ export function TodayView({
               </Button>
             </div>
           </div>
-
-          {refreshError && (
-            <div className="mt-3 rounded-md border border-danger-border bg-danger-bg px-3 py-2 text-[13px] text-danger-fg">
-              Re-run failed: {refreshError}
-            </div>
-          )}
 
           <div key={tab} className="animate-fade-in-up">
           {tab === 'prep' ? (
@@ -564,7 +690,7 @@ export function TodayView({
                           </span>
                         </h2>
                       )}
-                      <ul className="list-none p-0 m-0 divide-y divide-line/70">
+                      <ul className="stagger list-none p-0 m-0 divide-y divide-line/70">
                         {group.items.map((item, idx) => {
                           const allItems = group.items
                           return (
@@ -920,9 +1046,11 @@ function TaskRow({
   const toggleSub = (id: string) => {
     const next = !subDone[id]
     setSubDone(prev => ({ ...prev, [id]: next }))
-    toggleSubtaskComplete(id, next).catch(() => {
-      // revert on failure
+    toggleSubtaskComplete(id, next).catch(err => {
       setSubDone(prev => ({ ...prev, [id]: !next }))
+      toast.error(`Couldn't ${next ? 'check off' : 'reopen'} subtask`, {
+        description: err instanceof Error ? err.message : 'Try again.',
+      })
     })
   }
 
@@ -974,7 +1102,7 @@ function TaskRow({
       onDrop={handleDrop}
       onClick={onSelect}
       className={cn(
-        'group relative cursor-pointer pl-12 pr-2 py-4 transition-all duration-200',
+        'group relative cursor-pointer pl-12 pr-2 py-4 transition-all duration-200 animate-fade-in-up',
         isSelected ? 'bg-success-bg/30' : 'hover:bg-surface-muted/50',
         completed && 'opacity-0 translate-x-3 pointer-events-none',
         dragOver === 'before' && 'border-t-2 border-t-accent/70',
@@ -1702,7 +1830,7 @@ function CompletedRow({
   const subCompleted = subItems.filter(s => s.completed).length
 
   return (
-    <li className="relative flex items-start gap-3 pl-12 pr-2 py-4 border-b border-line/50 opacity-60">
+    <li className="relative flex items-start gap-3 pl-12 pr-2 py-4 border-b border-line/50 opacity-60 animate-fade-in-up">
       <div className="absolute left-3 top-4 flex shrink-0 items-center justify-center" style={{ width: 22, height: 22 }}>
         <BrandLogo brand={item.source} size={18} />
       </div>
@@ -1743,16 +1871,18 @@ function CompletedRow({
 
 function BriefView({ brief }: { brief: TaskBrief }) {
   return (
-    <div className="mb-5 space-y-3.5">
+    <div className="mb-6 rounded-lg border border-line/60 bg-surface-muted/30 p-4 space-y-4">
       <BriefSection label="Why" tone="ink">
         <p className="m-0 text-[14px] leading-relaxed text-ink">{brief.why}</p>
       </BriefSection>
 
       {brief.know.length > 0 && (
         <BriefSection label="Know" tone="ink">
-          <ul className="m-0 list-disc space-y-1.5 pl-4 text-[13px] leading-relaxed text-ink">
+          <ul className="m-0 list-none space-y-1.5 text-[13px] leading-relaxed text-ink">
             {brief.know.map((k, i) => (
-              <li key={i}>{k}</li>
+              <li key={i} className="flex gap-2 before:mt-0.5 before:text-ink-faint before:content-['•']">
+                <span>{k}</span>
+              </li>
             ))}
           </ul>
         </BriefSection>
@@ -1873,40 +2003,27 @@ export function DetailPanel({
     await updateItemDescription(item.id, { due_at: val || null }).catch(() => setLocalDueAt(localDueAt))
   }
 
-  // Keep legacy editing state for pencil-icon compat (no-op now, kept to avoid removing the button)
-  const editing = false
-  function startEdit() { setEditingTitle(true); setEditTitleVal(localTitle) }
-  function cancelEdit() { setEditingTitle(false) }
-
   return (
     <aside className="h-full w-full overflow-y-auto bg-surface px-5 py-5 animate-fade-in">
-      {/* Close button is provided by the parent Sheet. Header only carries
-          Edit + History, with right padding so they sit clear of Sheet's
-          built-in close button (top-4 right-4). onClose stays on the
-          props since the optimistic-complete flow in TodayShell needs it. */}
-      <div className="mb-4 flex items-center justify-end gap-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Edit"
-          className={cn('h-8 w-8 hover:text-ink', editing ? 'text-ink' : 'text-ink-faint')}
-          onClick={editing ? cancelEdit : startEdit}
-        >
-          <Edit3 size={15} />
-        </Button>
+      {/* Header: source label + close. Title and edit affordance live below. */}
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+          <BrandLogo brand={item.source} size={12} />
+          {item.source} · {item.tag ?? 'task'}
+        </span>
         <Button
           variant="ghost"
           size="icon"
           aria-label="Close"
-          className="h-8 w-8 text-ink-faint hover:text-ink"
+          className="h-7 w-7 text-ink-faint hover:text-ink"
           onClick={onClose}
         >
-          <X size={15} />
+          <X size={14} />
         </Button>
       </div>
 
       {/* Inline-editable title */}
-      <div className="mb-3">
+      <div className="mb-4">
         {editingTitle ? (
           <input
             autoFocus
@@ -1914,11 +2031,11 @@ export function DetailPanel({
             onChange={e => setEditTitleVal(e.target.value)}
             onBlur={commitTitle}
             onKeyDown={e => { if (e.key === 'Enter') commitTitle(); if (e.key === 'Escape') { setEditingTitle(false); setEditTitleVal(localTitle) } }}
-            className="w-full rounded-md border border-line bg-surface-muted px-3 py-1.5 text-[18px] font-medium text-ink outline-none focus:ring-1 focus:ring-line"
+            className="w-full rounded-md border border-line bg-surface-muted px-3 py-2 text-[20px] font-semibold text-ink outline-none focus:ring-1 focus:ring-line"
           />
         ) : (
           <h2
-            className="m-0 cursor-text text-[18px] font-medium leading-snug text-ink hover:bg-surface-muted/40 rounded px-1 -mx-1 transition-colors"
+            className="group/title m-0 cursor-text text-[20px] font-semibold leading-snug text-ink hover:bg-surface-muted/40 rounded px-1.5 -mx-1.5 py-0.5 transition-colors"
             onClick={() => { setEditingTitle(true); setEditTitleVal(localTitle) }}
             title="Click to edit title"
           >
@@ -2155,12 +2272,14 @@ function DraftCard({
       try {
         const result = await executeProposedAction(itemId, { sendDirect })
         if (!result.ok) {
+          toast.error("Couldn't send the reply", { description: result.error })
           setError(result.error)
           setBusyMode(null)
           return
         }
         if (result.sent) {
           // Direct API send succeeded — item is done.
+          toast.success('Sent via Gmail')
           setNotice('Sent via Gmail.')
           onSent()
         } else {
@@ -3227,7 +3346,7 @@ function UnreadTab({
   }
   return (
     <div className="mt-4">
-      <ul className="list-none p-0 m-0 divide-y divide-line/70">
+      <ul className="stagger list-none p-0 m-0 divide-y divide-line/70">
         {visibleThreads.map(thread => (
           <UnreadThreadRow
             key={thread.id}
@@ -3276,7 +3395,7 @@ function UnreadThreadRow({
     <li
       onClick={isLoading ? undefined : onClick}
       className={cn(
-        'group relative flex items-start gap-3 pl-12 pr-2 py-4 transition-colors border-b border-line/50',
+        'group relative flex items-start gap-3 pl-12 pr-2 py-4 transition-colors border-b border-line/50 animate-fade-in-up',
         isLoading ? 'cursor-wait opacity-70' : 'cursor-pointer hover:bg-surface-muted/50',
       )}
     >
@@ -3361,7 +3480,7 @@ function ClearedTab({
   }
   return (
     <div className="mt-4">
-      <ul className="list-none p-0 m-0 divide-y divide-line/70">
+      <ul className="stagger list-none p-0 m-0 divide-y divide-line/70">
         {items.map(item => (
           <CompletedRow key={item.id} item={item} functionsById={functionsById} now={now} />
         ))}

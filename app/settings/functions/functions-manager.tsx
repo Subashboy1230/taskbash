@@ -4,6 +4,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { Check, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { functionColor } from '@/lib/function-color'
@@ -67,9 +68,11 @@ export function FunctionsManager({ initial }: { initial: UserFunction[] }) {
     startTransition(async () => {
       try {
         await createFunction({ name })
+        toast.success(`Added "${name}"`)
         refresh()
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Add failed')
+        const msg = e instanceof Error ? e.message : 'Add failed'
+        toast.error("Couldn't add function", { description: msg })
         setList(prev => prev.filter(f => f.id !== tempId))
       }
     })
@@ -80,9 +83,12 @@ export function FunctionsManager({ initial }: { initial: UserFunction[] }) {
     startTransition(async () => {
       try {
         await seedDefaultFunctions(DEFAULT_FUNCTIONS)
+        toast.success('Seeded default functions')
         refresh()
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Seed failed')
+        toast.error("Couldn't seed defaults", {
+          description: e instanceof Error ? e.message : 'Try again.',
+        })
       }
     })
   }
@@ -94,10 +100,14 @@ export function FunctionsManager({ initial }: { initial: UserFunction[] }) {
     if (!ok) return
     setError(null)
     setList(prev => prev.filter(f => f.id !== fn.id))
-    deleteFunction(fn.id).catch(err => {
-      setList(prev => [...prev, fn])
-      setError(err instanceof Error ? err.message : `Couldn't delete "${fn.name}". Check your connection and try again.`)
-    })
+    deleteFunction(fn.id)
+      .then(() => toast.success(`Deleted "${fn.name}"`))
+      .catch(err => {
+        setList(prev => [...prev, fn])
+        toast.error(`Couldn't delete "${fn.name}"`, {
+          description: err instanceof Error ? err.message : 'Check your connection and try again.',
+        })
+      })
   }
 
   return (

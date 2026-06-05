@@ -10,6 +10,7 @@
 
 import { useState } from 'react'
 import { AppSidebar } from './app-sidebar'
+import { MobileNav } from './mobile-nav'
 import { TodayCalendarColumn } from '@/app/today/today-calendar-column'
 import type { DayEvent } from '@/lib/load-day-events'
 
@@ -30,14 +31,17 @@ export function PageShell({
   return (
     <div className="flex min-h-screen bg-canvas">
       <AppSidebar userEmail={userEmail} userInitial={userInitial} />
-      <main className="flex-1 min-w-0 px-8 pt-4 pb-16">{children}</main>
-      <TodayCalendarColumn
-        events={events}
-        items={[]}
-        calendarConnected={calendarConnected}
-        selectedDay={selectedDay}
-        onSelectDay={setSelectedDay}
-      />
+      <main className="flex-1 min-w-0 px-4 pt-4 pb-24 md:px-8 md:pb-16">{children}</main>
+      <div className="hidden lg:contents">
+        <TodayCalendarColumn
+          events={events}
+          items={[]}
+          calendarConnected={calendarConnected}
+          selectedDay={selectedDay}
+          onSelectDay={setSelectedDay}
+        />
+      </div>
+      <MobileNav />
     </div>
   )
 }

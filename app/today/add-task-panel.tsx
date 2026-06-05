@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { ImageIcon, Loader2, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/app/_components/ui/button'
@@ -164,11 +165,13 @@ function ManualForm({
           priority,
           subtasks: subtasks.map(s => s.trim()).filter(Boolean),
         })
+        toast.success('Task added')
         router.refresh()
         onClose()
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        setError(`Couldn't save the task: ${msg}. Check your connection and try Create again.`)
+        toast.error("Couldn't save the task", { description: msg })
+        setError(msg)
       }
     })
   }
@@ -397,11 +400,13 @@ function AIForm({
           subtasks: task.subtasks,
         })
       }
+      toast.success(`Added ${extracted.length} task${extracted.length !== 1 ? 's' : ''}`)
       router.refresh()
       onClose()
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      setError(`Couldn't save the extracted tasks: ${msg}. Try again.`)
+      toast.error("Couldn't save the extracted tasks", { description: msg })
+      setError(msg)
       setCommitting(false)
     }
   }

@@ -12,6 +12,7 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import {
   ChevronLeft,
   Check,
@@ -219,8 +220,10 @@ function ConnectionAction({
                 source.provider as ConnectionProvider
               )
               if (!result.ok) {
+                toast.error(`Couldn't disconnect ${source.name}`, { description: result.error })
                 setError(result.error)
               } else {
+                toast.success(`${source.name} disconnected`)
                 router.refresh()
               }
             })
@@ -270,11 +273,12 @@ function ConnectionAction({
             setError(null)
             try {
               await connectViaNango(source.provider as ConnectionProvider)
+              toast.success(`${source.name} connected`)
               router.refresh()
             } catch (err) {
-              setError(
-                `Couldn't connect ${source.name}: ${err instanceof Error ? err.message : 'unknown error'}. Try again.`
-              )
+              const msg = err instanceof Error ? err.message : 'unknown error'
+              toast.error(`Couldn't connect ${source.name}`, { description: msg })
+              setError(`${msg}. Try again.`)
             }
           })
         }
@@ -333,9 +337,12 @@ function ApiKeyForm({
           onError(null)
           try {
             await cfg.save(apiKey)
+            toast.success(`${provider.charAt(0).toUpperCase() + provider.slice(1)} connected`)
             router.refresh()
           } catch (err) {
-            onError(`Couldn't save the API key: ${err instanceof Error ? err.message : 'unknown error'}. Double-check the key and try again.`)
+            const msg = err instanceof Error ? err.message : 'unknown error'
+            toast.error("Couldn't save the API key", { description: `${msg}. Double-check and try again.` })
+            onError(`${msg}.`)
           }
         })
       }}

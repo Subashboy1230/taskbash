@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppSidebar } from '@/app/_components/app-sidebar'
+import { MobileNav } from '@/app/_components/mobile-nav'
 import { TodayView, DetailPanel } from './today-view'
 import { completeItem, dismissItem } from './actions'
 import { TodayCalendarColumn } from './today-calendar-column'
@@ -174,7 +175,7 @@ export function TodayShell({
         userInitial={digest.user_initials.charAt(0)}
       />
 
-      <main className="flex-1 min-w-0 pl-8 pr-0 pt-4 pb-16 overflow-y-auto">
+      <main className="flex-1 min-w-0 px-4 pt-4 pb-24 md:pl-8 md:pr-0 md:pb-16 overflow-y-auto">
         <TodayView
           digest={filteredDigest}
           userEmail={userEmail}
@@ -190,9 +191,65 @@ export function TodayShell({
         />
       </main>
 
-      {/* Right column: detail panel or calendar */}
-      {panelVisible ? (
-        <PanelColumn closing={panelClosing}>
+      {/* Right column: detail panel (desktop) or calendar (desktop).
+          On small screens we hide this entirely and show the detail
+          panel as a Sheet (below). */}
+      <div className="hidden lg:contents">
+        {panelVisible ? (
+          <PanelColumn closing={panelClosing}>
+            {displayedItem && (
+              <DetailPanel
+                key={displayedItem.id}
+                item={displayedItem}
+                onClose={closePanel}
+                now={nowFromServer ? new Date(nowFromServer) : undefined}
+                onComplete={() => {
+                  if (!displayedItem) return
+                  const id = displayedItem.id
+                  setShellHiddenIds(s => new Set(s).add(id))
+                  closePanel()
+                  completeItem(id).then(() => router.refresh()).catch(() => {
+                    setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
+                  })
+                }}
+                onDismiss={() => {
+                  if (!displayedItem) return
+                  const id = displayedItem.id
+                  setShellHiddenIds(s => new Set(s).add(id))
+                  closePanel()
+                  dismissItem(id).then(() => router.refresh()).catch(() => {
+                    setShellHiddenIds(s => { const n = new Set(s); n.delete(id); return n })
+                  })
+                }}
+                allFunctions={functions}
+              />
+            )}
+          </PanelColumn>
+        ) : (
+          <TodayCalendarColumn
+            events={events}
+            items={digest.open_items.map(i => ({
+              id: i.id,
+              title: i.title,
+              due_at: i.due_at,
+            }))}
+            calendarConnected={calendarConnected}
+            collapsed={calendarCollapsed}
+            onToggleCollapsed={() => setCalendarCollapsed(c => !c)}
+          />
+        )}
+      </div>
+
+      {/* Mobile: detail panel rendered as full-screen Sheet */}
+      <Sheet open={panelVisible} onOpenChange={(o) => { if (!o) closePanel() }}>
+        <SheetContent
+          side="right"
+          className="lg:hidden w-full overflow-y-auto p-0 sm:max-w-md"
+        >
+          <SheetTitle className="sr-only">Task detail</SheetTitle>
+          <SheetDescription className="sr-only">
+            View, edit, and clear the selected task.
+          </SheetDescription>
           {displayedItem && (
             <DetailPanel
               key={displayedItem.id}
@@ -220,20 +277,8 @@ export function TodayShell({
               allFunctions={functions}
             />
           )}
-        </PanelColumn>
-      ) : (
-        <TodayCalendarColumn
-          events={events}
-          items={digest.open_items.map(i => ({
-            id: i.id,
-            title: i.title,
-            due_at: i.due_at,
-          }))}
-          calendarConnected={calendarConnected}
-          collapsed={calendarCollapsed}
-          onToggleCollapsed={() => setCalendarCollapsed(c => !c)}
-        />
-      )}
+        </SheetContent>
+      </Sheet>
 
       <Sheet open={addOpen} onOpenChange={setAddOpen}>
         <SheetContent
@@ -250,6 +295,8 @@ export function TodayShell({
           />
         </SheetContent>
       </Sheet>
+
+      <MobileNav />
     </div>
   )
 }
