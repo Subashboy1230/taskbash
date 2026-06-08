@@ -62,6 +62,11 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     .single()
   const runId: string | null = runRow?.id ?? null
 
+  // Wrap the rest of the pipeline so that ANY throw flips the run row from
+  // 'running' to 'failed' before re-throwing. Without this, a mid-run crash
+  // leaves the row stuck in 'running' forever (until the NEXT digest run
+  // sweeps it up at line 50–54, which can be hours or days later).
+  try {
   // ─── Auto-unsnooze items whose snooze window has passed ──────────────
   await supabase
     .from('items')
@@ -368,4 +373,18 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   }
 
   return summary
+  } catch (err) {
+    // Make sure the runs row reflects reality before we re-throw, so
+    // the Activity feed never shows a permanently-Running entry from a
+    // crashed digest.
+    if (runId) {
+      try {
+        await supabase.from('runs').update({
+          status: 'failed',
+          completed_at: new Date().toISOString(),
+        }).eq('id', runId)
+      } catch { /* swallow — the original error is more interesting */ }
+    }
+    throw err
+  }
 }

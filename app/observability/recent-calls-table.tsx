@@ -58,7 +58,7 @@ export function RecentCallsTable({
           <tbody className="divide-y divide-line/70">
             {calls.map(c => (
               <tr key={c.id}>
-                <td className="px-3 py-2 text-ink-muted">
+                <td className="px-3 py-2 text-ink-muted" suppressHydrationWarning>
                   {new Date(c.started_at).toLocaleTimeString('en-US', {
                     hour: '2-digit',
                     minute: '2-digit',

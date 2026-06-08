@@ -838,7 +838,7 @@ function CalendarStrip({
       }}
     >
       <div className="mb-3 flex items-center justify-between">
-        <span className="text-sm font-medium text-cal-strip-text">{headlineDate}</span>
+        <span className="text-sm font-medium text-cal-strip-text" suppressHydrationWarning>{headlineDate}</span>
         <div className="flex items-center gap-1 rounded-full bg-white/70 pl-2 pr-1 text-cal-strip-text">
           <button
             aria-label="Previous week"
