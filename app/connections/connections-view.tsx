@@ -73,7 +73,7 @@ const SOURCES: Source[] = [
     provider: 'slack',
     brand: 'slack',
     name: 'Slack',
-    description: 'DMs and channels. Coming in Week 5 (needs auth feature).',
+    description: 'DMs and channels. Coming soon.',
     authType: 'unavailable',
   },
 ]
