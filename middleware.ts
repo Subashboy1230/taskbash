@@ -5,6 +5,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import * as Sentry from '@sentry/nextjs'
 
 export async function middleware(request: NextRequest) {
   // Build a response we can attach refreshed cookies to.
@@ -36,9 +37,16 @@ export async function middleware(request: NextRequest) {
   )
 
   // Touch the session — refreshes the cookie if it's near expiry.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // A throw here (e.g. Supabase network failure) would otherwise be invisible,
+  // so capture it and treat the request as unauthenticated.
+  let user = null
+  try {
+    const result = await supabase.auth.getUser()
+    user = result.data.user
+  } catch (err) {
+    Sentry.captureException(err)
+    await Sentry.flush(2000)
+  }
 
   const path = request.nextUrl.pathname
   const isPublic =

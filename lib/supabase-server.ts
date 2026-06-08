@@ -8,6 +8,7 @@
 
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import * as Sentry from '@sentry/nextjs'
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies()
@@ -46,6 +47,9 @@ export async function getCurrentUserId(): Promise<string> {
     data: { user },
   } = await client.auth.getUser()
   if (!user) throw new Error('Not authenticated')
+  // Tag the Sentry isolation scope for this request so any error captured
+  // downstream carries the user id and email. Idempotent across repeat calls.
+  Sentry.setUser({ id: user.id, email: user.email ?? undefined })
   return user.id
 }
 
