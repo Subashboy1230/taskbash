@@ -3,6 +3,7 @@
 
 import React from 'react'
 import { cn } from '@/lib/utils'
+import { decodeHtmlEntities } from '@/lib/text'
 
 export interface Entity {
   kind: 'person' | 'project' | 'thread' | string
@@ -36,14 +37,15 @@ export function renderSubtitleWithEntities(
   subtitle: string,
   entities: Entity[]
 ): React.ReactNode[] {
-  if (!entities || entities.length === 0) return [subtitle]
+  const decoded = decodeHtmlEntities(subtitle)
+  if (!entities || entities.length === 0) return [decoded]
 
   // Sort entities by label length descending so longer names match first
   const sorted = [...entities].sort((a, b) => b.label.length - a.label.length)
 
   // Build a list of segments: string or entity index
   type Segment = { type: 'text'; text: string } | { type: 'entity'; entity: Entity }
-  const segments: Segment[] = [{ type: 'text', text: subtitle }]
+  const segments: Segment[] = [{ type: 'text', text: decoded }]
 
   for (const entity of sorted) {
     const next: Segment[] = []

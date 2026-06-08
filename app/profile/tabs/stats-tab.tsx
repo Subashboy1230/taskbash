@@ -35,6 +35,9 @@ const SOURCE_COLORS: Record<string, string> = {
 export default function StatsTab({ stats }: Props) {
   const chartData = buildChartData(stats.slopTimeSeries)
   const sources = Array.from(new Set(stats.slopTimeSeries.map(p => p.source)))
+  // Empty state covers both "no data points" and "data points all 0%" —
+  // recharts renders 0% lines as invisible baseline, which looks broken.
+  const hasAnySlop = stats.slopTimeSeries.some(p => p.slopPct > 0)
 
   return (
     <div className="space-y-4">
@@ -65,9 +68,9 @@ export default function StatsTab({ stats }: Props) {
           </CardTitle>
         </CardHeader>
         <CardContent className="px-2 pb-4 pt-0">
-          {chartData.length === 0 ? (
+          {chartData.length === 0 || !hasAnySlop ? (
             <p className="text-[13px] text-ink-faint text-center py-8">
-              No slop data yet. Mark tasks as incorrect to start tracking.
+              No slop yet. Hit the slop button on any task taskbash got wrong to start tracking.
             </p>
           ) : (
             <ResponsiveContainer width="100%" height={220}>

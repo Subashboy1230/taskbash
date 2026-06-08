@@ -56,6 +56,7 @@ import type { Priority, ProposedAction, Source, Tag, TaskBrief, UserFunction } f
 import type { UnreadThread } from '@/lib/load-unread-gmail'
 import { functionColor } from '@/lib/function-color'
 import { renderSubtitleWithEntities } from '@/app/_components/entity-chip'
+import { decodeHtmlEntities } from '@/lib/text'
 import type { Entity } from '@/app/_components/entity-chip'
 import { setItemFunctions } from '@/app/settings/functions/actions'
 import {
@@ -1178,7 +1179,7 @@ function TaskRow({
           <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
             {item.subtitle && item.entities && item.entities.length > 0
               ? renderSubtitleWithEntities(item.subtitle, item.entities as Entity[])
-              : item.subtitle || item.brief?.why || item.description || item.parent_context || `From ${item.source}`}
+              : decodeHtmlEntities(item.subtitle || item.brief?.why || item.description || item.parent_context || `From ${item.source}`)}
           </p>
 
           {subTotal > 0 && (
@@ -1900,7 +1901,7 @@ function CompletedRow({
           {item.due_at && <DeadlineBadge dueIso={item.due_at} now={now} />}
         </div>
         <p className="mt-1 truncate text-[13px] text-ink-faint m-0">
-          {item.subtitle || item.brief?.why || item.description || item.parent_context || `From ${item.source}`}
+          {decodeHtmlEntities(item.subtitle || item.brief?.why || item.description || item.parent_context || `From ${item.source}`)}
         </p>
       </div>
       <span className="shrink-0 rounded-full bg-success-bg px-2.5 py-0.5 text-[12px] font-medium text-success-fg">
