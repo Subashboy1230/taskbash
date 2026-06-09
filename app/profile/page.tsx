@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { loadProfileOverview, loadVoiceProfile, loadPromptsWithSlopRates, loadStats } from '@/lib/load-profile'
-import { loadTodayEvents } from '@/lib/load-day-events'
+import { loadTodayEventsResult } from '@/lib/load-day-events'
 import { getActiveConnection } from '@/lib/connections'
 import { PageShell } from '@/app/_components/page-shell'
 import ProfileTabs from './profile-tabs'
@@ -13,12 +13,12 @@ export default async function ProfilePage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const [overview, voiceProfile, prompts, stats, events, calConn] = await Promise.all([
+  const [overview, voiceProfile, prompts, stats, eventsResult, calConn] = await Promise.all([
     loadProfileOverview(user.id),
     loadVoiceProfile(user.id),
     loadPromptsWithSlopRates(user.id),
     loadStats(user.id),
-    loadTodayEvents().catch(() => []),
+    loadTodayEventsResult().catch(() => ({ events: [], failed: true })),
     getActiveConnection('calendar').catch(() => null),
   ])
 
@@ -36,7 +36,8 @@ export default async function ProfilePage() {
     <PageShell
       userEmail={user.email}
       userInitial={displayName.charAt(0).toUpperCase()}
-      events={events}
+      events={eventsResult.events}
+      eventsError={eventsResult.failed}
       calendarConnected={!!calConn?.nango_connection_id}
     >
       <h1 className="m-0 mb-6 text-[28px] font-semibold tracking-tight text-ink">

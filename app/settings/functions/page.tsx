@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { loadUserFunctions } from '@/lib/load-functions'
-import { loadTodayEvents } from '@/lib/load-day-events'
+import { loadTodayEventsResult } from '@/lib/load-day-events'
 import { getActiveConnection } from '@/lib/connections'
 import { PageShell } from '@/app/_components/page-shell'
 import { FunctionsManager } from './functions-manager'
@@ -12,9 +12,9 @@ import { FunctionsManager } from './functions-manager'
 export const dynamic = 'force-dynamic'
 
 export default async function FunctionsSettingsPage() {
-  const [functions, events, calConn, supabase] = await Promise.all([
+  const [functions, eventsResult, calConn, supabase] = await Promise.all([
     loadUserFunctions(),
-    loadTodayEvents().catch(() => []),
+    loadTodayEventsResult().catch(() => ({ events: [], failed: true })),
     getActiveConnection('calendar').catch(() => null),
     createSupabaseServerClient(),
   ])
@@ -26,7 +26,8 @@ export default async function FunctionsSettingsPage() {
     <PageShell
       userEmail={user?.email ?? undefined}
       userInitial={(user?.email ?? 'U').charAt(0).toUpperCase()}
-      events={events}
+      events={eventsResult.events}
+      eventsError={eventsResult.failed}
       calendarConnected={!!calConn?.nango_connection_id}
     >
       <div className="mx-auto max-w-[700px]">

@@ -566,6 +566,16 @@ export async function getEventsForDateAction(yyyymmdd: string) {
 }
 
 /**
+ * Server action for the calendar widget's "Retry" on today's events.
+ * Unlike getEventsForDateAction, this preserves the failure flag so a
+ * retry that fails again re-shows the error instead of a false "no events".
+ */
+export async function refreshTodayEventsAction() {
+  const { loadTodayEventsResult } = await import('@/lib/load-day-events')
+  return loadTodayEventsResult()
+}
+
+/**
  * Open an unread Gmail thread as a task in the detail panel.
  *
  * Flow:

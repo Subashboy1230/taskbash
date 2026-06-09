@@ -18,12 +18,16 @@ export function PageShell({
   userEmail,
   userInitial,
   events,
+  eventsError = false,
   calendarConnected,
   children,
 }: {
   userEmail?: string
   userInitial?: string
   events: DayEvent[]
+  // True when the server-side today-events fetch threw (vs. genuinely empty).
+  // Drives a "Couldn't load events / Retry" state in the calendar column.
+  eventsError?: boolean
   calendarConnected: boolean
   children: React.ReactNode
 }) {
@@ -35,6 +39,7 @@ export function PageShell({
       <div className="hidden lg:contents">
         <TodayCalendarColumn
           events={events}
+          eventsError={eventsError}
           items={[]}
           calendarConnected={calendarConnected}
           selectedDay={selectedDay}

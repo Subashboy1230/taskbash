@@ -17,6 +17,7 @@ import {
   ChevronsRight,
   Loader2,
   Plug,
+  RotateCw,
   Video,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -27,7 +28,7 @@ import {
   CardTitle,
 } from '@/app/_components/ui/card'
 import type { DayEvent } from '@/lib/load-day-events'
-import { getEventsForDateAction } from './actions'
+import { getEventsForDateAction, refreshTodayEventsAction } from './actions'
 
 export interface CalendarColumnItem {
   id: string
@@ -39,6 +40,7 @@ const COLLAPSED_KEY = 'taskbash:calendarCollapsed'
 
 export function TodayCalendarColumn({
   events,
+  eventsError = false,
   items = [],
   calendarConnected = true,
   selectedDay: selectedDayProp = null,
@@ -47,6 +49,10 @@ export function TodayCalendarColumn({
   onToggleCollapsed,
 }: {
   events: DayEvent[]
+  // True when the server-side today-events fetch threw. Renders a distinct
+  // error + Retry state instead of the "No events scheduled today" empty
+  // state, so a failed load is never mistaken for an empty calendar.
+  eventsError?: boolean
   // Open items with due dates — drives the dot under each day and the
   // hover-preview list. (Pass digest.open_items from the page.)
   items?: CalendarColumnItem[]
@@ -65,6 +71,33 @@ export function TodayCalendarColumn({
   const [viewMonth, setViewMonth] = useState(new Date(today))
   const [selectedDayInternal, setSelectedDayInternal] = useState<string | null>(selectedDayProp)
   const selectedDay = selectedDayInternal
+
+  // Today's events: seeded from server props but locally re-fetchable via
+  // Retry. We keep a local copy so a successful retry can replace a failed
+  // load without a full page refresh. The effect re-syncs whenever the
+  // server re-renders with fresh props (e.g. router.refresh elsewhere).
+  const [todayEvents, setTodayEvents] = useState<DayEvent[]>(events)
+  const [todayFailed, setTodayFailed] = useState(eventsError)
+  const [retrying, setRetrying] = useState(false)
+  useEffect(() => {
+    setTodayEvents(events)
+    setTodayFailed(eventsError)
+  }, [events, eventsError])
+
+  const retryTodayEvents = async () => {
+    if (retrying) return
+    setRetrying(true)
+    try {
+      const result = await refreshTodayEventsAction()
+      setTodayEvents(result.events)
+      setTodayFailed(result.failed)
+    } catch {
+      // The action itself failing (network/serialization) is also a failure.
+      setTodayFailed(true)
+    } finally {
+      setRetrying(false)
+    }
+  }
 
   // Collapse/expand. Default expanded; hydrate from localStorage on mount.
   // When `collapsed` prop is passed we treat this component as controlled
@@ -261,14 +294,33 @@ export function TodayCalendarColumn({
               selectedIso={selectedDay!}
               dayItems={itemsByDay.get(selectedDay!) ?? []}
             />
-          ) : events.length === 0 ? (
+          ) : todayFailed && calendarConnected ? (
+            <div className="rounded-md border border-dashed border-line bg-canvas/60 px-3 py-3">
+              <p className="m-0 text-[12px] text-ink-faint">
+                Couldn&apos;t load events.
+              </p>
+              <button
+                type="button"
+                onClick={retryTodayEvents}
+                disabled={retrying}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1 text-[12px] text-ink transition-colors hover:bg-surface/70 disabled:opacity-60"
+              >
+                {retrying ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <RotateCw size={12} />
+                )}
+                {retrying ? 'Retrying' : 'Retry'}
+              </button>
+            </div>
+          ) : todayEvents.length === 0 ? (
             <p className="m-0 rounded-md border border-dashed border-line bg-canvas/60 px-3 py-3 text-[12px] text-ink-faint">
               {calendarConnected
                 ? 'No events scheduled today.'
                 : 'Connect Google Calendar to see your schedule here.'}
             </p>
           ) : (
-            <EventList events={events} />
+            <EventList events={todayEvents} />
           )}
         </CardContent>
       </Card>

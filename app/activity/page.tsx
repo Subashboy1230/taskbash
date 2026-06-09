@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
-import { loadTodayEvents } from '@/lib/load-day-events'
+import { loadTodayEventsResult } from '@/lib/load-day-events'
 import { getActiveConnection } from '@/lib/connections'
 import { PageShell } from '@/app/_components/page-shell'
 import {
@@ -23,10 +23,10 @@ export default async function ActivityPage() {
   if (!user) redirect('/login')
 
   const [
-    events, calConn,
+    eventsResult, calConn,
     all, runs, tasks, sources, approvals, records, evalHealth,
   ] = await Promise.all([
-    loadTodayEvents().catch(() => []),
+    loadTodayEventsResult().catch(() => ({ events: [], failed: true })),
     getActiveConnection('calendar').catch(() => null),
     loadAllActivity(user.id).catch(() => []),
     loadRuns(user.id).catch(() => []),
@@ -43,7 +43,8 @@ export default async function ActivityPage() {
     <PageShell
       userEmail={user.email}
       userInitial={initial}
-      events={events}
+      events={eventsResult.events}
+      eventsError={eventsResult.failed}
       calendarConnected={!!calConn?.nango_connection_id}
     >
       <h1 className="m-0 mb-1 text-[28px] font-semibold tracking-tight text-ink">

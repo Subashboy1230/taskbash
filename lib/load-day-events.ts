@@ -27,23 +27,64 @@ export interface DayEvent {
 const CALENDAR_API = '/calendar/v3/calendars/primary/events'
 
 /**
- * Fetch today's events (00:00 -> 23:59 in the server's TZ). Returns []
- * if Calendar isn't connected. Failures are swallowed: never let
- * the right-column widget block the main /today view.
+ * Result of a today-events load that DISTINGUISHES a real fetch failure
+ * from a genuinely-empty calendar. `failed: true` means the fetch threw
+ * (Nango/Calendar/Supabase error); `failed: false` with an empty list
+ * means "no events" or "Calendar not connected" (the latter is surfaced
+ * separately via the `calendarConnected` flag in the UI).
  */
-export async function loadTodayEvents(): Promise<DayEvent[]> {
+export interface TodayEventsResult {
+  events: DayEvent[]
+  failed: boolean
+}
+
+/**
+ * Fetch today's events (00:00 -> 23:59 in the server's TZ), reporting
+ * whether the fetch failed so the right-column widget can show a real
+ * error + Retry instead of a misleading "No events scheduled today".
+ * Returns failed: false with an empty list when Calendar isn't connected.
+ */
+export async function loadTodayEventsResult(): Promise<TodayEventsResult> {
   const today = new Date()
   const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-  return loadEventsForDate(iso)
+  try {
+    return { events: await fetchEventsForDate(iso), failed: false }
+  } catch (err) {
+    console.error('[loadTodayEventsResult] failed:', err)
+    return { events: [], failed: true }
+  }
+}
+
+/**
+ * Fetch today's events. Backward-compatible thin wrapper that drops the
+ * failure flag and returns just the list ([] on any error). Prefer
+ * loadTodayEventsResult when the caller can surface a load failure.
+ */
+export async function loadTodayEvents(): Promise<DayEvent[]> {
+  return (await loadTodayEventsResult()).events
 }
 
 /**
  * Fetch events for any YYYY-MM-DD day in the user's primary Google Calendar.
  * Used by the right-column widget when the user clicks a non-today date.
- * Same best-effort semantics as loadTodayEvents.
+ * Best-effort: swallows errors to [] (the on-demand panel has its own
+ * loading/error UI). Prefer fetchEventsForDate when you need the throw.
  */
 export async function loadEventsForDate(yyyymmdd: string): Promise<DayEvent[]> {
   try {
+    return await fetchEventsForDate(yyyymmdd)
+  } catch (err) {
+    console.error('[loadEventsForDate] failed:', err)
+    return []
+  }
+}
+
+/**
+ * Core fetch. Returns [] when Calendar isn't connected (NOT a failure),
+ * but THROWS on a real error so callers can distinguish the two. The
+ * public wrappers above decide whether to swallow or surface the throw.
+ */
+async function fetchEventsForDate(yyyymmdd: string): Promise<DayEvent[]> {
     const conn = await getActiveConnection('calendar')
     if (!conn?.nango_connection_id) return []
     const providerConfigKey = NANGO_PROVIDER_KEY.calendar
@@ -115,8 +156,4 @@ export async function loadEventsForDate(yyyymmdd: string): Promise<DayEvent[]> {
           hangoutLink: e.hangoutLink ?? null,
         }
       })
-  } catch (err) {
-    console.error('[loadEventsForDate] failed:', err)
-    return []
-  }
 }

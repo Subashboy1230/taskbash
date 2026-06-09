@@ -4,7 +4,7 @@
 
 import { listUserConnections } from '@/lib/connections'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
-import { loadTodayEvents } from '@/lib/load-day-events'
+import { loadTodayEventsResult } from '@/lib/load-day-events'
 import { getActiveConnection } from '@/lib/connections'
 import { PageShell } from '@/app/_components/page-shell'
 import { ConnectionsView } from './connections-view'
@@ -17,9 +17,9 @@ export default async function ConnectionsPage() {
   const userId = user?.id
   const initial = (user?.email ?? 'U').charAt(0).toUpperCase()
 
-  const [connections, events, calConn] = await Promise.all([
+  const [connections, eventsResult, calConn] = await Promise.all([
     userId ? listUserConnections(userId) : Promise.resolve([]),
-    loadTodayEvents().catch(() => []),
+    loadTodayEventsResult().catch(() => ({ events: [], failed: true })),
     userId ? getActiveConnection('calendar', userId).catch(() => null) : Promise.resolve(null),
   ])
 
@@ -27,7 +27,8 @@ export default async function ConnectionsPage() {
     <PageShell
       userEmail={user?.email ?? undefined}
       userInitial={initial}
-      events={events}
+      events={eventsResult.events}
+      eventsError={eventsResult.failed}
       calendarConnected={!!calConn?.nango_connection_id}
     >
       <ConnectionsView

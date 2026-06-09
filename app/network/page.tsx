@@ -2,15 +2,15 @@
 // via email, grouped by their organisation (derived from email domain).
 
 import { createSupabaseServerClient } from '@/lib/supabase-server'
-import { loadTodayEvents } from '@/lib/load-day-events'
+import { loadTodayEventsResult } from '@/lib/load-day-events'
 import { getActiveConnection } from '@/lib/connections'
 import { PageShell } from '@/app/_components/page-shell'
 
 export const dynamic = 'force-dynamic'
 
 export default async function NetworkPage() {
-  const [events, calConn, supabase] = await Promise.all([
-    loadTodayEvents().catch(() => []),
+  const [eventsResult, calConn, supabase] = await Promise.all([
+    loadTodayEventsResult().catch(() => ({ events: [], failed: true })),
     getActiveConnection('calendar').catch(() => null),
     createSupabaseServerClient(),
   ])
@@ -21,7 +21,8 @@ export default async function NetworkPage() {
     <PageShell
       userEmail={user?.email ?? undefined}
       userInitial={(user?.email ?? 'U').charAt(0).toUpperCase()}
-      events={events}
+      events={eventsResult.events}
+      eventsError={eventsResult.failed}
       calendarConnected={!!calConn?.nango_connection_id}
     >
       <h1 className="m-0 mb-2 text-[28px] font-semibold tracking-tight text-ink">
