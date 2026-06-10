@@ -40,9 +40,9 @@ import { BrandLogo } from '@/app/_components/brand-logo'
 export const dynamic = 'force-static'
 
 export const metadata = {
-  title: 'taskbash · your morning digest, from every source',
+  title: 'taskbash · never miss a task, never track one either',
   description:
-    'taskbash is an AI chief of staff that pulls action items from Gmail, Granola, Linear, and Calendar into one daily list. Hit slop on what is wrong and the agent learns the pattern.',
+    'taskbash auto-captures every commitment you make across Gmail, meetings, Linear, and Calendar into one daily list — then learns what matters to you, so the list stays clean without manual tracking.',
 }
 
 export default function HomePage() {
@@ -103,21 +103,23 @@ function Hero() {
             AI chief of staff
           </span>
           <h1 className="mt-5 m-0 text-[44px] font-semibold leading-[1.05] tracking-tight text-ink md:text-[56px]">
-            Your morning digest,
+            Never miss a task.
             <br />
-            <span className="text-ink-muted">from every source.</span>
+            <span className="text-ink-muted">Never track one either.</span>
           </h1>
           <p className="mt-5 max-w-[520px] text-[16px] leading-relaxed text-ink-muted md:text-[17px]">
-            taskbash pulls action items from Gmail, Granola meetings, Linear,
-            and Google Calendar into one daily list. It drafts replies, preps
-            you for meetings, and gets sharper from your feedback every week.
+            taskbash quietly captures every commitment you make across Gmail,
+            meetings, Linear, and Calendar into one ranked daily list. It
+            drafts your replies, preps you for meetings, and learns your
+            priorities week by week — so the list stays clean without you
+            managing it.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
               href="/login"
               className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-[15px] font-medium text-primary-foreground hover:bg-accent-strong"
             >
-              Start your morning
+              Get organized in 60 seconds
               <ArrowRight size={15} />
             </Link>
             <a
@@ -271,27 +273,27 @@ function HowItWorks() {
     <section id="how" className="mx-auto max-w-[1100px] px-6 py-20">
       <SectionHeader
         eyebrow="How it works"
-        title="Three steps to a quieter morning."
-        subtitle="Connect once. Open your list. Tell it when it is wrong."
+        title="Three steps. One clean list."
+        subtitle="Connect once. Open the app every morning. Dismiss what does not belong — the agent learns the pattern automatically."
       />
       <div className="mt-12 grid gap-4 md:grid-cols-3">
         <StepCard
           n="01"
           icon={<Zap size={18} />}
-          title="Connect your sources"
-          body="One-click OAuth for Gmail, Calendar, Granola, Linear. Reads only what you authorize. Nothing is exfiltrated."
+          title="Connect once"
+          body="One-click OAuth for Gmail, Calendar, Granola, Linear. Reads only what you authorize. No new credentials to manage, no extension to install."
         />
         <StepCard
           n="02"
           icon={<ListTodo size={18} />}
-          title="Get your morning digest"
-          body="Every morning, fresh extraction across every source. One ranked list with prep briefs for upcoming meetings and pre-drafted replies for waiting threads."
+          title="Open your list every morning"
+          body="taskbash quietly pulled everything overnight. One ranked list of what you owe people today. Meeting briefs ready. Replies pre-drafted. Walk in caught up."
         />
         <StepCard
           n="03"
           icon={<Brain size={18} />}
-          title="Train it from your slop"
-          body="Hit the slop button on anything it got wrong. Pick the category. Next week, that pattern stops appearing. Every prompt has a public slop-rate chart you can watch drop."
+          title="It learns your style"
+          body="Dismiss anything that does not belong on your plate. taskbash figures out the pattern automatically — what kind of work you care about, what is someone else's job. No rules to set up. It just adapts."
         />
       </div>
     </section>
@@ -371,8 +373,8 @@ function FeatureGrid() {
           />
           <FeatureCard
             icon={<Repeat size={16} />}
-            title="Learning feedback loop"
-            body="Every slop signal becomes a negative test case. The next prompt version is replayed against your slop corpus before it ships. Real measurable improvement."
+            title="Sharper every week"
+            body="Every dismissal teaches taskbash what to skip next time. By week two the list is mostly things you actually want to do. By month one, it knows your priorities better than any todo app you have used."
           />
         </div>
       </div>
@@ -415,23 +417,25 @@ function SlopLoopSection() {
       <div className="grid items-center gap-12 md:grid-cols-[0.9fr_1.1fr]">
         <div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium uppercase tracking-wider text-ink-muted">
-            <TrendingDown size={12} className="text-ink" />
-            The slop loop
+            <Brain size={12} className="text-ink" />
+            Adapts to you
           </span>
           <h2 className="mt-5 m-0 text-[36px] font-semibold leading-tight tracking-tight text-ink md:text-[40px]">
-            Most agents stay at v1.
+            Most apps make you fit them.
             <br />
-            <span className="text-ink-muted">taskbash gets better every week.</span>
+            <span className="text-ink-muted">taskbash fits you.</span>
           </h2>
           <p className="mt-5 max-w-[460px] text-[15px] leading-relaxed text-ink-muted">
-            When you hit slop on a task, taskbash captures the producing prompt,
-            the exact input, and your category. That becomes a negative test
-            case in an eval dataset bound to that prompt. The next prompt
-            version is replayed against the whole slop corpus before it ships.
-            No prompt ever ships if it would regress past slop signals.
+            Most task apps need rules, tags, and projects set up before they
+            work. taskbash starts working on day one, then quietly gets
+            sharper. Dismiss something that is not yours. Skip a category you
+            do not care about. The agent picks up the pattern and stops
+            surfacing similar items next time.
           </p>
           <p className="mt-3 max-w-[460px] text-[14px] leading-relaxed text-ink-faint">
-            Every prompt has a public slop-rate chart. Watch it drop.
+            By week two, your list is mostly things you actually want to do.
+            By month one, taskbash knows your priorities better than any todo
+            app you have used.
           </p>
         </div>
 
@@ -447,11 +451,11 @@ function SlopLoopSection() {
 
 function LoopDiagram() {
   const steps = [
-    { n: '1', label: 'Extract', sub: 'LLM finds action items from your sources' },
-    { n: '2', label: 'You triage', sub: 'Open, snooze, complete — or hit slop' },
-    { n: '3', label: 'Capture', sub: 'Slop signal anchored to producing prompt' },
-    { n: '4', label: 'Replay', sub: 'New prompt versions tested against slop corpus' },
-    { n: '5', label: 'Ship if better', sub: 'Only prompts that skip past slop go live' },
+    { n: '1', label: 'Reads', sub: 'Pulls fresh commitments from every connected tool overnight' },
+    { n: '2', label: 'Surfaces', sub: 'One ranked list, ready when you open the app' },
+    { n: '3', label: 'Notices', sub: 'Watches what you keep, dismiss, or correct' },
+    { n: '4', label: 'Learns', sub: 'Quietly figures out what is and is not your work' },
+    { n: '5', label: 'Adapts', sub: 'Next week the list is sharper. The week after, sharper still.' },
   ]
   return (
     <ol className="m-0 list-none space-y-3 p-0">
@@ -521,10 +525,10 @@ function FinalCTA() {
       <Card className="border-line bg-surface">
         <CardContent className="px-6 py-12 text-center md:px-10 md:py-16">
           <h2 className="m-0 text-[34px] font-semibold leading-tight tracking-tight text-ink md:text-[40px]">
-            Open your morning.
+            Stop tracking. Start finishing.
           </h2>
           <p className="mx-auto mt-3 max-w-[460px] text-[15px] leading-relaxed text-ink-muted">
-            Connect Gmail and Calendar in 60 seconds. See your first digest in
+            Connect Gmail and Calendar in 60 seconds. See your first list in
             under five minutes. Cancel anytime.
           </p>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
@@ -563,7 +567,7 @@ function Footer() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo-new.png" alt="taskbash" width={16} height={16} />
           <span className="font-medium text-ink-muted">taskbash</span>
-          <span>· Your morning digest, from every source.</span>
+          <span>· Never miss a task. Never track one either.</span>
         </div>
         <div className="flex items-center gap-4">
           <a href="/privacy" className="hover:text-ink">Privacy</a>
