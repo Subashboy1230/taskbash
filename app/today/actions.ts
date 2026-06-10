@@ -50,6 +50,7 @@ export async function markItemSlop(
     | 'duplicate'
     | 'should_be_subtask'
     | 'old_task'
+    | 'already_cleared'
     | 'other',
   note?: string
 ) {
