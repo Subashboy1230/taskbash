@@ -13,8 +13,17 @@
 
 import { anthropic, MODELS } from '../anthropic'
 import { tracedMessage } from '../llm-trace'
+import { nebiusTracedMessage } from '../nebius-trace'
 import { extractJsonObject } from '../extract/parse'
 import type { ExtractedItem, UserFunction } from '../types'
+
+// Provider for this classifier. Default Anthropic. Set CLASSIFY_PROVIDER=nebius
+// in .env.local to route through Nebius Token Factory (Meta Llama 3.1 70B).
+// Why a flag: keeps a one-line rollback path if Nebius quality regresses
+// on a specific user batch. /observability shows system='nebius' so you
+// can compare slop rate per provider over time.
+const USE_NEBIUS =
+  (process.env.CLASSIFY_PROVIDER || '').toLowerCase() === 'nebius'
 
 // Key for tying input items to output rows. We don't have item ids yet
 // at classify time (insert happens after), so we use a synthetic
@@ -116,29 +125,42 @@ export async function classifyAndTagFunctions(args: {
   let classifyCallId: string | null = null
 
   try {
-    const response = await tracedMessage(
-      anthropic,
-      {
-        prompt_id: 'classify.functions',
-        // v2: flipped from conservative to lean-inclusive multi-label
-        // tagging (2026-06-10 analysis: 65% of tag corrections are adds).
-        prompt_version: 2,
-        user_id: args.userId ?? process.env.APP_USER_ID ?? null,
-        input_content: inputContent,
-      },
-      {
-        model: MODELS.classifier,
+    const traceCtx = {
+      prompt_id: 'classify.functions',
+      // v2: flipped from conservative to lean-inclusive multi-label
+      // tagging (2026-06-10 analysis: 65% of tag corrections are adds).
+      prompt_version: 2,
+      user_id: args.userId ?? process.env.APP_USER_ID ?? null,
+      input_content: inputContent,
+    } as const
+
+    let text: string
+
+    if (USE_NEBIUS) {
+      const response = await nebiusTracedMessage(traceCtx, {
         max_tokens: 1024,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: prompt }],
-      }
-    )
-
-    classifyCallId = response._llmCallId || null
-    const text = response.content
-      .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-      .map(b => b.text)
-      .join('\n')
+      })
+      classifyCallId = response._llmCallId || null
+      text = response.content[0]?.text ?? ''
+    } else {
+      const response = await tracedMessage(
+        anthropic,
+        traceCtx,
+        {
+          model: MODELS.classifier,
+          max_tokens: 1024,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: prompt }],
+        }
+      )
+      classifyCallId = response._llmCallId || null
+      text = response.content
+        .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+        .map(b => b.text)
+        .join('\n')
+    }
 
     let parsed: ClassifyResponse = {}
     try {
