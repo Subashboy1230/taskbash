@@ -9,6 +9,8 @@ import { extractGranolaActionItems } from '../extract/granola'
 import { extractGmailActionItems, extractGmailSentCommitments } from '../extract/gmail'
 import { extractCalendarPrepItems } from '../extract/calendar'
 import { extractLinearActionItems } from '../extract/linear'
+import { extractSlackActionItems } from '../extract/slack'
+import { composioSlackConfigured } from '../connectors/composio'
 import { diffSingleSource } from '../diff'
 import { computeSemanticHash } from '../normalize'
 import { isMechanicalNoise } from '../extract/filters'
@@ -150,6 +152,14 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     const conn = await getActiveConnection('linear', userId)
     if (!conn?.api_key) return null
     return extractLinearActionItems({ userEmail, userId })
+  })
+
+  // Slack via Composio. Gated on COMPOSIO_API_KEY + COMPOSIO_SLACK_CONNECTION_ID
+  // being set in env. composioSlackConfigured returns false when either is
+  // missing, so this is a no-op until the user pastes credentials.
+  await tryRun('slack', async () => {
+    if (!composioSlackConfigured()) return null
+    return extractSlackActionItems({ userEmail, userId, days })
   })
 
   async function tryRun(
