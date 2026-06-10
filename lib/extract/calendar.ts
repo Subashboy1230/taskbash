@@ -4,6 +4,10 @@
 // surfaces upcoming events with an inline prep brief generated from the
 // event metadata (title, description, attendees, time).
 //
+// Optional Tavily enrichment (env TAVILY_ENRICHMENT=on) adds a 1-sentence
+// "who they are" blurb for every external attendee onto the item's
+// source_ref.attendee_context. See lib/enrich/tavily.ts.
+//
 // Scope: next 36 hours from the user's primary calendar. Filters out:
 //   - all-day events
 //   - declined invitations
@@ -22,6 +26,7 @@ import { nangoProxy } from '../nango'
 import { getActiveConnection, NANGO_PROVIDER_KEY } from '../connections'
 import { generateMeetingPrepBrief } from '../prep/meeting-prep'
 import type { ExtractedItem } from '../types'
+import { enrichAttendees } from '../enrich/tavily'
 
 const CALENDAR_API = '/calendar/v3/calendars/primary/events'
 const HOURS_AHEAD = 36
@@ -114,12 +119,26 @@ export async function extractCalendarPrepItems(
       userEmail: args.userEmail,
     }).catch(() => null)
 
+    // Tavily attendee enrichment (gated by env). Pulls a 1-sentence
+    // "who they are" blurb for each external attendee so the brief shows
+    // company + role without the user pre-googling. Skipped silently if
+    // TAVILY_API_KEY or TAVILY_ENRICHMENT flag is unset.
+    let attendee_context: Awaited<ReturnType<typeof enrichAttendees>> = []
+    if ((process.env.TAVILY_ENRICHMENT || '').toLowerCase() === 'on') {
+      const pairs = attendeeEmails.map((email, idx) => ({
+        email,
+        name: attendeeNames[idx] ?? null,
+      }))
+      attendee_context = await enrichAttendees(pairs).catch(() => [])
+    }
+
     items.push({
       source: 'calendar',
       source_ref: {
         google_calendar_event_id: event.id,
         google_calendar_event_start: startIso,
         ...(event.hangoutLink ? { meeting_url: event.hangoutLink } : {}),
+        ...(attendee_context.length ? { attendee_context } : {}),
       },
       parent_context: buildParentContext(event),
       title: `Prep: ${event.summary || 'Untitled meeting'}`,
