@@ -46,13 +46,29 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   const days = opts.days ?? 7
   const trigger = opts.trigger ?? 'manual'
 
-  // Mark any stale "running" rows as failed so they don't pollute the
-  // Activity feed when a previous run crashed before finishing.
+  // Clean up rows left in 'running' by a previous run that never finished.
+  // Two distinct cases, so the Activity feed reads honestly:
+  //   - Recently started (< 15 min): almost certainly an overlapping in-flight
+  //     run (e.g. the user double-clicked Re-run, or cron overlapped a manual
+  //     run). Mark 'superseded' → a muted pill, not a scary red "Failed".
+  //   - Older (>= 15 min): the process is long dead (hard crash / timeout that
+  //     never reached the catch below). Mark 'failed' so a real problem stays
+  //     visible.
+  const SUPERSEDE_WINDOW_MS = 15 * 60 * 1000
+  const staleCutoff = new Date(Date.now() - SUPERSEDE_WINDOW_MS).toISOString()
+  const sweepNow = new Date().toISOString()
   await supabase
     .from('runs')
-    .update({ status: 'failed', completed_at: new Date().toISOString() })
+    .update({ status: 'superseded', completed_at: sweepNow })
     .eq('user_id', userId)
     .eq('status', 'running')
+    .gte('started_at', staleCutoff)
+  await supabase
+    .from('runs')
+    .update({ status: 'failed', completed_at: sweepNow })
+    .eq('user_id', userId)
+    .eq('status', 'running')
+    .lt('started_at', staleCutoff)
 
   // Insert a runs row immediately so the Activity page shows an in-progress
   // entry even if the run fails halfway through.

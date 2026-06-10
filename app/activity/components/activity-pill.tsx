@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils'
 
 export type PillKind =
   | 'synced' | 'succeeded' | 'completed' | 'approved' | 'rejected'
-  | 'failed' | 'snoozed' | 'skipped' | 'slop' | 'running'
+  | 'failed' | 'snoozed' | 'skipped' | 'slop' | 'running' | 'superseded'
   | 'email' | 'meeting' | 'issue' | 'event'
   | 'attention' | 'regression'
 
@@ -17,6 +17,7 @@ const PILL: Record<PillKind, { label: string; bg: string; fg: string; pulse?: bo
   skipped:    { label: 'Skipped',    bg: 'bg-surface-muted',  fg: 'text-ink-faint' },
   slop:       { label: 'Slop',       bg: 'bg-surface-muted',  fg: 'text-ink-muted' },
   running:    { label: 'Running',    bg: 'bg-tag-reply-bg',   fg: 'text-tag-reply-fg', pulse: true },
+  superseded: { label: 'Superseded', bg: 'bg-surface-muted',  fg: 'text-ink-faint' },
   email:      { label: 'Email',      bg: 'bg-surface-muted',  fg: 'text-ink-muted' },
   meeting:    { label: 'Meeting',    bg: 'bg-surface-muted',  fg: 'text-ink-muted' },
   issue:      { label: 'Issue',      bg: 'bg-surface-muted',  fg: 'text-ink-muted' },
