@@ -486,10 +486,14 @@ function StackSection() {
     { name: 'Supabase', sub: 'Postgres + Auth + RLS' },
     { name: 'Inngest', sub: 'Crons + event functions' },
     { name: 'Anthropic', sub: 'Claude Opus + Haiku' },
-    { name: 'Nango', sub: 'OAuth for every source' },
-    { name: 'Langfuse', sub: 'LLM trace + eval scoring' },
+    { name: 'Nebius', sub: 'Token Factory for cheap classification' },
+    { name: 'Tavily', sub: 'Live web context on meeting briefs' },
+    { name: 'Nango', sub: 'OAuth for Gmail, Calendar, Granola, Linear' },
+    { name: 'Composio', sub: 'Slack tools via hosted OAuth' },
+    { name: 'Langfuse', sub: 'LLM trace + slop scoring' },
     { name: 'Sentry', sub: 'Production error capture' },
-    { name: 'Twilio', sub: 'WhatsApp delivery' },
+    { name: 'Twilio', sub: 'WhatsApp digest + reminders' },
+    { name: 'TypeScript', sub: 'Strict, end-to-end typed' },
   ]
   return (
     <section className="border-y border-line/60 bg-surface/30">
