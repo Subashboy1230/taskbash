@@ -10,7 +10,7 @@
 //   2. Hero (headline + subhead + CTA + visual preview of a /today row)
 //   3. Sources strip (Gmail, Granola, Calendar, Linear, Slack)
 //   4. How it works (3 steps)
-//   5. What it does (feature grid — 6 cards)
+//   5. What it does (feature grid, 6 cards)
 //   6. The slop loop (the differentiator)
 //   7. Stack (technologies the agent runs on)
 //   8. Final CTA
@@ -42,7 +42,7 @@ export const dynamic = 'force-static'
 export const metadata = {
   title: 'taskbash · never miss a task, never track one either',
   description:
-    'taskbash auto-captures every commitment you make across Gmail, meetings, Linear, and Calendar into one daily list — then learns what matters to you, so the list stays clean without manual tracking.',
+    'taskbash auto-captures every commitment you make across Gmail, meetings, Linear, and Calendar into one daily list. It learns what matters to you so the list stays clean. No manual tracking.',
 }
 
 export default function HomePage() {
@@ -108,11 +108,10 @@ function Hero() {
             <span className="text-ink-muted">Never track one either.</span>
           </h1>
           <p className="mt-5 max-w-[520px] text-[16px] leading-relaxed text-ink-muted md:text-[17px]">
-            taskbash quietly captures every commitment you make across Gmail,
-            meetings, Linear, and Calendar into one ranked daily list. It
-            drafts your replies, preps you for meetings, and learns your
-            priorities week by week — so the list stays clean without you
-            managing it.
+            taskbash pulls every commitment you make across Gmail, meetings,
+            Linear, and Calendar into one ranked daily list. It drafts your
+            replies, preps you for meetings, and learns your priorities. The
+            list stays clean without you managing it.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
@@ -274,7 +273,7 @@ function HowItWorks() {
       <SectionHeader
         eyebrow="How it works"
         title="Three steps. One clean list."
-        subtitle="Connect once. Open the app every morning. Dismiss what does not belong — the agent learns the pattern automatically."
+        subtitle="Connect once. Open the app every morning. Dismiss what doesn't belong. The agent learns the pattern."
       />
       <div className="mt-12 grid gap-4 md:grid-cols-3">
         <StepCard
@@ -287,13 +286,13 @@ function HowItWorks() {
           n="02"
           icon={<ListTodo size={18} />}
           title="Open your list every morning"
-          body="taskbash quietly pulled everything overnight. One ranked list of what you owe people today. Meeting briefs ready. Replies pre-drafted. Walk in caught up."
+          body="taskbash pulled everything overnight. One ranked list of what you owe people today. Meeting briefs ready. Replies pre-drafted. Walk in caught up."
         />
         <StepCard
           n="03"
           icon={<Brain size={18} />}
           title="It learns your style"
-          body="Dismiss anything that does not belong on your plate. taskbash figures out the pattern automatically — what kind of work you care about, what is someone else's job. No rules to set up. It just adapts."
+          body="Dismiss anything that isn't yours. taskbash figures out the pattern: what kind of work you care about, what's someone else's job. No rules to set up. It adapts."
         />
       </div>
     </section>
@@ -354,12 +353,12 @@ function FeatureGrid() {
           <FeatureCard
             icon={<CalIcon size={16} />}
             title="Meeting prep briefs"
-            body="For every meeting in the next 36 hours: who is on it, recent thread history, talking points, the explicit aim. Open the brief, walk into the call."
+            body="For every meeting in the next 36 hours: who's on it, recent thread history, talking points, the goal. Open the brief, walk into the call."
           />
           <FeatureCard
             icon={<ListTodo size={16} />}
             title="Cross-source dedup"
-            body="The same commitment lands in three places. Granola, Gmail, Linear. taskbash collapses them into one row so you do not triage the same task twice."
+            body="Same commitment lands in three places. Granola, Gmail, Linear. taskbash collapses them into one row so you don't triage the same task twice."
           />
           <FeatureCard
             icon={<MessageSquare size={16} />}
@@ -374,7 +373,7 @@ function FeatureGrid() {
           <FeatureCard
             icon={<Repeat size={16} />}
             title="Sharper every week"
-            body="Every dismissal teaches taskbash what to skip next time. By week two the list is mostly things you actually want to do. By month one, it knows your priorities better than any todo app you have used."
+            body="Every dismissal teaches taskbash what to skip. Two weeks in, the list is mostly things you want to do. A month in, it knows your priorities better than any todo app you've used."
           />
         </div>
       </div>
@@ -427,15 +426,14 @@ function SlopLoopSection() {
           </h2>
           <p className="mt-5 max-w-[460px] text-[15px] leading-relaxed text-ink-muted">
             Most task apps need rules, tags, and projects set up before they
-            work. taskbash starts working on day one, then quietly gets
-            sharper. Dismiss something that is not yours. Skip a category you
-            do not care about. The agent picks up the pattern and stops
-            surfacing similar items next time.
+            work. taskbash works on day one and gets sharper from there.
+            Dismiss what isn't yours. Skip a category you don't care about.
+            The agent picks up the pattern and stops surfacing similar items.
           </p>
           <p className="mt-3 max-w-[460px] text-[14px] leading-relaxed text-ink-faint">
-            By week two, your list is mostly things you actually want to do.
-            By month one, taskbash knows your priorities better than any todo
-            app you have used.
+            Two weeks in, your list is mostly things you want to do. A month
+            in, taskbash knows your priorities better than any todo app
+            you've used.
           </p>
         </div>
 
@@ -454,7 +452,7 @@ function LoopDiagram() {
     { n: '1', label: 'Reads', sub: 'Pulls fresh commitments from every connected tool overnight' },
     { n: '2', label: 'Surfaces', sub: 'One ranked list, ready when you open the app' },
     { n: '3', label: 'Notices', sub: 'Watches what you keep, dismiss, or correct' },
-    { n: '4', label: 'Learns', sub: 'Quietly figures out what is and is not your work' },
+    { n: '4', label: 'Learns', sub: "Figures out what's yours and what isn't" },
     { n: '5', label: 'Adapts', sub: 'Next week the list is sharper. The week after, sharper still.' },
   ]
   return (
@@ -499,7 +497,7 @@ function StackSection() {
         <SectionHeader
           eyebrow="Under the hood"
           title="Built on the boring, reliable stack."
-          subtitle="Every component picked because it works in production, not because it is trendy."
+          subtitle="Every component picked because it works in production, not because it's trendy."
         />
         <div className="mt-10 grid gap-3 md:grid-cols-4">
           {stack.map(s => (
