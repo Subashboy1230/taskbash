@@ -43,6 +43,7 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
   const isPublic =
     path === '/' ||
+    path.startsWith('/home') || // Marketing landing page — viewable by anyone
     path.startsWith('/login') ||
     path.startsWith('/auth') ||
     path.startsWith('/privacy') ||
