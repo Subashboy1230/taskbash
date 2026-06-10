@@ -168,7 +168,9 @@ async function extractItemsFromNote(
     anthropic,
     {
       prompt_id: 'extract.granola',
-      prompt_version: 1,
+      // v2: added explicit OWNERSHIP block to drop engineering-execution
+      // items routed to the user (2026-06-10 slop analysis, cluster 2).
+      prompt_version: 2,
       user_id: process.env.APP_USER_ID ?? null,
       source_ref: { granola_meeting_id: note.id },
       input_content: inputContent,
@@ -266,6 +268,12 @@ Schema:
 }
 
 ${WORK_ONLY_RULE}
+
+OWNERSHIP (read carefully — this is the #1 source of wrong extractions):
+- For EACH candidate action item, identify who owns it from the transcript context.
+- SKIP any item whose owner is named as someone OTHER than the user (e.g. "Rick will refactor the API", "Oshka to test pronunciations", "the engineering team will handle the rollout"). Those are other people's tasks even if discussed in the user's meeting.
+- Engineering / technical EXECUTION items (implement, refactor, fix a bug, write code, wire up an integration, roll out a feature) belong to the eng team and should be SKIPPED unless the user is explicitly named as the person doing the work. A DECISION the user must make ("decide whether to proceed with Pendo") is kept even when the underlying work is technical.
+- KEEP items where the owner is the user, is ambiguous, or is unstated.
 
 Rules:
 - Only include items the user themselves owns or committed to. Skip items owned by others unless the user explicitly agreed to take them on.
