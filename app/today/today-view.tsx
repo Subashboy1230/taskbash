@@ -1389,12 +1389,19 @@ function SlopMenu({
   allItems?: MockItem[]
 }) {
   const [busy, setBusy] = useState(false)
-  // 'duplicate' or 'should_be_subtask' — show parent-picker UI
-  const [pickMode, setPickMode] = useState<'duplicate' | 'should_be_subtask' | null>(null)
+  // 'duplicate' or 'should_be_subtask' → parent-picker UI
+  // 'already_cleared' → channel sub-menu (gmail / slack / etc.)
+  const [pickMode, setPickMode] = useState<
+    'duplicate' | 'should_be_subtask' | 'already_cleared' | null
+  >(null)
   const [search, setSearch] = useState('')
 
   function pick(reason: SlopReason) {
-    if (reason === 'duplicate' || reason === 'should_be_subtask') {
+    if (
+      reason === 'duplicate' ||
+      reason === 'should_be_subtask' ||
+      reason === 'already_cleared'
+    ) {
       setPickMode(reason)
       setSearch('')
       return
@@ -1403,6 +1410,13 @@ function SlopMenu({
     markItemSlop(itemId, reason)
       .then(() => onMarked())
       .catch(() => setBusy(false))
+  }
+
+  function pickAlreadyClearedChannel(label: string) {
+    setBusy(true)
+    markItemSlop(itemId, 'already_cleared', label)
+      .then(() => onMarked())
+      .catch(() => { setBusy(false); setPickMode(null) })
   }
 
   async function pickParent(parentItem: MockItem) {
@@ -1445,8 +1459,12 @@ function SlopMenu({
                 <DropdownMenuItem
                   key={o.key}
                   onSelect={e => {
-                    if (o.key === 'duplicate' || o.key === 'should_be_subtask') {
-                      e.preventDefault() // keep dropdown open, switch to picker
+                    if (
+                      o.key === 'duplicate' ||
+                      o.key === 'should_be_subtask' ||
+                      o.key === 'already_cleared'
+                    ) {
+                      e.preventDefault() // keep dropdown open, switch to sub-menu
                     }
                     pick(o.key)
                   }}
@@ -1454,6 +1472,31 @@ function SlopMenu({
                 >
                   <span className="text-[12px] font-medium text-ink">{o.label}</span>
                   <span className="text-[11px] text-ink-faint">{o.hint}</span>
+                </DropdownMenuItem>
+              ))}
+            </>
+          ) : pickMode === 'already_cleared' ? (
+            <>
+              <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-line/60">
+                <button
+                  type="button"
+                  onClick={e => { e.stopPropagation(); setPickMode(null) }}
+                  className="text-ink-faint hover:text-ink"
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                <span className="text-[11px] font-medium text-ink-faint uppercase tracking-wider">
+                  Where did you handle it?
+                </span>
+              </div>
+              {ALREADY_CLEARED_CHANNELS.map(c => (
+                <DropdownMenuItem
+                  key={c.key}
+                  onSelect={() => pickAlreadyClearedChannel(c.label)}
+                  className="flex flex-col items-start gap-0.5"
+                >
+                  <span className="text-[12px] font-medium text-ink">{c.label}</span>
+                  <span className="text-[11px] text-ink-faint">{c.hint}</span>
                 </DropdownMenuItem>
               ))}
             </>
