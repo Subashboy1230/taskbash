@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
+    "@composio/core": "^0.10.0",
     "@nangohq/frontend": "^0.44.0",
     "@nangohq/node": "^0.44.0",
     "@radix-ui/react-avatar": "^1.1.11",
