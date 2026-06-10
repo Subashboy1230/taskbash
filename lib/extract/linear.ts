@@ -59,6 +59,7 @@ interface LinearIssue {
   url?: string
   state?: { name?: string; type?: string }
   team?: { key?: string; name?: string }
+  assignee?: { id?: string; name?: string; email?: string } | null
   updatedAt?: string
   comments?: { nodes?: LinearComment[] }
 }
@@ -143,7 +144,7 @@ export async function extractLinearActionItems(
           id identifier title description priority dueDate url
           state { name type }
           team { key name }
-          assignee { name email }
+          assignee { id name email }
           updatedAt
         }
       }
@@ -191,16 +192,23 @@ export async function extractLinearActionItems(
   })
 
   // ─── QA pipeline issues ──────────────────────────────────────────────
+  // Previously EVERY QA-state issue surfaced regardless of assignment, which
+  // made the entire Linear digest engineering-QA noise (100% slop in the
+  // 2026-06-10 analysis — ENGG/PRD tickets the CEO is not the QA owner of).
+  // Now we only surface QA-state issues actually ASSIGNED to the viewer.
+  // Being in a QA state on someone else's ticket is not the user's action.
   const qaIssues = qaResponse?.data?.issues?.nodes ?? []
 
   // Merge: dedupe by issue id so an assigned+mentioned QA issue doesn't
   // appear twice.
   const seenIds = new Set(mentioned.map(i => i.id))
-  const qaOnly = qaIssues.filter(i => !seenIds.has(i.id))
+  const qaAssignedToViewer = qaIssues.filter(
+    i => !seenIds.has(i.id) && !!viewerId && i.assignee?.id === viewerId
+  )
 
   return [
     ...mentioned.map(i => toExtractedItem(i, false)),
-    ...qaOnly.map(i => toExtractedItem(i, true)),
+    ...qaAssignedToViewer.map(i => toExtractedItem(i, true)),
   ]
 }
 
