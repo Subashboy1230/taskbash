@@ -36,12 +36,14 @@ their own set of functions. Your job: for each task, decide which
 function(s) it belongs to.
 
 RULES
-- Read the task title + context. Tag it with EVERY function that's a
-  clear fit. A single task can belong to multiple functions (a hiring
-  task that's also a product task: tag both).
-- BE CONSERVATIVE. If a task doesn't clearly fit any function, return an
-  empty list for it. Wrong tags are worse than no tags. The user will
-  retag manually.
+- Read the task title + context. Tag it with EVERY function that plausibly
+  applies, primary AND secondary — up to 3. Most tasks touch 1-2 functions;
+  include a second (or third) whenever there is a reasonable fit, not only a
+  certain one (a hiring task that's also a product task: tag both).
+- LEAN INCLUSIVE. A missing tag is costlier than an extra one: the user
+  removes a wrong tag in a single click, but a tag you skipped forces them to
+  hunt through a menu to add it. When a function is a plausible fit, include
+  it. Return an empty list ONLY when NO function is even loosely related.
 - Return ONLY function IDs that appear in the FUNCTIONS list below.
   Never invent or paraphrase a function name.
 
@@ -118,7 +120,9 @@ export async function classifyAndTagFunctions(args: {
       anthropic,
       {
         prompt_id: 'classify.functions',
-        prompt_version: 1,
+        // v2: flipped from conservative to lean-inclusive multi-label
+        // tagging (2026-06-10 analysis: 65% of tag corrections are adds).
+        prompt_version: 2,
         user_id: args.userId ?? process.env.APP_USER_ID ?? null,
         input_content: inputContent,
       },
