@@ -88,6 +88,20 @@ export function TodayShell({
   const [, startTransition] = useTransition()
   const [calendarCollapsed, setCalendarCollapsed] = useState(false)
 
+  // Desktop (>=lg) renders the interactive detail panel in PanelColumn.
+  // The mobile Sheet must NOT mount on desktop: its full-screen Radix
+  // overlay (fixed inset-0 z-50) would otherwise sit invisibly on top of
+  // the desktop panel and swallow every click as a "click outside",
+  // closing the panel and blocking function/draft/subtask edits.
+  const [isDesktop, setIsDesktop] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const update = () => setIsDesktop(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+
   // Buffer unread threads in state so a transient empty server re-render
   // (e.g. immediately after sending an email) never wipes the visible list.
   const [bufferedUnread, setBufferedUnread] = useState<UnreadThread[]>(unreadThreads)
@@ -240,8 +254,9 @@ export function TodayShell({
         )}
       </div>
 
-      {/* Mobile: detail panel rendered as full-screen Sheet */}
-      <Sheet open={panelVisible} onOpenChange={(o) => { if (!o) closePanel() }}>
+      {/* Mobile: detail panel rendered as full-screen Sheet.
+          Gated to non-desktop so its overlay never covers the desktop panel. */}
+      <Sheet open={panelVisible && !isDesktop} onOpenChange={(o) => { if (!o) closePanel() }}>
         <SheetContent
           side="right"
           className="lg:hidden w-full overflow-y-auto p-0 sm:max-w-md"

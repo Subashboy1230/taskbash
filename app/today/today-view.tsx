@@ -1366,6 +1366,7 @@ type SlopReason =
   | 'duplicate'
   | 'should_be_subtask'
   | 'old_task'
+  | 'already_cleared'
   | 'other'
 
 const SLOP_OPTIONS: Array<{ key: SlopReason; label: string; hint: string }> = [
@@ -1376,8 +1377,18 @@ const SLOP_OPTIONS: Array<{ key: SlopReason; label: string; hint: string }> = [
   { key: 'duplicate', label: 'Repeat', hint: 'Already exists as another task. Pick it.' },
   { key: 'should_be_subtask', label: 'Should be a subtask', hint: 'Belongs under another task. Pick it.' },
   { key: 'old_task', label: 'Old task', hint: 'Stale, no longer relevant' },
+  { key: 'already_cleared', label: 'Already cleared', hint: 'I already handled this somewhere else' },
   { key: 'misread_title', label: 'Misread', hint: 'Title or details are wrong' },
   { key: 'other', label: 'Other', hint: 'Just wrong' },
+]
+
+const ALREADY_CLEARED_CHANNELS: Array<{ key: string; label: string; hint: string }> = [
+  { key: 'gmail',     label: 'Replied on Gmail',    hint: 'Sent the reply directly in Gmail' },
+  { key: 'slack',     label: 'Replied on Slack',    hint: 'Handled it in a Slack DM or channel' },
+  { key: 'whatsapp',  label: 'Replied on WhatsApp', hint: 'Handled it via WhatsApp' },
+  { key: 'in_person', label: 'Talked in person',    hint: 'Live conversation or phone call' },
+  { key: 'other_tool', label: 'Done in another tool', hint: 'Marked done in Linear, Asana, Notion, etc.' },
+  { key: 'other',     label: 'Some other way',      hint: 'None of the above' },
 ]
 
 function SlopMenu({
