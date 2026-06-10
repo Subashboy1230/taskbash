@@ -26,6 +26,7 @@
 // caller. The returned response also carries `_llmCallId` so the caller
 // can link items / feedback back to the call.
 
+import { randomUUID } from 'node:crypto'
 import type Anthropic from '@anthropic-ai/sdk'
 import type { Messages } from '@anthropic-ai/sdk/resources/messages'
 import { supabase } from './supabase'
@@ -82,6 +83,14 @@ export async function tracedMessage(
   request: Messages.MessageCreateParamsNonStreaming
 ): Promise<TracedResponse<Messages.Message>> {
   const startedAt = new Date()
+  // Generate the call id client-side so it is available synchronously and
+  // can be returned to the caller immediately. The fire-and-forget insert
+  // below writes the row under THIS id, so item/feedback linkage
+  // (extraction_meta.llm_call_id, produced_item_ids) is never empty.
+  // Previously the id came from the awaited insert inside logCall, which
+  // had not run yet when we returned — so every caller got '' and the
+  // whole slop->eval linkage silently broke.
+  const callId = randomUUID()
   let response: Messages.Message | undefined
   let errorMessage: string | null = null
   try {
@@ -94,6 +103,7 @@ export async function tracedMessage(
     // Fire-and-forget the trace insert. Don't await — logging mustn't
     // add latency to the caller's response path.
     void logCall({
+      callId,
       ctx,
       request,
       response,
@@ -102,14 +112,11 @@ export async function tracedMessage(
       errorMessage,
     })
   }
-  // The finally block schedules logging; here we just attach the id we
-  // know we'll have once the insert completes. The id is generated
-  // client-side so it's available synchronously without a round-trip.
-  const callId = (response as unknown as { _llmCallId?: string })?._llmCallId
-  return { ...(response as Messages.Message), _llmCallId: callId ?? '' } as TracedResponse<Messages.Message>
+  return { ...(response as Messages.Message), _llmCallId: callId } as TracedResponse<Messages.Message>
 }
 
 async function logCall(args: {
+  callId: string
   ctx: TraceContext
   request: Messages.MessageCreateParamsNonStreaming
   response?: Messages.Message
@@ -118,7 +125,7 @@ async function logCall(args: {
   errorMessage: string | null
 }) {
   try {
-    const { ctx, request, response, startedAt, endedAt, errorMessage } = args
+    const { callId, ctx, request, response, startedAt, endedAt, errorMessage } = args
     const usage = response?.usage
     const input = usage?.input_tokens ?? 0
     const output = usage?.output_tokens ?? 0
@@ -137,6 +144,7 @@ async function logCall(args: {
     const { data, error } = await supabase
       .from('llm_calls')
       .insert({
+        id: callId,
         user_id: ctx.user_id ?? null,
         system: 'anthropic',
         operation: 'chat',
@@ -168,19 +176,17 @@ async function logCall(args: {
       console.error('[llm-trace] failed to log call:', error.message)
       return
     }
-    // Tag the response object so the caller can grab the id sync. This
-    // is a tiny hack — the response is already returned but JS objects
-    // are passed by reference so the mutation is visible.
-    if (response && data?.id) {
-      ;(response as unknown as { _llmCallId?: string })._llmCallId = data.id
-    }
+    // The id is the client-generated callId we inserted with; callers
+    // already received it synchronously from tracedMessage. No mutation
+    // hack needed. (`data` is still selected to surface insert errors.)
+    void data
 
     // ─── Secondary destination: Langfuse cloud ──────────────────
     // Fire-and-forget. When env vars are missing, getLangfuse() returns
     // null and this is a no-op. The Supabase row above is always the
     // source of truth — Langfuse just gives you a nicer drill-down UI.
     pushToLangfuse({
-      callId: data?.id ?? '',
+      callId,
       ctx,
       request,
       response,
