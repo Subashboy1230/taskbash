@@ -1,4 +1,4 @@
-// /home — public marketing landing page.
+// /home: public marketing landing page.
 //
 // Server Component. Uses the same design tokens (canvas / surface / ink /
 // line / accent) as the app, and the same Card primitive so the visual
