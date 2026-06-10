@@ -11,6 +11,7 @@ import { extractCalendarPrepItems } from '../extract/calendar'
 import { extractLinearActionItems } from '../extract/linear'
 import { diffSingleSource } from '../diff'
 import { computeSemanticHash } from '../normalize'
+import { isMechanicalNoise } from '../extract/filters'
 import { getActiveConnection } from '../connections'
 import { tagCallWithItems } from '../llm-trace'
 import { flushLangfuse } from '../langfuse'
@@ -159,6 +160,10 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
       const items = await fn()
       if (items === null) return
       for (const parent of items) {
+        // Drop mechanical event/logistics noise ("Join the Google Meet at
+        // 12:15pm", dial-ins, bare meeting links) before it enters the diff.
+        // Source-agnostic: this leaks from gmail/granola, not one extractor.
+        if (isMechanicalNoise(parent.title)) continue
         allFresh.push(parent)
         // sub_items stay on parent.sub_items — written as child rows with
         // parent_id in the insert loop, not flattened into top-level siblings.
