@@ -327,6 +327,49 @@ Apply to each word before joining into the hash input.
 Acceptance: re-run the dedup on the 5 known near-dupe pairs above; they should
 hash to the same value and only the older one should survive (carryover wins).
 
+### 4d. Calendar mechanical-noise filter
+
+File: `lib/extract/calendar.ts` (the prompt block)
+
+Calendar extraction surfaces event mechanics as todos: "Join the Google Meet
+at 12:15pm", "Watch J-Reach video before call", attendee lists, dial-in info.
+These are not action items — they're event details the calendar already shows.
+
+Add a hard-coded skip list and a prompt instruction:
+
+- Hard skip if the candidate action item is just a meeting link (matches `meet.google.com|zoom.us|teams.microsoft.com`), a phone number, or a one-word verb directed at the event itself (`join`, `attend`, `watch <link>`)
+- Prompt addition: "Skip mechanical event details — meeting links, attendee lists, video URLs, phone bridges, room booking confirmations. These are not action items; they're the event itself."
+
+Acceptance: re-run a digest on a meeting with a Google Meet link and a pre-watch video. Verify those items do NOT appear in /today. Real prep items ("Bring proposal v3", "Review their pitch deck") should still appear.
+
+### 4e. Function classifier under-tagging fix
+
+File: `lib/classify/functions.ts` (the prompt block)
+
+Historical data: 17 function-tag corrections, 65% additions vs 35% removals.
+The classifier is conservative — picks the obvious primary tag but misses
+secondary ones. User has to manually add a missed tag for every ~2 corrections.
+
+Two approaches, ship the simpler one first:
+
+**Approach A (simpler):** widen the prompt from "what is the function?" to
+"what 1-3 functions could apply to this item?" The Claude model handles this
+well — multi-label classification with `[{name, confidence}]` output, return
+all with confidence >= 0.4 instead of just the top 1.
+
+**Approach B (smarter):** keep single-label primary tagging but add a
+follow-up step: "are there any additional functions that secondarily apply?"
+Returns 0-2 extra tags.
+
+Default to A. Lower threshold to capture more — the historical pattern shows
+users want MORE tags, not fewer. Over-tagging cost is one click to remove;
+under-tagging cost is the user has to think and find the right tag in a menu.
+
+Acceptance: re-run function classification on a sample of 20 items the user
+has previously corrected (via the existing item_feedback corrections). The new
+classifier output should include at least 80% of the user-added tags from
+those corrections.
+
 ---
 
 ## After 4a-c ship
