@@ -109,13 +109,12 @@ export async function extractSlackActionItems(args: {
       source: 'slack',
       source_ref: {
         slack_ts: m.ts,
-        slack_channel: m.channel ?? null,
-        slack_permalink: m.permalink ?? null,
+        ...(m.channel ? { slack_channel_id: m.channel } : {}),
       },
       parent_context: m.channel_name ? `Slack #${m.channel_name}` : 'Slack',
       subtitle: m.text.slice(0, 240),
       title,
-      task_type: 'reply',
+      task_type: 'follow_up',  // closest TaskType to a "Slack ping needing a reply"
       tag: 'reply',
       urgent: false,
       due_at: null,
