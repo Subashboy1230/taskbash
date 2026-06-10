@@ -35,6 +35,7 @@ import {
   TrendingDown,
 } from 'lucide-react'
 import { Card, CardContent } from '@/app/_components/ui/card'
+import { BrandLogo } from '@/app/_components/brand-logo'
 
 export const dynamic = 'force-static'
 
@@ -233,12 +234,15 @@ function PreviewRow({
 // 3. Sources strip
 
 function SourcesStrip() {
-  const sources: Array<{ name: string; img: string }> = [
-    { name: 'Gmail', img: '/logo-gmail.png' },
-    { name: 'Granola', img: '/logo-granola.png' },
-    { name: 'Google Calendar', img: '/logo-calendar.png' },
-    { name: 'Linear', img: '/logo-linear.png' },
-    { name: 'Slack (coming soon)', img: '/logo-slack.png' },
+  // Use the same BrandLogo component the rest of the app uses (/connections
+  // + per-row SourceIcon) so Slack renders via inline SVG (no PNG required)
+  // and every icon stays consistent across marketing and product surfaces.
+  const sources: Array<{ name: string; brand: 'gmail' | 'granola' | 'calendar' | 'linear' | 'slack' }> = [
+    { name: 'Gmail', brand: 'gmail' },
+    { name: 'Granola', brand: 'granola' },
+    { name: 'Google Calendar', brand: 'calendar' },
+    { name: 'Linear', brand: 'linear' },
+    { name: 'Slack (coming soon)', brand: 'slack' },
   ]
   return (
     <section className="border-y border-line/60 bg-surface/40">
@@ -248,16 +252,8 @@ function SourcesStrip() {
         </span>
         <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
           {sources.map(s => (
-            <span key={s.name} className="inline-flex items-center gap-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={s.img}
-                alt={s.name}
-                width={18}
-                height={18}
-                style={{ borderRadius: 3 }}
-                className="opacity-80"
-              />
+            <span key={s.name} className="inline-flex items-center gap-2 opacity-80">
+              <BrandLogo brand={s.brand} size={18} />
               <span className="text-[13px] text-ink-muted">{s.name}</span>
             </span>
           ))}
