@@ -3245,6 +3245,11 @@ function PrepCard({
         <p className="mx-4 mb-3 text-[12px] text-danger-fg">{error}</p>
       )}
 
+      {/* Tavily attendee enrichment — "who they are" blurbs for external
+          attendees, pulled live from web search during calendar extraction.
+          Rendered above the brief so users see who's in the room first. */}
+      <AttendeeContextBlock item={item} />
+
       {/* Brief content */}
       {hasBrief && (
         <div className="border-t border-line/50 px-4 py-3 space-y-2.5">
@@ -3290,6 +3295,65 @@ function PrepCard({
       )}
     </div>
   )
+}
+
+// ─── Tavily attendee enrichment block ───────────────────────────────────
+// Renders a "Who's on this call" header + per-attendee blurb on calendar
+// prep cards. Source of truth: items.source_ref.attendee_context, written
+// during calendar extraction by lib/enrich/tavily.ts. Silent when the
+// field is absent (Tavily disabled, all-internal meeting, etc.).
+
+type AttendeeContext = {
+  email: string
+  who_they_are: string
+  sources: string[]
+}
+
+function AttendeeContextBlock({ item }: { item: MockItem }) {
+  const ref = item.source_ref as Record<string, unknown> | null
+  const raw = ref?.attendee_context
+  if (!Array.isArray(raw) || raw.length === 0) return null
+  const attendees = raw as AttendeeContext[]
+  return (
+    <div className="border-t border-line/50 px-4 py-3">
+      <p className="m-0 mb-2 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
+        Who&apos;s on this call
+      </p>
+      <ul className="m-0 list-none space-y-2 p-0">
+        {attendees.map((a, i) => (
+          <li key={`${a.email}-${i}`} className="text-[12px] leading-snug">
+            <p className="m-0 font-medium text-ink">{a.email}</p>
+            <p className="m-0 text-ink-muted">{a.who_they_are}</p>
+            {a.sources && a.sources.length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-2">
+                {a.sources.map((src, si) => (
+                  <a
+                    key={si}
+                    href={src}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-ink-faint hover:text-ink"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <ExternalLink size={9} />
+                    {hostnameOf(src)}
+                  </a>
+                ))}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url.slice(0, 30)
+  }
 }
 
 // ─── Cleared tab ────────────────────────────────────────────────────────
