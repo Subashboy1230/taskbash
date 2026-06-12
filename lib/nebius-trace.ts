@@ -21,9 +21,12 @@ import type { TraceContext } from './llm-trace'
 const NEBIUS_BASE_URL =
   process.env.NEBIUS_BASE_URL || 'https://api.studio.nebius.ai/v1'
 
+// Nebius retired Meta-Llama-3.1-70B-Instruct. Llama 3.3 70B is the
+// current default Llama instruct model on Token Factory (verified via
+// GET /models on 2026-06-11).
 const NEBIUS_DEFAULT_MODEL =
   process.env.NEBIUS_DEFAULT_MODEL ||
-  'meta-llama/Meta-Llama-3.1-70B-Instruct'
+  'meta-llama/Llama-3.3-70B-Instruct'
 
 let _client: OpenAI | null = null
 

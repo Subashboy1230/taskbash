@@ -22,7 +22,7 @@ UI, Gmail, Slack, briefs, and the admin panel all come in Weeks 2–6.
 | Background jobs | Inngest (crons + event functions) |
 | OAuth + connectors | Nango (Gmail / Calendar / Granola / Linear), Composio (Slack) |
 | LLM (primary) | Anthropic Claude (Haiku for extraction, Sonnet for synthesis) |
-| LLM (classifier) | Nebius Token Factory (Meta Llama 3.1 70B) for `classify.functions`, flag-gated |
+| LLM (classifier) | Nebius Token Factory (Meta Llama 3.3 70B) for `classify.functions`, flag-gated |
 | Web search / enrichment | Tavily (live "who they are" blurbs on meeting prep briefs) |
 | Observability | Langfuse (LLM traces, slop scores) + Sentry (production exceptions) |
 | Messaging | Twilio (WhatsApp morning digest + meeting reminders) |

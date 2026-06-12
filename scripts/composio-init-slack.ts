@@ -2,28 +2,25 @@
 /**
  * scripts/composio-init-slack.ts
  *
- * One-off script: kick off Composio's hosted Slack OAuth flow for your
- * entity, then print the redirect URL and the resulting connection id
- * so you can paste them into .env.local.
+ * Composio v3 — create a Connected Account for the Slack toolkit by
+ * generating a Connect Link, waiting for the user to authorize, and
+ * printing the resulting ca_xxx so it can be pasted into .env.local.
  *
  * Run:
  *   npx tsx scripts/composio-init-slack.ts
  *
  * Prereqs:
- *   - .env.local has COMPOSIO_API_KEY set (from app.composio.dev)
- *   - .env.local has COMPOSIO_ENTITY_ID set (defaults to 'subash')
- *   - You have Slack added as an integration in your Composio dashboard
+ *   - .env.local has COMPOSIO_API_KEY set
+ *   - .env.local has COMPOSIO_ENTITY_ID set (the user handle on Composio,
+ *     e.g. "subash")
+ *   - dashboard.composio.dev has a Slack Auth Config created and Enabled
  *
  * Output:
- *   1. Composio's redirect URL — open this in your browser
- *   2. Authorize Slack in the popup that opens
- *   3. The connection id printed here goes into .env.local as
- *      COMPOSIO_SLACK_CONNECTION_ID
- *   4. Add your Slack handle (no @) as COMPOSIO_SLACK_USER_HANDLE
- *   5. Trigger a digest; Slack items now appear on /today
- *
- * If anything fails the script prints the raw Composio error so you
- * can paste it into chat for help.
+ *   1. Discovers the Slack Auth Config in your Composio project
+ *   2. Generates a Connect Link
+ *   3. Prints the URL — open it, complete Slack OAuth
+ *   4. Polls Composio until status=ACTIVE, then prints ca_xxx
+ *   5. You paste ca_xxx into .env.local as COMPOSIO_SLACK_CONNECTION_ID
  */
 
 import { readFileSync } from 'node:fs'
@@ -53,83 +50,98 @@ async function main(): Promise<void> {
 
   const apiKey = process.env.COMPOSIO_API_KEY
   if (!apiKey) {
-    console.error('\nCOMPOSIO_API_KEY is missing in .env.local.')
-    console.error('Sign up at https://app.composio.dev to get one.\n')
+    console.error('\nCOMPOSIO_API_KEY missing in .env.local. Get one at dashboard.composio.dev.\n')
     process.exit(1)
   }
-
-  const entityId = process.env.COMPOSIO_ENTITY_ID || 'subash'
-  const base = process.env.COMPOSIO_BASE_URL || 'https://backend.composio.dev'
+  const userId = process.env.COMPOSIO_ENTITY_ID || 'subash'
 
   console.log('')
-  console.log('═══════════════════════════════════════════════')
-  console.log(' Composio Slack OAuth initiator')
-  console.log('═══════════════════════════════════════════════')
-  console.log(` Entity:    ${entityId}`)
-  console.log(` Base URL:  ${base}`)
+  console.log('=== Composio v3 Slack connector init ===')
+  console.log(`User ID (entity): ${userId}`)
   console.log('')
 
-  const url = `${base}/api/v1/connections/initiate`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-    },
-    body: JSON.stringify({
-      integrationId: 'slack',
-      entityId,
-    }),
-  })
+  const { Composio } = await import('@composio/core')
+  const c = new Composio({ apiKey })
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    console.error(`\nComposio returned HTTP ${res.status}.`)
-    console.error('Response body:')
-    console.error(text || '(empty)')
-    console.error('')
-    console.error('Most common causes:')
-    console.error('  - API key invalid or revoked')
-    console.error("  - Slack integration not enabled on your Composio project")
-    console.error('  - Entity id does not exist (create it in Composio dashboard)')
-    process.exit(2)
+  // Step 1: find the Slack Auth Config.
+  let authConfigId = process.env.COMPOSIO_SLACK_AUTH_CONFIG_ID
+  if (!authConfigId) {
+    console.log('Looking up your Slack Auth Config...')
+    const list = await c.authConfigs.list({} as Parameters<typeof c.authConfigs.list>[0])
+    const items = (list as { items?: Array<Record<string, unknown>> }).items || []
+    console.log(`Found ${items.length} auth config(s) total. Filtering for Slack...`)
+    for (const cfg of items) {
+      const toolkit = (cfg.toolkit as { slug?: string } | undefined)?.slug
+      const slug = (cfg.slug as string) || ''
+      console.log(`  - id=${cfg.id} toolkit=${toolkit || slug} status=${cfg.status} name=${cfg.name}`)
+    }
+    const slack = items.find(cfg => {
+      const tk = (cfg.toolkit as { slug?: string } | undefined)?.slug || ''
+      const slug = (cfg.slug as string) || ''
+      return /slack/i.test(String(tk)) || /slack/i.test(String(slug))
+    })
+    if (!slack) {
+      console.error('\nNO SLACK AUTH CONFIG FOUND in your Composio project.')
+      console.error('Go to dashboard.composio.dev > Auth Configs > New > pick Slack > Composio Managed > Save.')
+      process.exit(2)
+    }
+    authConfigId = String(slack.id)
+    console.log(`Using Auth Config: ${authConfigId} (${slack.name})`)
+  } else {
+    console.log(`Using Auth Config from env: ${authConfigId}`)
   }
+  console.log('')
 
-  const body = (await res.json()) as {
-    redirectUrl?: string
-    connectionId?: string
-    connectionStatus?: string
-  }
-
-  if (!body.redirectUrl || !body.connectionId) {
-    console.error('\nComposio response missing expected fields:')
-    console.error(JSON.stringify(body, null, 2))
+  // Step 2: create the Connect Link.
+  console.log('Creating Connect Link...')
+  const connReq = await c.connectedAccounts.link(userId, authConfigId)
+  const redirectUrl = (connReq as { redirectUrl?: string }).redirectUrl
+  const connectionId = (connReq as { id?: string }).id
+  if (!redirectUrl || !connectionId) {
+    console.error('Composio did not return redirectUrl + id. Raw response:')
+    console.error(JSON.stringify(connReq, null, 2))
     process.exit(3)
   }
 
-  console.log(' STEP 1 — open this URL in your browser:')
   console.log('')
-  console.log(`   ${body.redirectUrl}`)
+  console.log('============================================================')
+  console.log('STEP 1 — OPEN THIS URL IN YOUR BROWSER NOW:')
   console.log('')
-  console.log(' STEP 2 — authorize Slack when Composio asks.')
+  console.log(`   ${redirectUrl}`)
   console.log('')
-  console.log(' STEP 3 — paste this into .env.local:')
+  console.log('STEP 2 — pick the Slack workspace and click Allow.')
+  console.log('STEP 3 — come back here. The script is polling Composio.')
+  console.log('============================================================')
   console.log('')
-  console.log(`   COMPOSIO_SLACK_CONNECTION_ID=${body.connectionId}`)
-  console.log('')
-  console.log(' STEP 4 — also paste your Slack @-handle (no @):')
-  console.log('')
-  console.log('   COMPOSIO_SLACK_USER_HANDLE=<your_slack_handle>')
-  console.log('')
-  console.log(' STEP 5 — trigger a digest (Re-run tasks on /today).')
-  console.log(' Slack items appear under source=slack.')
-  console.log('')
-  console.log('═══════════════════════════════════════════════')
-  console.log('')
+
+  // Step 3: wait for ACTIVE.
+  try {
+    console.log('Polling for ACTIVE status (timeout: 5 min)...')
+    const account = await c.connectedAccounts.waitForConnection(connectionId, 5 * 60 * 1000)
+    const id = (account as { id?: string }).id
+    const status = (account as { status?: string }).status
+    console.log('')
+    console.log('SUCCESS!')
+    console.log(`  Connected Account ID: ${id}`)
+    console.log(`  Status: ${status}`)
+    console.log('')
+    console.log('Paste this into .env.local (replacing the old value):')
+    console.log('')
+    console.log(`   COMPOSIO_SLACK_CONNECTION_ID=${id}`)
+    console.log('')
+    console.log('Then re-run: npx tsx scripts/test-slack.ts')
+    console.log('')
+  } catch (err) {
+    console.error('Polling failed:', err instanceof Error ? err.message : err)
+    console.error('')
+    console.error('Connection request id (you can check status manually in the dashboard):')
+    console.error(`  ${connectionId}`)
+    process.exit(4)
+  }
 }
 
 main().catch(err => {
-  console.error('\nUnhandled error:')
-  console.error(err instanceof Error ? err.message : err)
+  console.error('\nUnhandled:')
+  console.error(err instanceof Error ? err.stack : err)
   process.exit(99)
 })

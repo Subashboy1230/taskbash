@@ -88,7 +88,13 @@ export async function composioExecuteTool(args: {
     userId,
     connectedAccountId: args.connectedAccountId,
     arguments: args.params,
-  })
+    // v3 requires either a pinned toolkit version per-call or this flag.
+    // For a single-user app where we don't pin Slack tool revisions, use
+    // "latest" and accept the small risk Composio renames a field on us.
+    // Pin via { toolkitVersions: { slack: '20250909_00' } } in the
+    // Composio constructor if reliability beats agility later.
+    dangerouslySkipVersionCheck: true,
+  } as Parameters<typeof c.tools.execute>[1])
   return {
     data: res.data,
     successful: res.successful,
