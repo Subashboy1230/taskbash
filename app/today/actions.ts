@@ -190,6 +190,34 @@ export async function markItemSlop(
   }
 
   void writeTaskEvent(userId, itemId, 'slop', { reason, note: note ?? null })
+
+  // 6. Record the slop signal in mem0 as a durable user-level memory.
+  //    Future digests fetch this back into the classify.functions and
+  //    extractor system prompts so the agent learns what you don't
+  //    want surfaced. Fire-and-forget; degrades to no-op if MEM0_API_KEY
+  //    is unset.
+  void (async () => {
+    try {
+      const { recordFeedbackMemory } = await import('@/lib/memory/record')
+      const itemWithFields = item as {
+        title?: string
+        source?: string
+        parent_context?: string
+      }
+      await recordFeedbackMemory({
+        userId,
+        kind: 'slop',
+        reason,
+        note,
+        itemTitle: itemWithFields.title ?? null,
+        itemSource: itemWithFields.source ?? null,
+        itemContext: itemWithFields.parent_context ?? null,
+      })
+    } catch (err) {
+      console.error('[markItemSlop] mem0 record failed:', err instanceof Error ? err.message : err)
+    }
+  })()
+
   revalidatePath('/today')
 }
 
