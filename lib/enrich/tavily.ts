@@ -66,16 +66,31 @@ export async function enrichPersonContext(args: {
   email: string
 }): Promise<AttendeeContext | null> {
   if (!process.env.TAVILY_API_KEY) return null
-  if (!shouldEnrich(args.email)) return null
 
   const domain = domainOf(args.email)
-  // Company name = domain stripped of TLD. Crude but works for the kind
-  // of "who runs $company" search Tavily handles well.
-  const company = domain.split('.')[0] || domain
   const name = (args.name || '').trim()
-  const query = name
-    ? `"${name}" "${company}" role title`
-    : `"${company}" company what they do`
+  const domainEnrichable = shouldEnrich(args.email)
+  // Two paths:
+  //  (a) Domain is a real company (not free-mail, not self): search the
+  //      person at that company. High precision.
+  //  (b) Domain is free-mail (gmail / aol / etc) BUT we have a name:
+  //      fall back to a name-only LinkedIn-leaning search. Lower
+  //      precision (other people share names) but often surfaces the
+  //      right LinkedIn profile.
+  //  (c) Neither: skip.
+  let query: string
+  if (domainEnrichable) {
+    const company = domain.split('.')[0] || domain
+    query = name
+      ? `"${name}" "${company}" role title`
+      : `"${company}" company what they do`
+  } else if (name) {
+    // Bias the search toward profile pages by adding "LinkedIn" so Tavily
+    // surfaces the person rather than other entities sharing the name.
+    query = `"${name}" LinkedIn role`
+  } else {
+    return null
+  }
 
   try {
     const client = getClient()
