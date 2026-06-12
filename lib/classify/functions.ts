@@ -45,14 +45,17 @@ their own set of functions. Your job: for each task, decide which
 function(s) it belongs to.
 
 RULES
+- EVERY task MUST be assigned AT LEAST ONE function. Never return an empty
+  list for any task. Every task belongs to some area of the user's work — if
+  no function is an obvious fit, pick the SINGLE closest one. An uncategorized
+  task is the worst outcome: it disappears from every function view.
 - Read the task title + context. Tag it with EVERY function that plausibly
   applies, primary AND secondary — up to 3. Most tasks touch 1-2 functions;
   include a second (or third) whenever there is a reasonable fit, not only a
   certain one (a hiring task that's also a product task: tag both).
 - LEAN INCLUSIVE. A missing tag is costlier than an extra one: the user
   removes a wrong tag in a single click, but a tag you skipped forces them to
-  hunt through a menu to add it. When a function is a plausible fit, include
-  it. Return an empty list ONLY when NO function is even loosely related.
+  hunt through a menu to add it. When a function is a plausible fit, include it.
 - Return ONLY function IDs that appear in the FUNCTIONS list below.
   Never invent or paraphrase a function name.
 
@@ -127,9 +130,9 @@ export async function classifyAndTagFunctions(args: {
   try {
     const traceCtx = {
       prompt_id: 'classify.functions',
-      // v2: flipped from conservative to lean-inclusive multi-label
-      // tagging (2026-06-10 analysis: 65% of tag corrections are adds).
-      prompt_version: 2,
+      // v3: every task MUST get >=1 function (was: empty allowed). Combined
+      // with a code-level fallback below so nothing is ever left uncategorized.
+      prompt_version: 3,
       user_id: args.userId ?? process.env.APP_USER_ID ?? null,
       input_content: inputContent,
     } as const
@@ -172,17 +175,19 @@ export async function classifyAndTagFunctions(args: {
 
     const validIds = new Set(functions.map(f => f.id))
     const out = parsed.assignments ?? {}
+    // Last-resort default so a task is NEVER left uncategorized — the v3 prompt
+    // mandates >=1, this guarantees it even if the model disobeys or omits a key.
+    const fallbackId = functions[0]?.id
 
     for (let i = 0; i < items.length; i++) {
       const raw = out[`t${i}`]
-      if (!Array.isArray(raw)) continue
-      // Filter to real function ids only. Drop dupes.
-      const filtered = Array.from(
-        new Set(raw.filter((id): id is string => typeof id === 'string' && validIds.has(id)))
-      )
-      if (filtered.length > 0) {
-        items[i].function_ids = filtered
-      }
+      const filtered = Array.isArray(raw)
+        ? Array.from(
+            new Set(raw.filter((id): id is string => typeof id === 'string' && validIds.has(id)))
+          )
+        : []
+      items[i].function_ids =
+        filtered.length > 0 ? filtered : fallbackId ? [fallbackId] : []
     }
   } catch (err) {
     // Classifier failure must not block extraction. Items are inserted
@@ -194,6 +199,46 @@ export async function classifyAndTagFunctions(args: {
   }
 
   return { items, classifyCallId }
+}
+
+/**
+ * Classify ONE task and return its function ids — for creation paths outside
+ * the digest batch (manual add, unread-thread open). Loads the user's
+ * functions, runs the batched classifier with a single item, and GUARANTEES
+ * at least one function (falls back to the user's first function if the model
+ * yields nothing or the call fails). Returns [] only when the user has no
+ * functions defined.
+ */
+export async function classifyTaskFunctions(opts: {
+  title: string
+  context?: string | null
+  source: string
+  userId?: string | null
+}): Promise<string[]> {
+  const { loadUserFunctions } = await import('../load-functions')
+  const functions = await loadUserFunctions().catch(() => [])
+  if (functions.length === 0) return []
+  try {
+    const item = {
+      source: opts.source,
+      source_ref: {},
+      parent_context: opts.context ?? null,
+      title: opts.title,
+      task_type: 'manual',
+      tag: 'action',
+      urgent: false,
+      due_at: null,
+    } as unknown as ExtractedItem
+    const { items } = await classifyAndTagFunctions({
+      items: [item],
+      functions,
+      userId: opts.userId,
+    })
+    const ids = items[0]?.function_ids ?? []
+    return ids.length > 0 ? ids : [functions[0].id]
+  } catch {
+    return [functions[0].id]
+  }
 }
 
 // ─── Eval replay ────────────────────────────────────────────────────

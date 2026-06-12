@@ -780,6 +780,14 @@ export async function openUnreadThread(args: {
     } else {
       const subjectLabel = args.subject && args.subject !== '(no subject)' ? ` re: ${args.subject}` : ''
       const title = `Reply to ${args.fromName || args.fromEmail || 'sender'}${subjectLabel}`
+      // Categorize by function by default so opened threads aren't uncategorized.
+      const { classifyTaskFunctions } = await import('@/lib/classify/functions')
+      const threadFnIds = await classifyTaskFunctions({
+        title,
+        context: args.subject ?? args.snippet ?? null,
+        source: 'gmail',
+        userId,
+      }).catch(() => [])
       const { data: inserted, error: insertErr } = await supabase
         .from('items')
         .insert({
@@ -799,6 +807,7 @@ export async function openUnreadThread(args: {
           proposed_action: proposedAction,
           source_excerpt: sourceExcerpt,
           status: 'open' as const,
+          function_ids: threadFnIds.length > 0 ? threadFnIds : null,
         })
         .select('*')
         .single()
@@ -1109,6 +1118,18 @@ export async function addManualTask(args: {
   const topOrder = (topItem as { sort_order?: number | null } | null)?.sort_order ?? 2000
   const newSortOrder = topOrder - 1000
 
+  // Categorize by function by default: use the user's picks if they chose any,
+  // otherwise auto-classify so a manual task never lands uncategorized.
+  let functionIds: string[] = args.functionIds ?? []
+  if (functionIds.length === 0) {
+    const { classifyTaskFunctions } = await import('@/lib/classify/functions')
+    functionIds = await classifyTaskFunctions({
+      title: trimmed,
+      source: 'manual',
+      userId,
+    }).catch(() => [])
+  }
+
   const { data, error } = await supabase
     .from('items')
     .insert({
@@ -1123,9 +1144,7 @@ export async function addManualTask(args: {
       due_at: args.dueAt ?? null,
       priority: args.priority ?? null,
       sort_order: newSortOrder,
-      function_ids: args.functionIds && args.functionIds.length > 0
-        ? args.functionIds
-        : null,
+      function_ids: functionIds.length > 0 ? functionIds : null,
     })
     .select('id, title, status')
     .single()
