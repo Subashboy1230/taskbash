@@ -165,7 +165,7 @@ export interface Run {
   new_count: number
   carryover_count: number
   completed_count: number
-  status: 'running' | 'succeeded' | 'failed'
+  status: 'running' | 'succeeded' | 'failed' | 'superseded'
   error_message: string | null
 }
 

@@ -16,6 +16,16 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   const todayDateStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
   const today = new Date(`${todayDateStr}T00:00:00-07:00`)
 
+  // Auto-unsnooze: any snoozed item whose window has passed flips back to open
+  // BEFORE we load the open list, so it reappears at the right time on the very
+  // next page load (not only on the next digest cron run).
+  await supabase
+    .from('items')
+    .update({ status: 'open', snooze_until: null })
+    .eq('user_id', USER_ID)
+    .eq('status', 'snoozed')
+    .lt('snooze_until', now.toISOString())
+
   // Open items (the main list)
   // Sort priority order:
   //   1. priority (P0 → P1 → P2 → P3, then unassigned) — user-curated importance
@@ -48,8 +58,21 @@ export async function loadDigest(): Promise<MockDigestSummary> {
     .limit(20)
   if (completedErr) throw new Error(`loadDigest completed failed: ${completedErr.message}`)
 
+  // Still-snoozed items (window in the future, after the auto-unsnooze above),
+  // soonest-to-return first → drives the Snoozed tab.
+  const { data: snoozedRows, error: snoozedErr } = await supabase
+    .from('items')
+    .select('*')
+    .eq('user_id', USER_ID)
+    .eq('status', 'snoozed')
+    .is('parent_id', null)
+    .order('snooze_until', { ascending: true, nullsFirst: false })
+    .limit(100)
+  if (snoozedErr) throw new Error(`loadDigest snoozed failed: ${snoozedErr.message}`)
+
   const openItems = (openRows || []) as Item[]
   const completedItems = (completedRows || []) as Item[]
+  const snoozedItems = (snoozedRows || []) as Item[]
 
   // Load subtasks for every parent in either list. One query, then bucket
   // them onto the right parent by parent_id. We include completed subtasks so
@@ -57,6 +80,7 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   const parentIds = [
     ...openItems.map(i => i.id),
     ...completedItems.map(i => i.id),
+    ...snoozedItems.map(i => i.id),
   ]
   const subtasksByParent = new Map<
     string,
@@ -119,6 +143,7 @@ export async function loadDigest(): Promise<MockDigestSummary> {
     },
     open_items: openItems.map(item => toUIItem(item, subtasksByParent.get(item.id))),
     completed_today: completedItems.map(item => toUIItem(item, subtasksByParent.get(item.id))),
+    snoozed_items: snoozedItems.map(item => toUIItem(item, subtasksByParent.get(item.id))),
   }
 }
 
@@ -144,6 +169,7 @@ function toUIItem(
     age_days: ageDays,
     due_at: item.due_at,
     is_new_today: ageDays === 0,
+    snooze_until: (item as { snooze_until?: string | null }).snooze_until ?? null,
     count_label: countLabelFor(item.source as Source, item.task_type),
     status_label: statusLabelFor(item),
     status_label_tone: statusLabelTone(item),

@@ -56,6 +56,7 @@ export async function loadRuns(userId: string, limit = 50, before?: string): Pro
       id: r.id,
       event_at: r.started_at,
       kind: r.status === 'succeeded' ? 'succeeded'
+          : r.status === 'superseded' ? 'superseded'
           : r.status === 'failed' ? 'failed'
           : 'running' as PillKind,
       source: null,
@@ -217,7 +218,7 @@ export async function loadDataSourceSyncs(userId: string, limit = 100, before?: 
       rows.push({
         id: `${run.id}-${src}`,
         event_at: eventAt,
-        kind: run.status === 'succeeded' ? 'synced' : 'failed',
+        kind: run.status === 'succeeded' ? 'synced' : run.status === 'superseded' ? 'superseded' : 'failed',
         source: src,
         icon: 'refresh',
         label: sourceLabel(src),

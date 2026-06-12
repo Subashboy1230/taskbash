@@ -31,6 +31,8 @@ export interface MockItem {
   function_ids?: string[]
   age_days: number
   due_at?: string | null            // ISO timestamp; formatDeadline() turns it into a label
+  // When status is snoozed: ISO timestamp the item auto-returns to open.
+  snooze_until?: string | null
   is_new_today?: boolean
   status_label?: string
   status_label_tone?: 'success' | 'warning' | 'danger' | 'info'
@@ -80,6 +82,9 @@ export interface MockDigestSummary {
   }
   open_items: MockItem[]
   completed_today: MockItem[]
+  // Currently-snoozed items (status='snoozed', snooze_until in the future),
+  // soonest-to-return first. Drives the Snoozed tab.
+  snoozed_items: MockItem[]
 }
 
 // Anchor "now" so deadlines look stable across sessions.
@@ -258,5 +263,6 @@ export function getMockDigest(): MockDigestSummary {
         completed_at: TODAY.toISOString(),
       },
     ],
+    snoozed_items: [],
   }
 }

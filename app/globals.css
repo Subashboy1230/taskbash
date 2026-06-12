@@ -189,6 +189,20 @@ button, a, [role="button"] {
   50%  { transform: scale(1.01); }
   100% { transform: scale(1); }
 }
+/* Task-clear: a quick green confirm flash + squeeze, then slide-out + fade.
+   Played on a row the moment it is completed / dismissed / snoozed away. The
+   title's strikethrough (applied separately) animates in the same window. */
+@keyframes task-clear {
+  0%   { opacity: 1; transform: translateX(0) scale(1); }
+  18%  { opacity: 1; transform: translateX(0) scale(0.985); background-color: var(--color-success-bg); }
+  100% { opacity: 0; transform: translateX(24px) scale(0.97); }
+}
+/* Neutral variant for dismiss/slop/snooze: same motion, no green confirm flash
+   (green is reserved for genuine completion). */
+@keyframes task-clear-neutral {
+  0%   { opacity: 1; transform: translateX(0) scale(1); }
+  100% { opacity: 0; transform: translateX(24px) scale(0.97); }
+}
 
 .animate-slide-in-right  { animation: slide-in-right 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-slide-out-right { animation: slide-out-right 180ms cubic-bezier(0.55, 0, 1, 0.45) both; }
@@ -197,6 +211,8 @@ button, a, [role="button"] {
 .animate-fade-in-down    { animation: fade-in-down 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-scale-in        { animation: scale-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-row-pop         { animation: row-pop 320ms ease both; }
+.animate-task-clear         { animation: task-clear 300ms cubic-bezier(0.4, 0, 0.2, 1) both; pointer-events: none; overflow: hidden; }
+.animate-task-clear-neutral { animation: task-clear-neutral 300ms cubic-bezier(0.4, 0, 0.2, 1) both; pointer-events: none; overflow: hidden; }
 
 /* Stagger helper: list items receive sequential entrance delays.
    Wrap a list in `.stagger` and child elements get progressive delays. */

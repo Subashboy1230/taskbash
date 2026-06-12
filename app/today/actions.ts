@@ -364,6 +364,19 @@ export async function snoozeItem(itemId: string, hours: number = 24) {
   revalidatePath('/today')
 }
 
+// Unsnooze an item early — flip it straight back to open from the Snoozed tab.
+export async function unsnoozeItem(itemId: string) {
+  const userId = await resolveUserId()
+  const { error } = await supabase
+    .from('items')
+    .update({ status: 'open', snooze_until: null })
+    .eq('id', itemId)
+    .eq('user_id', userId)
+    .eq('status', 'snoozed')
+  if (error) throw new Error(`unsnoozeItem failed: ${error.message}`)
+  revalidatePath('/today')
+}
+
 /**
  * Approve & execute the proposed_action attached to an item. For the v1
  * Gmail flow, we return a `mailto:`-style Gmail compose URL the caller can

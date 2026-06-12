@@ -26,6 +26,7 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  RotateCcw,
   Sparkles,
   Trash2,
   X,
@@ -75,6 +76,7 @@ import {
   snoozeItem,
   toggleSubtaskComplete,
   uncompleteItem,
+  unsnoozeItem,
   updateItemDescription,
   reorderItem,
   enrichPrepItem,
@@ -143,11 +145,11 @@ export function TodayView({
     onSelectItem?.(item)
   }
   const TAB_KEY = 'taskbash:todayTab'
-  type TabKey = 'open' | 'prep' | 'cleared' | 'unread'
+  type TabKey = 'open' | 'prep' | 'cleared' | 'unread' | 'snoozed'
   const [tab, setTabRaw] = useState<TabKey>(() => {
     try {
       const saved = localStorage.getItem(TAB_KEY)
-      if (saved === 'open' || saved === 'prep' || saved === 'cleared' || saved === 'unread') return saved
+      if (saved === 'open' || saved === 'prep' || saved === 'cleared' || saved === 'unread' || saved === 'snoozed') return saved
     } catch { /* ignore */ }
     return 'open'
   })
@@ -155,7 +157,7 @@ export function TodayView({
   // and remember its scrollTop as we leave each tab; restore when we come
   // back.
   const scrollContainerRef = useRef<HTMLElement | null>(null)
-  const tabScrollPositions = useRef<Record<TabKey, number>>({ open: 0, prep: 0, cleared: 0, unread: 0 })
+  const tabScrollPositions = useRef<Record<TabKey, number>>({ open: 0, prep: 0, cleared: 0, unread: 0, snoozed: 0 })
   const tabRootRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (!tabRootRef.current) return
@@ -405,6 +407,9 @@ export function TodayView({
   // Upcoming first, then past (faded, completed)
   const visiblePrep = [...upcomingPrep, ...pastPrep]
 
+  // Currently-snoozed items (soonest-to-return first, ordered server-side).
+  const snoozedItems = digest.snoozed_items ?? []
+
   // Which sources actually appear in this digest — drives the chip row so
   // we don't show "Linear" as a filter option when there's no Linear data.
   const availableSources = useMemo(() => {
@@ -566,7 +571,7 @@ export function TodayView({
 
           {/* Tabs: Open / Prep / Cleared — shadcn Tabs (pill segment) */}
           <div className="mt-7 flex items-center justify-between">
-            <Tabs value={tab} onValueChange={v => setTab(v as 'open' | 'prep' | 'cleared' | 'unread')}>
+            <Tabs value={tab} onValueChange={v => setTab(v as TabKey)}>
               <TabsList>
                 <TabsTrigger value="open">
                   Open
@@ -583,6 +588,10 @@ export function TodayView({
                 <TabsTrigger value="unread">
                   Unread
                   <TabCount active={tab === 'unread'}>{unreadThreads.length}</TabCount>
+                </TabsTrigger>
+                <TabsTrigger value="snoozed">
+                  Snoozed
+                  <TabCount active={tab === 'snoozed'}>{snoozedItems.length}</TabCount>
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -731,6 +740,14 @@ export function TodayView({
               functionsById={functionsById}
               now={nowDate}
               openItems={digest.open_items}
+            />
+          ) : tab === 'snoozed' ? (
+            <SnoozedTab
+              items={snoozedItems}
+              selectedId={selectedItem?.id}
+              onSelect={setSelectedItem}
+              functionsById={functionsById}
+              now={nowDate}
             />
           ) : (
             <ClearedTab
@@ -1036,6 +1053,10 @@ function TaskRow({
   allOpenItems?: MockItem[]
 }) {
   const [completed, setCompleted] = useState(false)
+  // Tone of the clear animation: 'success' (green confirm flash) only for an
+  // actual completion; 'neutral' (plain slide-out, no green) for dismiss/slop
+  // and snooze, where a green "done" flash would misread the action.
+  const [clearTone, setClearTone] = useState<'success' | 'neutral'>('success')
   const [dragOver, setDragOver] = useState<'before' | 'after' | null>(null)
   // Optimistic local state for subtask completion. We seed from server data
   // and update immediately on click; the server call runs in the background
@@ -1058,19 +1079,25 @@ function TaskRow({
   const subItems = item.sub_items ?? []
   const subTotal = subItems.length
   const subCompleted = subItems.filter(s => subDone[s.id]).length
+  // 280ms ~matches the 300ms task-clear animation, so the row finishes its
+  // green-confirm + slide-out just as the server action + refresh remove it.
+  const CLEAR_ANIM_MS = 280
   const handleCompleteClick = (e: React.MouseEvent) => {
     e.stopPropagation()
+    setClearTone('success')
     setCompleted(true)
-    setTimeout(() => onComplete(), 250) // tiny delay so the strikethrough is visible
+    setTimeout(() => onComplete(), CLEAR_ANIM_MS)
   }
   const handleDismissClick = (e: React.MouseEvent) => {
     e.stopPropagation()
+    setClearTone('neutral')
     setCompleted(true)
-    setTimeout(() => onDismiss(), 250)
+    setTimeout(() => onDismiss(), CLEAR_ANIM_MS)
   }
   const onSnoozeWithHours = (hours: number) => {
+    setClearTone('neutral')
     setCompleted(true)
-    setTimeout(() => onSnooze(hours), 250)
+    setTimeout(() => onSnooze(hours), CLEAR_ANIM_MS)
   }
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -1105,7 +1132,7 @@ function TaskRow({
       className={cn(
         'group relative cursor-pointer pl-12 pr-2 py-4 transition-all duration-200 animate-fade-in-up',
         isSelected ? 'bg-success-bg/30' : 'hover:bg-surface-muted/50',
-        completed && 'opacity-0 translate-x-3 pointer-events-none',
+        completed && (clearTone === 'success' ? 'animate-task-clear' : 'animate-task-clear-neutral'),
         dragOver === 'before' && 'border-t-2 border-t-accent/70',
         dragOver === 'after' && 'border-b-2 border-b-accent/70',
         (dragOver === 'before' || dragOver === 'after') && 'bg-surface-muted/40',
@@ -1125,8 +1152,9 @@ function TaskRow({
           itemId={item.id}
           allItems={allOpenItems}
           onMarked={() => {
+            setClearTone('neutral')
             setCompleted(true)
-            setTimeout(() => onDismiss(), 250)
+            setTimeout(() => onDismiss(), CLEAR_ANIM_MS)
           }}
         />
         <button
@@ -3570,6 +3598,151 @@ function UnreadThreadRow({
           <Loader2 size={14} className="animate-spin text-ink-faint" />
         </div>
       )}
+    </li>
+  )
+}
+
+// ─── Snoozed tab ─────────────────────────────────────────────────────────
+// Items the user snoozed. They auto-return to Open at snooze_until (handled
+// server-side in loadDigest + the digest cron). Each row shows when it returns
+// and an Unsnooze button to bring it back to Open immediately.
+
+function formatSnoozeReturn(iso: string | null | undefined, now: Date): string {
+  if (!iso) return 'returns soon'
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return 'returns soon'
+  const ms = d.getTime() - now.getTime()
+  if (ms <= 0) return 'returning now'
+  const mins = Math.round(ms / (1000 * 60))
+  if (mins < 60) return `returns in ${Math.max(1, mins)}m`
+  const hours = Math.round(mins / 60)
+  if (hours < 24) return `returns in ${hours}h`
+  const days = Math.round(hours / 24)
+  if (days <= 7) return `returns in ${days}d`
+  return `returns ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+}
+
+function SnoozedTab({
+  items,
+  selectedId,
+  onSelect,
+  functionsById,
+  now,
+}: {
+  items: MockItem[]
+  selectedId?: string
+  onSelect: (item: MockItem) => void
+  functionsById?: Map<string, UserFunction>
+  now: Date
+}) {
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
+  const visible = items.filter(i => !hiddenIds.has(i.id))
+  if (visible.length === 0) {
+    return (
+      <div className="mt-6 rounded-lg border border-dashed border-line bg-surface px-6 py-10 text-center">
+        <p className="m-0 text-[15px] font-medium text-ink">Nothing snoozed</p>
+        <p className="mt-1 text-[13px] text-ink-faint m-0">
+          Snoozed tasks wait here and return to Open automatically when their time is up.
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="mt-4">
+      <ul className="stagger list-none p-0 m-0 divide-y divide-line/70">
+        {visible.map(item => (
+          <SnoozedRow
+            key={item.id}
+            item={item}
+            isSelected={selectedId === item.id}
+            onSelect={() => onSelect(item)}
+            onUnsnoozed={() => setHiddenIds(prev => new Set(prev).add(item.id))}
+            onUnsnoozeFailed={() => setHiddenIds(prev => {
+              const n = new Set(prev)
+              n.delete(item.id)
+              return n
+            })}
+            functionsById={functionsById}
+            now={now}
+          />
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function SnoozedRow({
+  item,
+  isSelected,
+  onSelect,
+  onUnsnoozed,
+  onUnsnoozeFailed,
+  functionsById,
+  now,
+}: {
+  item: MockItem
+  isSelected: boolean
+  onSelect: () => void
+  onUnsnoozed: () => void
+  onUnsnoozeFailed: () => void
+  functionsById?: Map<string, UserFunction>
+  now: Date
+}) {
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+
+  function handleUnsnooze(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (busy) return
+    setBusy(true)
+    onUnsnoozed() // optimistic hide
+    unsnoozeItem(item.id)
+      .then(() => router.refresh())
+      .catch(err => {
+        setBusy(false)
+        onUnsnoozeFailed() // revert the optimistic hide so the row can be retried
+        toast.error("Couldn't unsnooze", {
+          description: err instanceof Error ? err.message : 'Try again.',
+        })
+      })
+  }
+
+  return (
+    <li
+      onClick={onSelect}
+      className={cn(
+        'group relative flex items-start gap-3 pl-12 pr-2 py-4 cursor-pointer border-b border-line/50 transition-colors animate-fade-in-up',
+        isSelected ? 'bg-success-bg/30' : 'hover:bg-surface-muted/50',
+        busy && 'opacity-50 pointer-events-none',
+      )}
+    >
+      <div className="absolute left-3 top-4 flex shrink-0 items-center justify-center" style={{ width: 22, height: 22 }}>
+        <BrandLogo brand={item.source} size={18} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[15px] font-semibold leading-snug text-ink">{item.title}</span>
+          {(item.function_ids ?? []).map(fid => {
+            const fn = functionsById?.get(fid)
+            return fn ? <FunctionPill key={fid} fn={fn} /> : null
+          })}
+        </div>
+        <p className="mt-1 flex items-center gap-1.5 text-[12px] text-ink-faint m-0">
+          <Clock size={12} />
+          {formatSnoozeReturn(item.snooze_until, now)}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={handleUnsnooze}
+        disabled={busy}
+        aria-label="Unsnooze now"
+        title="Bring back to Open now"
+        className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1 text-[12px] font-medium text-ink-muted hover:border-line-strong hover:text-ink disabled:opacity-50"
+      >
+        <RotateCcw size={12} />
+        Unsnooze
+      </button>
     </li>
   )
 }
