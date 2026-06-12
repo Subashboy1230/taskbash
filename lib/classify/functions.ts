@@ -15,6 +15,7 @@ import { anthropic, MODELS } from '../anthropic'
 import { tracedMessage } from '../llm-trace'
 import { nebiusTracedMessage } from '../nebius-trace'
 import { extractJsonObject } from '../extract/parse'
+import { fetchRelevantMemories, renderMemoriesForPrompt } from '../memory/fetch'
 import type { ExtractedItem, UserFunction } from '../types'
 
 // Provider for this classifier. Default Anthropic. Set CLASSIFY_PROVIDER=nebius
@@ -127,14 +128,32 @@ export async function classifyAndTagFunctions(args: {
   const inputContent = { functions, tasks }
   let classifyCallId: string | null = null
 
+  // mem0: fetch user-level memories relevant to the current batch.
+  // The query is a short summary of the task titles being classified.
+  // Memories ride on the SYSTEM prompt so the model treats them as
+  // soft constraints, not part of the task input. Fail-open: empty
+  // memories yields empty string, downstream sees the unchanged prompt.
+  const memorySearchQuery = `Classify these tasks into functions: ${tasks
+    .map(t => t.title)
+    .slice(0, 8)
+    .join(' | ')}`
+  const memories = await fetchRelevantMemories({
+    userId: args.userId ?? process.env.APP_USER_ID ?? null,
+    query: memorySearchQuery,
+    limit: 5,
+  })
+  const memoryBlock = renderMemoriesForPrompt(memories)
+  const augmentedSystemPrompt = SYSTEM_PROMPT + memoryBlock
+
   try {
     const traceCtx = {
       prompt_id: 'classify.functions',
-      // v3: every task MUST get >=1 function (was: empty allowed). Combined
-      // with a code-level fallback below so nothing is ever left uncategorized.
+      // v3: must-tag-every-task contract + mem0 user-preference block in
+      // the system prompt. Combined with the code-level fallback below so
+      // nothing is ever left uncategorized.
       prompt_version: 3,
       user_id: args.userId ?? process.env.APP_USER_ID ?? null,
-      input_content: inputContent,
+      input_content: { ...inputContent, memories },
     } as const
 
     let text: string
@@ -144,7 +163,7 @@ export async function classifyAndTagFunctions(args: {
         // Headroom for large batches: at ~1024 the JSON truncated past ~25
         // items, parse-failed, and left a whole batch uncategorized.
         max_tokens: 4096,
-        system: SYSTEM_PROMPT,
+        system: augmentedSystemPrompt,
         messages: [{ role: 'user', content: prompt }],
       })
       classifyCallId = response._llmCallId || null
@@ -157,7 +176,7 @@ export async function classifyAndTagFunctions(args: {
           model: MODELS.classifier,
           // Headroom for large batches (see Nebius note above).
           max_tokens: 4096,
-          system: SYSTEM_PROMPT,
+          system: augmentedSystemPrompt,
           messages: [{ role: 'user', content: prompt }],
         }
       )
