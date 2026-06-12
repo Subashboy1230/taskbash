@@ -141,7 +141,9 @@ export async function classifyAndTagFunctions(args: {
 
     if (USE_NEBIUS) {
       const response = await nebiusTracedMessage(traceCtx, {
-        max_tokens: 1024,
+        // Headroom for large batches: at ~1024 the JSON truncated past ~25
+        // items, parse-failed, and left a whole batch uncategorized.
+        max_tokens: 4096,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: prompt }],
       })
@@ -153,7 +155,8 @@ export async function classifyAndTagFunctions(args: {
         traceCtx,
         {
           model: MODELS.classifier,
-          max_tokens: 1024,
+          // Headroom for large batches (see Nebius note above).
+          max_tokens: 4096,
           system: SYSTEM_PROMPT,
           messages: [{ role: 'user', content: prompt }],
         }
