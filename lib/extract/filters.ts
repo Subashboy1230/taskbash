@@ -17,22 +17,37 @@ Only include work/professional tasks. Exclude anything from the user's personal 
 // these titles leak from multiple extractors (gmail/granola), not just calendar.
 const MEETING_LINK_RE = /(meet\.google\.com|zoom\.us\/j\/|teams\.microsoft\.com\/l\/meetup-join|whereby\.com|meet\.jit\.si)/i
 const PHONE_BRIDGE_RE = /(\+?\d[\d\s().-]{7,}\d)\s*$/
-// Titles that are just an imperative directed at the event mechanics.
-const EVENT_MECHANICS_RE = /^(join|dial|dial in|dial-in|call in|attend|watch|rsvp|add to calendar|accept|decline)\b/i
+// An imperative about getting INTO a virtual meeting.
+const JOIN_IMPERATIVE_RE = /^(join|hop on|dial[ -]?in|dial into|call in to|connect to)\b/i
+// A NAMED virtual-meeting platform. Required by the join rule below so real
+// commitments without a platform ("Attend the board meeting", "Join the hiring
+// committee") are never dropped — only "join the <platform>" logistics are.
+const VIRTUAL_PLATFORM_RE = /\b(google meet|google hangout|hangouts?|zoom|ms teams|microsoft teams|teams (?:meeting|call)|webex|whereby|jitsi)\b/i
 
 /**
  * True when a candidate task title is mechanical event detail, not a real
- * action item. Conservative: matches bare meeting links, phone bridges, and
- * one-verb event imperatives ("Join the Google Meet at 12:15pm"), while
- * leaving substantive tasks that merely mention a tool ("Review the Zoom
- * recording and send notes") untouched.
+ * action item. Narrow on purpose: matches bare meeting links, phone bridges,
+ * and short "join the <named virtual platform>" logistics
+ * ("Join the Google Meet at 12:15pm"), while leaving real commitments that
+ * merely involve a meeting ("Attend follow-up meeting with Candace", "Watch
+ * the demo before the call", "Review the Zoom recording") untouched.
+ *
+ * Earlier this flagged any title starting join/attend/watch/dial under 8 words,
+ * which wrongly dropped real tasks like "Attend follow-up meeting with X".
  */
 export function isMechanicalNoise(title: string): boolean {
   const t = (title || '').trim()
   if (!t) return false
   if (MEETING_LINK_RE.test(t)) return true
   if (PHONE_BRIDGE_RE.test(t) && t.split(/\s+/).length <= 6) return true
-  // "Join/Watch/Attend ..." where the rest is short logistics, not a real task.
-  if (EVENT_MECHANICS_RE.test(t) && t.split(/\s+/).length <= 8) return true
+  // Both a join imperative AND a named virtual platform, and short (a real
+  // meeting with a topic is longer or names no virtual platform).
+  if (
+    JOIN_IMPERATIVE_RE.test(t) &&
+    VIRTUAL_PLATFORM_RE.test(t) &&
+    t.split(/\s+/).length <= 8
+  ) {
+    return true
+  }
   return false
 }
