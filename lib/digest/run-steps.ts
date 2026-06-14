@@ -41,6 +41,8 @@ export interface RunStepEmitter {
     detail?: RunStepDetail
     itemCount?: number | null
   }): Promise<void>
+  /** Flip any steps still 'running' to a terminal status (end-of-run safety net). */
+  finalize(status: RunStepStatus): Promise<void>
 }
 
 const NOOP: RunStepEmitter = {
@@ -49,6 +51,7 @@ const NOOP: RunStepEmitter = {
   },
   async finish() {},
   async log() {},
+  async finalize() {},
 }
 
 export function createRunStepEmitter(
@@ -108,6 +111,17 @@ export function createRunStepEmitter(
           item_count: itemCount ?? null,
           completed_at: status === 'running' ? null : new Date().toISOString(),
         })
+      } catch {
+        /* best-effort */
+      }
+    },
+    async finalize(status) {
+      try {
+        await supabase
+          .from('run_steps')
+          .update({ status, completed_at: new Date().toISOString() })
+          .eq('run_id', runId)
+          .eq('status', 'running')
       } catch {
         /* best-effort */
       }

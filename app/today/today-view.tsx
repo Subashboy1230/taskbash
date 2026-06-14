@@ -71,7 +71,6 @@ import {
   markItemSlop,
   openUnreadThread,
   rejectDraft,
-  requestRefresh,
   setItemPriority,
   snoozeItem,
   toggleSubtaskComplete,
@@ -333,31 +332,10 @@ export function TodayView({
       })
   }
   function handleRefresh() {
-    startRefresh(async () => {
-      const result = await requestRefresh()
-      if (!result.ok) {
-        toast.error("Couldn't start the digest", {
-          description: result.error || 'Try again.',
-        })
-        return
-      }
-      // Hand off to the live Agent Activity panel (shell-owned): it polls the
-      // run, shows each step, refreshes the list when done, and auto-closes.
-      if (result.runId && onRunStarted) {
-        onRunStarted(result.runId)
-        return
-      }
-      // Fallback when there's no shell or no runId: blind refresh + a toast.
-      const tid = toast.loading('Pulling tasks from your sources…', {
-        description: 'This usually takes 30 to 60 seconds.',
-      })
-      const start = Date.now()
-      while (Date.now() - start < 35_000) {
-        await new Promise(r => setTimeout(r, 5000))
-        router.refresh()
-      }
-      router.refresh()
-      toast.success('Digest complete', { id: tid })
+    // Demo mode: play the scripted Agent Activity mockup (see mock-run.ts).
+    // This intentionally does NOT run the real digest.
+    startRefresh(() => {
+      onRunStarted?.('mock')
     })
   }
 
