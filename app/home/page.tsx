@@ -353,7 +353,7 @@ function FeatureGrid() {
           <FeatureCard
             icon={<CalIcon size={16} />}
             title="Meeting prep briefs"
-            body="For every meeting in the next 36 hours: who's on it, recent thread history, talking points, the goal. Open the brief, walk into the call."
+            body="For every meeting in the next 48 hours: who's on it, recent thread history, talking points, the goal. Open the brief, walk into the call."
           />
           <FeatureCard
             icon={<ListTodo size={16} />}

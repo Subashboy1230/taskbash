@@ -8,13 +8,14 @@
 //   - Collapsible via the chevron in the header. Persisted in
 //     localStorage under `taskbash:calendarCollapsed`.
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  History,
   Loader2,
   Plug,
   RotateCw,
@@ -47,6 +48,8 @@ export function TodayCalendarColumn({
   onSelectDay,
   collapsed: collapsedProp,
   onToggleCollapsed,
+  onOpenHistory,
+  onSelectEvent,
 }: {
   events: DayEvent[]
   // True when the server-side today-events fetch threw. Renders a distinct
@@ -64,6 +67,13 @@ export function TodayCalendarColumn({
   // expand the main task column to fill the freed space.
   collapsed?: boolean
   onToggleCollapsed?: () => void
+  // Open the run-history browser in the right column (shell-controlled).
+  onOpenHistory?: () => void
+  // Clicking a meeting card opens the matching prep item in the right
+  // detail panel. The shell resolves Google event id -> MockItem and
+  // calls openPanel. If no prep card exists yet (e.g. meeting outside
+  // the digest window), the click is a no-op.
+  onSelectEvent?: (eventId: string) => void
 }) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -201,6 +211,17 @@ export function TodayCalendarColumn({
         >
           <ChevronsLeft size={14} />
         </button>
+        {onOpenHistory && (
+          <button
+            type="button"
+            onClick={onOpenHistory}
+            aria-label="Agent run history"
+            title="See what the agent did"
+            className="mt-1 rounded-md p-1 text-ink-faint hover:bg-surface-muted hover:text-ink"
+          >
+            <History size={14} />
+          </button>
+        )}
       </aside>
     )
   }
@@ -239,6 +260,17 @@ export function TodayCalendarColumn({
           >
             <ChevronRight size={14} />
           </button>
+          {onOpenHistory && (
+            <button
+              type="button"
+              onClick={onOpenHistory}
+              aria-label="Agent run history"
+              title="See what the agent did"
+              className="rounded p-1 hover:bg-surface-muted hover:text-ink"
+            >
+              <History size={14} />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setCollapsed(true)}
@@ -320,7 +352,7 @@ export function TodayCalendarColumn({
                 : 'Connect Google Calendar to see your schedule here.'}
             </p>
           ) : (
-            <EventList events={todayEvents} />
+            <EventList events={todayEvents} onSelectEvent={onSelectEvent} />
           )}
         </CardContent>
       </Card>
@@ -517,7 +549,13 @@ function classifyEvents(events: DayEvent[]): EventVariant[] {
   })
 }
 
-function EventList({ events }: { events: DayEvent[] }) {
+function EventList({
+  events,
+  onSelectEvent,
+}: {
+  events: DayEvent[]
+  onSelectEvent?: (eventId: string) => void
+}) {
   // Initialize as all-future so SSR and first client render agree.
   // useEffect immediately reclassifies based on actual clock.
   const [variants, setVariants] = useState<EventVariant[]>(() =>
@@ -541,33 +579,71 @@ function EventList({ events }: { events: DayEvent[] }) {
   return (
     <ul className="m-0 list-none space-y-2 p-0">
       {sorted.map(({ e, v }, i) => (
-        <>
+        // Fragment shorthand `<>` does not accept a key prop; using the
+        // long form so React can keep this iteration stable across renders.
+        <Fragment key={e.id}>
           {v === 'past' && i === sorted.length - pastCount && (
-            <li key={`divider-${e.id}`}>
+            <li>
               <p className="m-0 pt-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Earlier today</p>
             </li>
           )}
-          <EventCard key={e.id} event={e} variant={v} />
-        </>
+          <EventCard
+            event={e}
+            variant={v}
+            onSelectEvent={onSelectEvent}
+          />
+        </Fragment>
       ))}
     </ul>
   )
 }
 
-function EventCard({ event, variant = 'future' }: { event: DayEvent; variant?: EventVariant }) {
+function EventCard({
+  event,
+  variant = 'future',
+  onSelectEvent,
+}: {
+  event: DayEvent
+  variant?: EventVariant
+  // Click handler from the shell. If undefined the card stays display-
+  // only (back-compat with surfaces that don't wire selection).
+  onSelectEvent?: (eventId: string) => void
+}) {
   const timeLabel = event.isAllDay
     ? 'All day'
     : `${event.startTime}${event.endTime ? ` – ${event.endTime}` : ''}`
 
+  const clickable = !!onSelectEvent
+  const handleClick = () => {
+    if (onSelectEvent) onSelectEvent(event.id)
+  }
+
   return (
     <li suppressHydrationWarning className="animate-fade-in-up">
-      <div suppressHydrationWarning className={cn(
-        'rounded-md px-3 py-2 transition-all duration-200 hover:ring-2',
-        variant === 'current' && 'bg-emerald-500/10 ring-1 ring-emerald-500/30 hover:ring-emerald-500/50',
-        variant === 'next'    && 'bg-blue-500/10 ring-1 ring-blue-500/25 hover:ring-blue-500/45',
-        variant === 'past'    && 'bg-canvas/30 ring-1 ring-line/40 opacity-50 hover:opacity-70',
-        variant === 'future'  && 'bg-accent-soft/60 ring-1 ring-accent/15 hover:ring-accent/30',
-      )}>
+      <div
+        suppressHydrationWarning
+        role={clickable ? 'button' : undefined}
+        tabIndex={clickable ? 0 : undefined}
+        onClick={clickable ? handleClick : undefined}
+        onKeyDown={
+          clickable
+            ? e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  handleClick()
+                }
+              }
+            : undefined
+        }
+        className={cn(
+          'rounded-md px-3 py-2 transition-all duration-200 hover:ring-2',
+          clickable && 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
+          variant === 'current' && 'bg-emerald-500/10 ring-1 ring-emerald-500/30 hover:ring-emerald-500/50',
+          variant === 'next'    && 'bg-blue-500/10 ring-1 ring-blue-500/25 hover:ring-blue-500/45',
+          variant === 'past'    && 'bg-canvas/30 ring-1 ring-line/40 opacity-50 hover:opacity-70',
+          variant === 'future'  && 'bg-accent-soft/60 ring-1 ring-accent/15 hover:ring-accent/30',
+        )}
+      >
         <p className={cn(
           'm-0 text-[13px] font-medium leading-snug',
           variant === 'past' ? 'text-ink-muted' : 'text-ink',
@@ -586,6 +662,9 @@ function EventCard({ event, variant = 'future' }: { event: DayEvent; variant?: E
               href={event.hangoutLink}
               target="_blank"
               rel="noopener noreferrer"
+              // Stop the parent card's onClick so opening the meet
+              // doesn't also open the prep panel.
+              onClick={e => e.stopPropagation()}
               className="inline-flex items-center gap-0.5 text-accent hover:underline"
             >
               <Video size={10} />

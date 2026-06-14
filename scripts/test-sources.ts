@@ -28,7 +28,7 @@ async function main() {
   try {
     const calendarItems = await extractCalendarPrepItems({ userEmail })
     if (calendarItems.length === 0) {
-      console.log('No prep-worthy events in the next 36 hours.\n')
+      console.log('No prep-worthy events in the next 48 hours.\n')
     } else {
       console.log(`Found ${calendarItems.length} upcoming meeting(s):\n`)
       for (const item of calendarItems) {
