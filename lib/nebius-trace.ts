@@ -101,7 +101,12 @@ export async function nebiusTracedMessage(
     throw err
   } finally {
     const endedAt = new Date()
-    void logNebiusCall({
+    // Await the trace insert. Same reason as lib/llm-trace.ts: on
+    // Vercel serverless, void-detached Supabase inserts get killed
+    // when the container tears down at function return. The classifier
+    // batches under morning-digest fire many concurrent Nebius calls
+    // and every detached log was being dropped at step boundary.
+    await logNebiusCall({
       callId,
       ctx,
       model,
