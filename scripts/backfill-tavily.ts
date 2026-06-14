@@ -7,7 +7,7 @@
 //   npx tsx scripts/backfill-tavily.ts
 //
 // Strategy:
-//   1. Find open calendar prep items in the next 36 hours with no
+//   1. Find open calendar prep items in the next 48 hours with no
 //      attendee_context.
 //   2. For each, re-fetch the underlying Google Calendar event via Nango
 //      to get the attendee email list (we don't store emails on items).

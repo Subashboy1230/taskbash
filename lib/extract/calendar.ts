@@ -8,7 +8,7 @@
 // "who they are" blurb for every external attendee onto the item's
 // source_ref.attendee_context. See lib/enrich/tavily.ts.
 //
-// Scope: next 36 hours from the user's primary calendar. Filters out:
+// Scope: next 48 hours from the user's primary calendar. Filters out:
 //   - all-day events
 //   - declined invitations
 //   - solo events (no other attendees — not really a meeting)
@@ -29,7 +29,7 @@ import type { ExtractedItem } from '../types'
 import { enrichAttendees } from '../enrich/tavily'
 
 const CALENDAR_API = '/calendar/v3/calendars/primary/events'
-const HOURS_AHEAD = 36
+const HOURS_AHEAD = 48
 const MAX_EVENTS = 20
 
 // ─── Google Calendar API types (only the fields we use) ──────────────

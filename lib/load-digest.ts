@@ -32,6 +32,10 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   //   2. proposed_action present (the agent did work; never bury a draft)
   //   3. due_at (soonest first; overdue floats up)
   //   4. first_seen_at (newest within a group)
+  // Bumped from 200 -> 500 because calendar prep items (sort_order=null,
+  // priority=null) were sorting to the bottom and getting truncated, which
+  // made Prep tab show 0 and the calendar-event click handler unable to
+  // resolve event ids to items.
   const { data: openRows, error: openErr } = await supabase
     .from('items')
     .select('*')
@@ -43,8 +47,34 @@ export async function loadDigest(): Promise<MockDigestSummary> {
     .order('proposed_action', { ascending: false, nullsFirst: false })
     .order('due_at', { ascending: true, nullsFirst: false })
     .order('first_seen_at', { ascending: false })
-    .limit(200)
+    .limit(500)
   if (openErr) throw new Error(`loadDigest openItems failed: ${openErr.message}`)
+
+  // Belt-and-suspenders for calendar prep items: always pull every open
+  // calendar prep regardless of the cap, then merge any missing ones into
+  // openItems. Two-fold reason:
+  //   1. The Prep tab is the headline calendar UX (next 48 hours of meetings).
+  //      Hiding any of them because of an Open-tab cap is a worse failure
+  //      than letting the Open tab grow.
+  //   2. The right-column calendar event-click handler resolves a Google
+  //      event id by scanning digest.open_items. If the matching prep item
+  //      isn't there, the click is a silent no-op.
+  const { data: calRows, error: calErr } = await supabase
+    .from('items')
+    .select('*')
+    .eq('user_id', USER_ID)
+    .eq('source', 'calendar')
+    .in('status', ['open', 'in_progress'])
+    .is('parent_id', null)
+    .order('due_at', { ascending: true, nullsFirst: false })
+  if (calErr) throw new Error(`loadDigest calendar overflow failed: ${calErr.message}`)
+  if (calRows && calRows.length > 0) {
+    const seen = new Set((openRows ?? []).map(r => (r as { id: string }).id))
+    for (const c of calRows) {
+      const id = (c as { id: string }).id
+      if (!seen.has(id)) (openRows as unknown[]).push(c)
+    }
+  }
 
   // Completed today (the cleared section) — fetch rows + exact count separately
   // so the tab badge shows the real total even when the row list is capped.

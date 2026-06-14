@@ -7,6 +7,7 @@ import { MobileNav } from '@/app/_components/mobile-nav'
 import { TodayView, DetailPanel } from './today-view'
 import { completeItem, dismissItem } from './actions'
 import { TodayCalendarColumn } from './today-calendar-column'
+import { AgentActivityPanel } from './agent-activity-panel'
 import { AddTaskPanel } from './add-task-panel'
 import {
   Sheet,
@@ -87,6 +88,10 @@ export function TodayShell({
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [calendarCollapsed, setCalendarCollapsed] = useState(false)
+  // Right-column "what the agent is doing" view. activeRunId = a live manual
+  // Re-run to watch; historyOpen = the read-only run-history browser.
+  const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   // Desktop (>=lg) renders the interactive detail panel in PanelColumn.
   // The mobile Sheet must NOT mount on desktop: its full-screen Radix
@@ -181,6 +186,9 @@ export function TodayShell({
   } : digest, [digest, shellHiddenIds])
 
   const panelVisible = panelOpen || panelClosing
+  // The activity panel takes the right column when there's a live run or the
+  // history browser is open, unless the detail panel is up (it wins).
+  const showActivity = !panelVisible && (!!activeRunId || historyOpen)
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-canvas">
@@ -199,9 +207,10 @@ export function TodayShell({
           onSelectItem={(item) => { if (item) openPanel(item) }}
           externalSelectedItemId={displayedItem?.id ?? null}
           onAddTask={() => setAddOpen(true)}
-          mainExpanded={calendarCollapsed || panelVisible}
+          mainExpanded={panelVisible || (calendarCollapsed && !showActivity)}
           unreadThreads={filteredUnread}
           nowFromServer={nowFromServer}
+          onRunStarted={(runId) => { setHistoryOpen(false); setActiveRunId(runId) }}
         />
       </main>
 
@@ -239,6 +248,17 @@ export function TodayShell({
               />
             )}
           </PanelColumn>
+        ) : showActivity ? (
+          activeRunId ? (
+            <AgentActivityPanel
+              mode="live"
+              liveRunId={activeRunId}
+              onClose={() => setActiveRunId(null)}
+              onFinished={() => router.refresh()}
+            />
+          ) : (
+            <AgentActivityPanel mode="history" onClose={() => setHistoryOpen(false)} />
+          )
         ) : (
           <TodayCalendarColumn
             events={events}
@@ -250,6 +270,21 @@ export function TodayShell({
             calendarConnected={calendarConnected}
             collapsed={calendarCollapsed}
             onToggleCollapsed={() => setCalendarCollapsed(c => !c)}
+            onOpenHistory={() => setHistoryOpen(true)}
+            onSelectEvent={(eventId) => {
+              // Resolve the Google Calendar event id to the matching prep
+              // item by source_ref.google_calendar_event_id and open it
+              // in the right detail panel. If no prep card exists for
+              // this meeting (e.g. it's outside the digest window or the
+              // diff hasn't picked it up yet), do nothing rather than
+              // opening a stale or empty panel.
+              const match = digest.open_items.find(item => {
+                if (item.source !== 'calendar') return false
+                const ref = item.source_ref as { google_calendar_event_id?: string } | null | undefined
+                return ref?.google_calendar_event_id === eventId
+              })
+              if (match) openPanel(match)
+            }}
           />
         )}
       </div>

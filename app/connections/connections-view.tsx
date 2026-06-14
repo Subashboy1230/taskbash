@@ -52,7 +52,7 @@ const SOURCES: Source[] = [
     provider: 'calendar',
     brand: 'calendar',
     name: 'Google Calendar',
-    description: 'Generate prep briefs for upcoming meetings (next 36 hours).',
+    description: 'Generate prep briefs for upcoming meetings (next 48 hours).',
     authType: 'oauth',
   },
   {
