@@ -1,9 +1,9 @@
 'use client'
 
 // Persistent left sidebar — nav between /today, /profile, /connections,
-// /activity, /network. Collapsible: click the chevron at the top right
-// to flip between full-width (icons + labels) and rail (icons only).
-// Choice persists in localStorage.
+// /workflows, /activity, /network. Collapsible: click the chevron at the
+// top right to flip between full-width (icons + labels) and rail (icons
+// only). Choice persists in localStorage.
 
 import { useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
@@ -17,6 +17,7 @@ import {
   Network,
   Plug,
   User,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { signOut } from '@/app/auth/actions'
@@ -34,6 +35,7 @@ const NAV: Array<{
   { href: '/today', label: 'Home', icon: Home, match: p => p === '/today' || p === '/' },
   { href: '/profile', label: 'Profile', icon: User, match: p => p.startsWith('/profile') },
   { href: '/connections', label: 'Connections', icon: Plug, match: p => p.startsWith('/connections') },
+  { href: '/workflows', label: 'Workflows', icon: Sparkles, match: p => p.startsWith('/workflows') },
   { href: '/activity', label: 'Activity', icon: Activity, match: p => p.startsWith('/activity') },
   { href: '/network', label: 'Network', icon: Network, match: p => p.startsWith('/network') },
 ]
