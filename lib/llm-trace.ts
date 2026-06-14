@@ -100,9 +100,14 @@ export async function tracedMessage(
     throw err
   } finally {
     const endedAt = new Date()
-    // Fire-and-forget the trace insert. Don't await — logging mustn't
-    // add latency to the caller's response path.
-    void logCall({
+    // Await the trace insert. We previously fired this as void to shave
+    // ~50ms off the caller's response path, but on Vercel serverless
+    // the container is torn down at top-level function return before
+    // background promises resolve. A long-running Inngest step (the
+    // morning-digest at 2026-06-14T17:43Z classifying 20 items end to
+    // end) wrote zero llm_calls rows because every detached insert was
+    // killed mid-flight. Reliability beats the 50ms.
+    await logCall({
       callId,
       ctx,
       request,
