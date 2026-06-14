@@ -1,12 +1,14 @@
 'use client'
 
-// AgentActivityPanel — the live "what the agent is doing" view that
-// replaces the calendar column while a digest Re-run is in flight, and
-// the read-only replay opened from the history icon.
+// AgentActivityPanel
 //
-// Live mode polls GET /api/runs/[runId]/steps ~1s until the run reaches a
-// terminal status, then shows a summary and auto-closes. History mode lists
-// recent runs (server action) and replays a selected run's steps.
+// LIVE mode: plays a hardcoded, scripted demo sequence (see mock-run.ts) on
+// every Re-run, round-robin across a few variants. It does NOT run the real
+// digest — it's UI theater for the demo. Each step appears, spins, then
+// resolves on its own timeline; at the end it shows a summary and auto-closes.
+//
+// HISTORY mode: read-only replay of real past runs (run_steps), opened from
+// the history icon above the calendar.
 
 import { useEffect, useRef, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
@@ -17,6 +19,7 @@ import {
   ChevronRight,
   GitCompare,
   Layers,
+  ListChecks,
   Loader2,
   Minus,
   Play,
@@ -26,19 +29,34 @@ import {
 import { cn } from '@/lib/utils'
 import { BrandLogo } from '@/app/_components/brand-logo'
 import { getRecentRunsAction } from './run-activity-actions'
-import type { RunStep, RunStepPhase, RunStepStatus } from '@/lib/types'
+import { pickMockRun, type MockRun } from './mock-run'
+import type { RunStep, RunStepDetail, RunStepStatus } from '@/lib/types'
 import type { RecentRun, RunSummary } from '@/lib/load-run-steps'
 
 const COLUMN_CLASS =
   'sticky top-0 h-screen w-[384px] shrink-0 border-l border-line bg-canvas overflow-y-auto'
 
-const PHASE_ICON: Record<string, typeof Sparkles> = {
+// Icons for non-source steps (sources use their brand logo via BrandLogo).
+const ICON_MAP: Record<string, typeof Sparkles> = {
   start: Play,
   classify: Layers,
   diff: GitCompare,
-  finalize: Sparkles,
   done: Sparkles,
   error: AlertTriangle,
+  tasks: ListChecks,
+}
+
+// What the timeline renderer needs — satisfied by both the mock and real runs.
+interface DisplayStep {
+  id: string
+  source: string | null
+  img?: string
+  iconKey?: string
+  status: RunStepStatus
+  label: string
+  subLabel?: string
+  detail: RunStepDetail | null
+  itemCount: number | null
 }
 
 function isTerminal(status: string | null | undefined): boolean {
@@ -53,33 +71,40 @@ function StatusGlyph({ status }: { status: RunStepStatus }) {
   return <AlertTriangle size={14} className="text-danger-fg" />
 }
 
-function StepLeading({ step }: { step: RunStep }) {
-  const useBrand =
-    step.phase === 'source' && step.source && step.source !== 'manual'
-  const PhaseGlyph = PHASE_ICON[step.phase] ?? Sparkles
+function StepLeading({ step }: { step: DisplayStep }) {
+  const useBrand = step.source && step.source !== 'manual'
+  const Glyph = (step.iconKey && ICON_MAP[step.iconKey]) || Sparkles
   return (
     <div
       className={cn(
-        'flex h-8 w-8 items-center justify-center rounded-lg border',
+        'flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg border',
         step.status === 'failed'
           ? 'border-danger-fg/30 bg-danger-bg'
-          : step.status === 'running'
-            ? 'border-line bg-surface'
-            : step.status === 'skipped'
-              ? 'border-line bg-surface-muted opacity-60'
-              : 'border-line bg-surface'
+          : step.status === 'skipped'
+            ? 'border-line bg-surface-muted opacity-60'
+            : 'border-line bg-surface'
       )}
     >
-      {useBrand ? (
-        <BrandLogo brand={step.source!} size={18} />
+      {step.img ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={step.img}
+          alt=""
+          width={20}
+          height={20}
+          className="rounded"
+          style={{ objectFit: 'contain' }}
+        />
+      ) : useBrand ? (
+        <BrandLogo brand={step.source as never} size={18} />
       ) : (
-        <PhaseGlyph size={15} className="text-ink-muted" />
+        <Glyph size={15} className="text-ink-muted" />
       )}
     </div>
   )
 }
 
-function StepRow({ step, isLast }: { step: RunStep; isLast: boolean }) {
+function StepRow({ step, isLast }: { step: DisplayStep; isLast: boolean }) {
   const [open, setOpen] = useState(false)
   const d = step.detail
   const hasDetail = !!(d && (d.tool || d.model || d.prompt_id || d.note))
@@ -103,24 +128,22 @@ function StepRow({ step, isLast }: { step: RunStep; isLast: boolean }) {
             <StatusGlyph status={step.status} />
           </span>
         </div>
-        {(hasDetail ||
-          (typeof step.item_count === 'number' &&
-            step.item_count > 0 &&
-            step.phase === 'source')) && (
-          <div className="mt-1 flex items-center gap-2.5">
-            {hasDetail && (
-              <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                className="inline-flex items-center gap-0.5 text-[11px] text-ink-muted transition-colors hover:text-ink"
-              >
-                <ChevronRight
-                  size={11}
-                  className={cn('transition-transform', open && 'rotate-90')}
-                />
-                Details
-              </button>
-            )}
+        {step.subLabel && step.status === 'running' && (
+          <div className="mt-0.5 text-[11px] text-ink-muted">{step.subLabel}</div>
+        )}
+        {hasDetail && (
+          <div className="mt-1">
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              className="inline-flex items-center gap-0.5 text-[11px] text-ink-muted transition-colors hover:text-ink"
+            >
+              <ChevronRight
+                size={11}
+                className={cn('transition-transform', open && 'rotate-90')}
+              />
+              Details
+            </button>
           </div>
         )}
         {open && hasDetail && (
@@ -149,13 +172,7 @@ function StepRow({ step, isLast }: { step: RunStep; isLast: boolean }) {
   )
 }
 
-function Timeline({
-  steps,
-  loading,
-}: {
-  steps: RunStep[]
-  loading: boolean
-}) {
+function Timeline({ steps, loading }: { steps: DisplayStep[]; loading: boolean }) {
   if (steps.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
@@ -175,9 +192,7 @@ function Timeline({
   )
 }
 
-function SummaryBanner({ run }: { run: RunSummary | null }) {
-  const failed = run?.status === 'failed'
-  const newCount = run?.new_count ?? 0
+function SummaryBanner({ label, failed }: { label: string; failed: boolean }) {
   return (
     <div
       className={cn(
@@ -198,11 +213,7 @@ function SummaryBanner({ run }: { run: RunSummary | null }) {
           failed ? 'text-danger-fg' : 'text-success-fg'
         )}
       >
-        {failed
-          ? 'The refresh ran into a problem'
-          : newCount > 0
-            ? `All done — ${newCount} new ${newCount === 1 ? 'task' : 'tasks'} added`
-            : "All done — you're all caught up"}
+        {failed ? 'The refresh ran into a problem' : `All done — ${label}`}
       </p>
     </div>
   )
@@ -210,75 +221,45 @@ function SummaryBanner({ run }: { run: RunSummary | null }) {
 
 interface AgentActivityPanelProps {
   mode: 'live' | 'history'
-  /** The run to watch live (mode === 'live'). */
   liveRunId?: string | null
   onClose: () => void
-  /** Called once when a live run reaches a terminal status, before auto-close. */
   onFinished?: () => void
 }
 
-export function AgentActivityPanel({
-  mode,
-  liveRunId,
-  onClose,
-  onFinished,
-}: AgentActivityPanelProps) {
-  const [steps, setSteps] = useState<RunStep[]>([])
-  const [run, setRun] = useState<RunSummary | null>(null)
-  const [recentRuns, setRecentRuns] = useState<RecentRun[] | null>(null)
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
-
-  // Keep callbacks in refs so the polling effect doesn't resubscribe when the
-  // parent re-renders with new function identities.
+export function AgentActivityPanel({ mode, onClose, onFinished }: AgentActivityPanelProps) {
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
   const onFinishedRef = useRef(onFinished)
   onFinishedRef.current = onFinished
 
-  // ── Live polling ────────────────────────────────────────────────────────
-  const finishedRef = useRef(false)
+  // ── LIVE: scripted demo player ────────────────────────────────────────────
+  const [variant] = useState<MockRun | null>(() =>
+    mode === 'live' ? pickMockRun() : null
+  )
+  const [elapsed, setElapsed] = useState(0)
+  const doneRef = useRef(false)
   useEffect(() => {
-    if (mode !== 'live' || !liveRunId) return
-    let active = true
-    let timer: ReturnType<typeof setTimeout> | undefined
-    finishedRef.current = false
-    const tick = async () => {
-      try {
-        const res = await fetch(`/api/runs/${liveRunId}/steps`, {
-          cache: 'no-store',
-        })
-        if (res.ok) {
-          const data = (await res.json()) as {
-            run: RunSummary | null
-            steps: RunStep[]
-          }
-          if (!active) return
-          setSteps(data.steps ?? [])
-          setRun(data.run ?? null)
-          if (isTerminal(data.run?.status)) {
-            if (!finishedRef.current) {
-              finishedRef.current = true
-              onFinishedRef.current?.()
-              timer = setTimeout(() => {
-                if (active) onCloseRef.current()
-              }, 2800)
-            }
-            return // stop polling
-          }
-        }
-      } catch {
-        /* transient — keep polling */
+    if (mode !== 'live' || !variant) return
+    doneRef.current = false
+    const started = performance.now()
+    const iv = setInterval(() => {
+      const e = performance.now() - started
+      setElapsed(e)
+      if (e >= variant.closeAt && !doneRef.current) {
+        doneRef.current = true
+        clearInterval(iv)
+        onFinishedRef.current?.()
+        onCloseRef.current()
       }
-      if (active) timer = setTimeout(tick, 1000)
-    }
-    tick()
-    return () => {
-      active = false
-      if (timer) clearTimeout(timer)
-    }
-  }, [mode, liveRunId])
+    }, 120)
+    return () => clearInterval(iv)
+  }, [mode, variant])
 
-  // ── History: load the recent-runs list ───────────────────────────────────
+  // ── HISTORY: real past runs ───────────────────────────────────────────────
+  const [recentRuns, setRecentRuns] = useState<RecentRun[] | null>(null)
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
+  const [histSteps, setHistSteps] = useState<RunStep[]>([])
+  const [histRun, setHistRun] = useState<RunSummary | null>(null)
   useEffect(() => {
     if (mode !== 'history') return
     let active = true
@@ -289,19 +270,17 @@ export function AgentActivityPanel({
       active = false
     }
   }, [mode])
-
-  // ── History: fetch a selected run's steps once ────────────────────────────
   useEffect(() => {
     if (mode !== 'history' || !selectedRunId) return
     let active = true
-    setSteps([])
-    setRun(null)
+    setHistSteps([])
+    setHistRun(null)
     fetch(`/api/runs/${selectedRunId}/steps`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((data: { run: RunSummary | null; steps: RunStep[] }) => {
         if (!active) return
-        setSteps(data.steps ?? [])
-        setRun(data.run ?? null)
+        setHistSteps(data.steps ?? [])
+        setHistRun(data.run ?? null)
       })
       .catch(() => {})
     return () => {
@@ -309,10 +288,7 @@ export function AgentActivityPanel({
     }
   }, [mode, selectedRunId])
 
-  const terminal = isTerminal(run?.status)
-  const liveLoading = mode === 'live' && !terminal
-
-  // ── History list view ────────────────────────────────────────────────────
+  // ── History list view ─────────────────────────────────────────────────────
   if (mode === 'history' && !selectedRunId) {
     return (
       <div className={COLUMN_CLASS}>
@@ -343,13 +319,9 @@ export function AgentActivityPanel({
                     </div>
                     <span className="text-[11px] text-ink-muted">
                       {r.started_at
-                        ? formatDistanceToNow(new Date(r.started_at), {
-                            addSuffix: true,
-                          })
+                        ? formatDistanceToNow(new Date(r.started_at), { addSuffix: true })
                         : 'pending'}
-                      {typeof r.new_count === 'number'
-                        ? ` · ${r.new_count} new`
-                        : ''}
+                      {typeof r.new_count === 'number' ? ` · ${r.new_count} new` : ''}
                     </span>
                   </div>
                   <ChevronRight size={15} className="shrink-0 text-ink-muted" />
@@ -362,34 +334,82 @@ export function AgentActivityPanel({
     )
   }
 
-  // ── Timeline view (live, or a selected history run) ───────────────────────
-  const headerTitle =
-    mode === 'live'
-      ? terminal
-        ? 'Refresh complete'
-        : 'Refreshing your tasks'
-      : run?.trigger === 'cron'
-        ? 'Morning digest'
-        : 'Manual re-run'
+  // ── History detail (real run replay) ──────────────────────────────────────
+  if (mode === 'history') {
+    const display: DisplayStep[] = histSteps.map(realToDisplay)
+    return (
+      <div className={COLUMN_CLASS}>
+        <Header
+          title={histRun?.trigger === 'cron' ? 'Morning digest' : 'Manual re-run'}
+          onClose={onClose}
+          onBack={() => setSelectedRunId(null)}
+        />
+        <Timeline steps={display} loading={false} />
+      </div>
+    )
+  }
+
+  // ── LIVE render ───────────────────────────────────────────────────────────
+  const liveSteps: DisplayStep[] = variant
+    ? variant.steps
+        .filter((st) => elapsed >= st.appearAt)
+        .map((st) => {
+          const resolved = elapsed >= st.resolveAt
+          let subLabel: string | undefined
+          if (!resolved && st.subStates && st.subStates.length) {
+            const prog = (elapsed - st.appearAt) / Math.max(1, st.resolveAt - st.appearAt)
+            const idx = Math.min(
+              st.subStates.length - 1,
+              Math.max(0, Math.floor(prog * st.subStates.length))
+            )
+            subLabel = st.subStates[idx]
+          }
+          return {
+            id: st.id,
+            source: null,
+            img: st.img,
+            iconKey: st.iconKey,
+            status: (resolved ? st.status : 'running') as RunStepStatus,
+            label: resolved ? st.doneLabel : st.runningLabel,
+            subLabel,
+            detail: (st.detail as RunStepDetail) ?? null,
+            itemCount: null,
+          }
+        })
+    : []
+  const liveTerminal = !!variant && elapsed >= variant.summaryAt
 
   return (
     <div className={COLUMN_CLASS}>
       <Header
-        title={headerTitle}
+        title={liveTerminal ? 'Refresh complete' : 'Refreshing your tasks'}
+        subtitle={liveTerminal ? undefined : 'Watching the agent work through your sources'}
         onClose={onClose}
-        onBack={
-          mode === 'history' ? () => setSelectedRunId(null) : undefined
-        }
-        subtitle={
-          mode === 'live' && !terminal
-            ? 'Watching the agent work through your sources'
-            : undefined
-        }
       />
-      {terminal && mode === 'live' && <SummaryBanner run={run} />}
-      <Timeline steps={steps} loading={liveLoading} />
+      {liveTerminal && variant && <SummaryBanner label={variant.summaryLabel} failed={false} />}
+      <Timeline steps={liveSteps} loading />
     </div>
   )
+}
+
+function realToDisplay(s: RunStep): DisplayStep {
+  const phaseIcon: Record<string, string> = {
+    start: 'start',
+    classify: 'classify',
+    diff: 'diff',
+    finalize: 'done',
+    done: 'done',
+    error: 'error',
+  }
+  return {
+    id: s.id,
+    source: s.source,
+    iconKey: s.source ? undefined : phaseIcon[s.phase],
+    status: s.status,
+    label: s.label,
+    detail: s.detail,
+    itemCount: s.item_count,
+  }
 }
 
 function Header({

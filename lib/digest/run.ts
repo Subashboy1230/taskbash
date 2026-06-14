@@ -45,6 +45,21 @@ export interface DigestRunOpts {
   runId?: string
 }
 
+// A source that hangs (e.g. a connector whose connection times out, or a
+// slow per-event prep-brief pass) must never stall the whole run. Cap each
+// source; on timeout it's marked failed ("took too long") and the run
+// finishes with whatever the other sources returned.
+const SOURCE_TIMEOUT_MS = 90_000
+class SourceTimeoutError extends Error {}
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new SourceTimeoutError('source timed out')), ms)
+    ),
+  ])
+}
+
 export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSummary> {
   const t0 = Date.now()
   const { userId, userEmail } = opts
@@ -217,7 +232,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
       detail: meta.detail,
     })
     try {
-      const items = await fn()
+      const items = await withTimeout(fn(), SOURCE_TIMEOUT_MS)
       if (items === null) {
         await steps.finish(stepId, {
           status: 'skipped',
@@ -247,11 +262,14 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
         itemCount: added,
       })
     } catch (err) {
-      console.error(`[runDigest] ${source} failed:`, err)
+      const timedOut = err instanceof SourceTimeoutError
+      console.error(`[runDigest] ${source} ${timedOut ? 'timed out' : 'failed'}:`, err)
       sourcesFailed.push(source)
       await steps.finish(stepId, {
         status: 'failed',
-        label: `Couldn't reach ${meta.tool}`,
+        label: timedOut
+          ? `${meta.tool} took too long, skipped`
+          : `Couldn't reach ${meta.tool}`,
         itemCount: 0,
       })
     }
@@ -488,6 +506,10 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     itemCount: newCount,
   })
 
+  // Safety net: flip any step still marked 'running' (e.g. a finish() write
+  // that didn't land) to done, so the panel never shows a stuck spinner.
+  await steps.finalize('done')
+
   if (runId) {
     await supabase.from('runs').update({
       status: sourcesFailed.length > 0 && sourcesRun.length === 0 ? 'failed' : 'succeeded',
@@ -519,6 +541,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
       status: 'failed',
       label: 'Something went wrong during the refresh',
     })
+    await steps.finalize('failed')
     throw err
   }
 }
