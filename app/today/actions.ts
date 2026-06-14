@@ -576,17 +576,31 @@ export async function executeProposedAction(
  *   - No step.run() durability — a partial failure just retries on next click
  */
 export async function requestRefresh(): Promise<
-  { ok: true } | { ok: false; error: string }
+  { ok: true; runId: string | null } | { ok: false; error: string }
 > {
   try {
     const userId = await resolveUserId()
+    // Pre-create the runs row so we can hand the client a runId to watch
+    // live. runDigestForUser (in Inngest) reuses this row instead of
+    // inserting its own. Best-effort: if it fails we still fire the event.
+    let runId: string | null = null
+    try {
+      const { data } = await supabase
+        .from('runs')
+        .insert({ user_id: userId, trigger: 'manual', status: 'running', sources_run: [] })
+        .select('id')
+        .single()
+      runId = data?.id ?? null
+    } catch (e) {
+      console.error('requestRefresh: could not pre-create run row', e)
+    }
     // Fire the Inngest digest event — runs out-of-band so we return instantly
-    // instead of timing out after Vercel's 10s serverless limit.
+    // instead of timing out after Vercel's serverless limit.
     await inngest.send({
       name: EVENTS.digestRequested,
-      data: { userId },
+      data: { userId, runId },
     })
-    return { ok: true }
+    return { ok: true, runId }
   } catch (err) {
     console.error('requestRefresh failed:', err)
     return {

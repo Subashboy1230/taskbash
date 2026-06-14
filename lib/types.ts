@@ -169,6 +169,47 @@ export interface Run {
   error_message: string | null
 }
 
+// ── Run steps ────────────────────────────────────────────────────────────
+// Ordered, user-facing progress events for a single digest run. Written
+// best-effort by runDigestForUser as the pipeline progresses; surfaced live
+// in the Agent Activity panel and replayed from run history.
+// See migrations/031_run_steps.sql.
+
+export type RunStepPhase =
+  | 'start'
+  | 'source'
+  | 'classify'
+  | 'diff'
+  | 'finalize'
+  | 'done'
+  | 'error'
+
+export type RunStepStatus = 'running' | 'done' | 'skipped' | 'failed'
+
+// Optional, technical "under the hood" info shown behind a Details toggle.
+export interface RunStepDetail {
+  model?: string
+  prompt_id?: string
+  prompt_version?: number
+  tool?: string
+  note?: string
+}
+
+export interface RunStep {
+  id: string
+  run_id: string
+  user_id: string
+  seq: number
+  phase: RunStepPhase
+  source: Source | null
+  label: string
+  status: RunStepStatus
+  detail: RunStepDetail | null
+  item_count: number | null
+  started_at: string
+  completed_at: string | null
+}
+
 export interface Connection {
   id: string
   user_id: string

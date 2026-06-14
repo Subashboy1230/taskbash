@@ -96,6 +96,7 @@ export function TodayView({
   mainExpanded = false,
   unreadThreads = [],
   nowFromServer,
+  onRunStarted,
 }: {
   digest: MockDigestSummary
   userEmail?: string
@@ -120,6 +121,9 @@ export function TodayView({
   unreadThreads?: UnreadThread[]
   /** ISO string from the server — passed to all deadline formatters to avoid hydration mismatch. */
   nowFromServer?: string
+  /** Shell hook: a manual Re-run started; hand off its runId to the live
+   *  Agent Activity panel. When absent, handleRefresh falls back to a poll. */
+  onRunStarted?: (runId: string) => void
 }) {
   const nowTimestamp = nowMs(nowFromServer)
   const nowDate = useMemo(() => new Date(nowTimestamp), [nowTimestamp])
@@ -337,15 +341,20 @@ export function TodayView({
         })
         return
       }
+      // Hand off to the live Agent Activity panel (shell-owned): it polls the
+      // run, shows each step, refreshes the list when done, and auto-closes.
+      if (result.runId && onRunStarted) {
+        onRunStarted(result.runId)
+        return
+      }
+      // Fallback when there's no shell or no runId: blind refresh + a toast.
       const tid = toast.loading('Pulling tasks from your sources…', {
-        description: 'This usually takes 30–60 seconds.',
+        description: 'This usually takes 30 to 60 seconds.',
       })
-      // Digest runs async via Inngest (~30-60s). Poll every 5s for up to 90s.
       const start = Date.now()
-      while (Date.now() - start < 90_000) {
+      while (Date.now() - start < 35_000) {
         await new Promise(r => setTimeout(r, 5000))
         router.refresh()
-        if (Date.now() - start > 30_000) break
       }
       router.refresh()
       toast.success('Digest complete', { id: tid })

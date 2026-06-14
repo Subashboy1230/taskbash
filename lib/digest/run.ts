@@ -19,6 +19,7 @@ import { tagCallWithItems } from '../llm-trace'
 import { flushLangfuse } from '../langfuse'
 import { classifyAndTagFunctions } from '../classify/functions'
 import { loadUserFunctions } from '../load-functions'
+import { createRunStepEmitter, SOURCE_STEP } from './run-steps'
 import type { ExtractedItem, Item, Source } from '../types'
 
 export interface DigestRunSummary {
@@ -39,6 +40,9 @@ export interface DigestRunOpts {
   days?: number
   /** 'cron' (Inngest morning job) or 'manual' (Re-run button). Default 'manual'. */
   trigger?: 'cron' | 'manual'
+  /** When provided (manual Re-run path), reuse this pre-created runs row
+   *  instead of inserting a new one, so the client can watch it live. */
+  runId?: string
 }
 
 export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSummary> {
@@ -59,33 +63,50 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   const SUPERSEDE_WINDOW_MS = 15 * 60 * 1000
   const staleCutoff = new Date(Date.now() - SUPERSEDE_WINDOW_MS).toISOString()
   const sweepNow = new Date().toISOString()
-  await supabase
+  // Sweep prior 'running' rows, but never the row we were handed: the manual
+  // Re-run path pre-creates this run as 'running' before calling us, so
+  // sweeping every running row would mark our own run superseded.
+  let supersedeQ = supabase
     .from('runs')
     .update({ status: 'superseded', completed_at: sweepNow })
     .eq('user_id', userId)
     .eq('status', 'running')
     .gte('started_at', staleCutoff)
-  await supabase
+  let failQ = supabase
     .from('runs')
     .update({ status: 'failed', completed_at: sweepNow })
     .eq('user_id', userId)
     .eq('status', 'running')
     .lt('started_at', staleCutoff)
+  if (opts.runId) {
+    supersedeQ = supersedeQ.neq('id', opts.runId)
+    failQ = failQ.neq('id', opts.runId)
+  }
+  await supersedeQ
+  await failQ
 
-  // Insert a runs row immediately so the Activity page shows an in-progress
-  // entry even if the run fails halfway through.
-  const { data: runRow } = await supabase
-    .from('runs')
-    .insert({ user_id: userId, trigger, status: 'running', sources_run: [] })
-    .select('id')
-    .single()
-  const runId: string | null = runRow?.id ?? null
+  // Reuse the pre-created run row (manual path) or insert one now (cron), so
+  // the Activity page shows an in-progress entry even if the run fails midway.
+  let runId: string | null = opts.runId ?? null
+  if (!runId) {
+    const { data: runRow } = await supabase
+      .from('runs')
+      .insert({ user_id: userId, trigger, status: 'running', sources_run: [] })
+      .select('id')
+      .single()
+    runId = runRow?.id ?? null
+  }
+
+  // Emitter for the live Agent Activity panel. Declared before the try so the
+  // catch can record a failure step too. No-op when runId is null.
+  const steps = createRunStepEmitter(runId, userId)
 
   // Wrap the rest of the pipeline so that ANY throw flips the run row from
   // 'running' to 'failed' before re-throwing. Without this, a mid-run crash
   // leaves the row stuck in 'running' forever (until the NEXT digest run
   // sweeps it up at line 50–54, which can be hours or days later).
   try {
+  await steps.log({ phase: 'start', label: 'Starting — pulling from your connected sources', status: 'done' })
   // ─── Auto-unsnooze items whose snooze window has passed ──────────────
   await supabase
     .from('items')
@@ -127,7 +148,11 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   const sourcesFailed: Source[] = []
   const allFresh: ExtractedItem[] = []
 
-  await tryRun('granola', async () => {
+  // Sources run in PARALLEL so one slow or failing source (e.g. a Granola
+  // connection that times out after ~10s) never blocks the others. Each
+  // tryRun catches its own error and emits its own step, so Promise.all
+  // never rejects and the panel shows every source resolving live.
+  const runGranola = tryRun('granola', async () => {
     const conn = await getActiveConnection('granola', userId)
     if (!conn?.api_key) return null
     // Build the set of Granola meeting IDs that already have a proposed_action
@@ -148,7 +173,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     return items
   })
 
-  await tryRun('gmail', async () => {
+  const runGmail = tryRun('gmail', async () => {
     const conn = await getActiveConnection('gmail', userId)
     if (!conn?.nango_connection_id) return null
     const [inbox, sent] = await Promise.all([
@@ -158,13 +183,13 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     return [...inbox, ...sent]
   })
 
-  await tryRun('calendar', async () => {
+  const runCalendar = tryRun('calendar', async () => {
     const conn = await getActiveConnection('calendar', userId)
     if (!conn?.nango_connection_id) return null
     return extractCalendarPrepItems({ userEmail, userId })
   })
 
-  await tryRun('linear', async () => {
+  const runLinear = tryRun('linear', async () => {
     const conn = await getActiveConnection('linear', userId)
     if (!conn?.api_key) return null
     return extractLinearActionItems({ userEmail, userId })
@@ -173,18 +198,35 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   // Slack via Composio. Gated on COMPOSIO_API_KEY + COMPOSIO_SLACK_CONNECTION_ID
   // being set in env. composioSlackConfigured returns false when either is
   // missing, so this is a no-op until the user pastes credentials.
-  await tryRun('slack', async () => {
+  const runSlack = tryRun('slack', async () => {
     if (!composioSlackConfigured()) return null
     return extractSlackActionItems({ userEmail, userId, days })
   })
 
+  await Promise.all([runGranola, runGmail, runCalendar, runLinear, runSlack])
+
   async function tryRun(
-    source: Source,
+    source: Exclude<Source, 'manual'>,
     fn: () => Promise<ExtractedItem[] | null>
   ) {
+    const meta = SOURCE_STEP[source]
+    const stepId = await steps.start({
+      phase: 'source',
+      source,
+      label: meta.running,
+      detail: meta.detail,
+    })
     try {
       const items = await fn()
-      if (items === null) return
+      if (items === null) {
+        await steps.finish(stepId, {
+          status: 'skipped',
+          label: `${meta.tool} isn't connected`,
+          itemCount: 0,
+        })
+        return
+      }
+      const before = allFresh.length
       for (const parent of items) {
         // Drop mechanical event/logistics noise ("Join the Google Meet at
         // 12:15pm", dial-ins, bare meeting links) before it enters the diff.
@@ -194,10 +236,24 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
         // sub_items stay on parent.sub_items — written as child rows with
         // parent_id in the insert loop, not flattened into top-level siblings.
       }
+      const added = allFresh.length - before
       sourcesRun.push(source)
+      await steps.finish(stepId, {
+        status: 'done',
+        label:
+          added === 0
+            ? `Nothing new in ${meta.tool}`
+            : `Found ${added} ${added === 1 ? 'item' : 'items'} in ${meta.tool}`,
+        itemCount: added,
+      })
     } catch (err) {
       console.error(`[runDigest] ${source} failed:`, err)
       sourcesFailed.push(source)
+      await steps.finish(stepId, {
+        status: 'failed',
+        label: `Couldn't reach ${meta.tool}`,
+        itemCount: 0,
+      })
     }
   }
 
@@ -207,12 +263,24 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   const userFunctions = await loadUserFunctions().catch(() => [])
   let classifyCallId: string | null = null
   if (userFunctions.length > 0 && allFresh.length > 0) {
+    const classifyStep = await steps.start({
+      phase: 'classify',
+      label: 'Sorting tasks into your work areas',
+      detail: {
+        tool: 'Claude Haiku / Nebius Llama 3.3 70B',
+        prompt_id: 'classify.functions',
+      },
+    })
     const result = await classifyAndTagFunctions({
       items: allFresh,
       functions: userFunctions,
       userId,
     })
     classifyCallId = result.classifyCallId
+    await steps.finish(classifyStep, {
+      status: 'done',
+      label: 'Sorted tasks into your work areas',
+    })
   }
 
   // ─── Diff per-source and persist ─────────────────────────────────────
@@ -225,6 +293,14 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
   // the end of the loop to tag llm_calls.produced_item_ids so per-prompt
   // slop_rate joins on /observability return real numbers.
   const callToItemIds = new Map<string, string[]>()
+
+  const diffStep = await steps.start({
+    phase: 'diff',
+    label: 'Comparing against your existing tasks',
+    detail: {
+      note: 'Adds new tasks, keeps current ones, skips anything you already cleared',
+    },
+  })
 
   for (const source of sourcesRun) {
     const freshForSource = allFresh.filter(i => i.source === source)
@@ -372,6 +448,12 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     completedCount += 0
   }
 
+  await steps.finish(diffStep, {
+    status: 'done',
+    label: `Added ${newCount} new, kept ${carryoverCount}, skipped ${suppressedCount}`,
+    itemCount: newCount,
+  })
+
   // Tag each LLM call with the items it actually produced. Fire-and-
   // forget per call — observability writes must not block the digest.
   await Promise.all(
@@ -395,6 +477,16 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     suppressed: suppressedCount,
     durationMs: Date.now() - t0,
   }
+
+  await steps.log({
+    phase: 'done',
+    status: 'done',
+    label:
+      newCount === 0
+        ? "Done — you're all caught up"
+        : `Done — added ${newCount} new ${newCount === 1 ? 'task' : 'tasks'}`,
+    itemCount: newCount,
+  })
 
   if (runId) {
     await supabase.from('runs').update({
@@ -422,6 +514,11 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
         }).eq('id', runId)
       } catch { /* swallow — the original error is more interesting */ }
     }
+    await steps.log({
+      phase: 'error',
+      status: 'failed',
+      label: 'Something went wrong during the refresh',
+    })
     throw err
   }
 }
