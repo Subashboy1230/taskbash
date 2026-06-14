@@ -46,10 +46,15 @@ export const morningDigest = inngest.createFunction(
       return { userId: user.id as string, userEmail: user.email as string }
     })
 
+    // Manual Re-run pre-creates a runs row and passes its id so the client
+    // can watch this exact run live; cron has no runId and creates its own.
+    const runId = (event.data as { runId?: string } | undefined)?.runId?.trim() || undefined
+    const isManual = !!(event.data as { userId?: string } | undefined)?.userId
+
     logger.info(`running digest for ${userEmail} (${userId})`)
 
     const summary = await step.run('run-digest', async () =>
-      runDigestForUser({ userId, userEmail, trigger: 'cron' })
+      runDigestForUser({ userId, userEmail, trigger: isManual ? 'manual' : 'cron', runId })
     )
 
     logger.info('digest complete', summary)
