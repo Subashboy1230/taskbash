@@ -51,8 +51,10 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   if (openErr) throw new Error(`loadDigest openItems failed: ${openErr.message}`)
 
   // Belt-and-suspenders for calendar prep items: always pull every open
-  // calendar prep regardless of the cap, then merge any missing ones into
-  // openItems. Two-fold reason:
+  // calendar prep regardless of the cap. We merge any missing ones into
+  // the typed openItems array further down (after it is coerced from
+  // openRows), so we don't fight the supabase return-type union here.
+  // Two-fold reason for the dedicated query:
   //   1. The Prep tab is the headline calendar UX (next 48 hours of meetings).
   //      Hiding any of them because of an Open-tab cap is a worse failure
   //      than letting the Open tab grow.
@@ -68,13 +70,6 @@ export async function loadDigest(): Promise<MockDigestSummary> {
     .is('parent_id', null)
     .order('due_at', { ascending: true, nullsFirst: false })
   if (calErr) throw new Error(`loadDigest calendar overflow failed: ${calErr.message}`)
-  if (calRows && calRows.length > 0) {
-    const seen = new Set((openRows ?? []).map(r => (r as { id: string }).id))
-    for (const c of calRows) {
-      const id = (c as { id: string }).id
-      if (!seen.has(id)) (openRows as unknown[]).push(c)
-    }
-  }
 
   // Completed today (the cleared section) — fetch rows + exact count separately
   // so the tab badge shows the real total even when the row list is capped.
@@ -103,6 +98,15 @@ export async function loadDigest(): Promise<MockDigestSummary> {
   const openItems = (openRows || []) as Item[]
   const completedItems = (completedRows || []) as Item[]
   const snoozedItems = (snoozedRows || []) as Item[]
+
+  // Merge calendar prep items that didn't make the 500-row cap. See the
+  // belt-and-suspenders comment near the calRows query for the why.
+  if (calRows && calRows.length > 0) {
+    const seenIds = new Set(openItems.map(i => i.id))
+    for (const c of calRows as Item[]) {
+      if (!seenIds.has(c.id)) openItems.push(c)
+    }
+  }
 
   // Load subtasks for every parent in either list. One query, then bucket
   // them onto the right parent by parent_id. We include completed subtasks so
