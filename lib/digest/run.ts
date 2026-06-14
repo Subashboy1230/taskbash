@@ -290,12 +290,8 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
           list.push(inserted.id)
           callToItemIds.set(fresh._llm_call_id, list)
         }
-        // Await the task_events write. On Vercel serverless the
-        // container is killed at function return, so detached promises
-        // (void supabase.from(...)) get dropped — same teardown bug that
-        // ate llm_calls traces. The latency here is ~30ms and runs once
-        // per new item, which is fine inside an Inngest step.
-        await supabase.from('task_events').insert({
+        // Fire-and-forget task_events write — doesn't block the digest
+        void supabase.from('task_events').insert({
           user_id: userId,
           item_id: inserted.id,
           kind: 'created',
@@ -324,9 +320,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
               status: 'open' as const,
             }
           })
-          // Same teardown reason as above. Subtask inserts were silently
-          // dropping when the Inngest step finished mid-insert.
-          await supabase.from('items').insert(subInserts)
+          void supabase.from('items').insert(subInserts)
         }
       }
       // Ignore unique-index race (23505) — treat as carryover silently.
