@@ -40,9 +40,9 @@ import { BrandLogo } from '@/app/_components/brand-logo'
 export const dynamic = 'force-static'
 
 export const metadata = {
-  title: 'taskbash · never miss a task, never track one either',
+  title: 'taskbash · autocomplete your tasks. ship 20% more per week.',
   description:
-    'taskbash auto-captures every commitment you make across Gmail, meetings, Linear, and Calendar into one daily list. It learns what matters to you so the list stays clean. No manual tracking.',
+    'taskbash autocompletes the busywork around your real job. Drafts replies, preps you for every meeting, runs follow-ups, surfaces only the work that needs your attention. Operators dogfooding it ship 20% more per week.',
 }
 
 export default function HomePage() {
@@ -100,25 +100,25 @@ function Hero() {
         <div className="animate-fade-in-up">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-medium uppercase tracking-wider text-ink-muted">
             <Sparkles size={12} className="text-ink" />
-            AI chief of staff
+            AI Chief of Staff
           </span>
           <h1 className="mt-5 m-0 text-[44px] font-semibold leading-[1.05] tracking-tight text-ink md:text-[56px]">
-            Never miss a task.
+            Autocomplete your tasks.
             <br />
-            <span className="text-ink-muted">Never track one either.</span>
+            <span className="text-ink-muted">Ship 20% more per week.</span>
           </h1>
           <p className="mt-5 max-w-[520px] text-[16px] leading-relaxed text-ink-muted md:text-[17px]">
-            taskbash pulls every commitment you make across Gmail, meetings,
-            Linear, and Calendar into one ranked daily list. It drafts your
-            replies, preps you for meetings, and learns your priorities. The
-            list stays clean without you managing it.
+            taskbash autocompletes the busywork around your real job. It drafts
+            replies, preps you for every meeting, runs follow-ups, and surfaces
+            only the work that needs you. Operators dogfooding it ship 20% more
+            per week without staying later.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
               href="/login"
               className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-[15px] font-medium text-primary-foreground hover:bg-accent-strong"
             >
-              Get organized in 60 seconds
+              Get back 20% of your week
               <ArrowRight size={15} />
             </Link>
             <a
@@ -272,27 +272,27 @@ function HowItWorks() {
     <section id="how" className="mx-auto max-w-[1100px] px-6 py-20">
       <SectionHeader
         eyebrow="How it works"
-        title="Three steps. One clean list."
-        subtitle="Connect once. Open the app every morning. Dismiss what doesn't belong. The agent learns the pattern."
+        title="Let agents do the work for you."
+        subtitle="Workflows are the agents that run on top of your connected tools. Background workflows run on taskbash. Browser workflows hand you a Claude prompt you paste into Cowork. One is live today; the rest are queued."
       />
       <div className="mt-12 grid gap-4 md:grid-cols-3">
         <StepCard
           n="01"
           icon={<Zap size={18} />}
           title="Connect once"
-          body="One-click OAuth for Gmail, Calendar, Granola, Linear. Reads only what you authorize. No new credentials to manage, no extension to install."
+          body="One-click OAuth for Gmail, Calendar, Granola, Linear, and the rest. Reads only what you authorize. No new credentials, no extension."
         />
         <StepCard
           n="02"
           icon={<ListTodo size={18} />}
-          title="Open your list every morning"
-          body="taskbash pulled everything overnight. One ranked list of what you owe people today. Meeting briefs ready. Replies pre-drafted. Walk in caught up."
+          title="Background workflows ship the busywork"
+          body="Gmail Draft Replies is live: every thread that needs a response gets a draft in your voice before you open the app. Email triage, follow-ups, meeting setter, candidate shortlisting, PRD writer are queued next."
         />
         <StepCard
           n="03"
           icon={<Brain size={18} />}
-          title="It learns your style"
-          body="Dismiss anything that isn't yours. taskbash figures out the pattern: what kind of work you care about, what's someone else's job. No rules to set up. It adapts."
+          title="Browser workflows hand off to Cowork"
+          body="LinkedIn outreach and automatic QA need a real browser. Click a workflow and taskbash hands you a Claude prompt you paste into Cowork to run the agent on your screen, with full control."
         />
       </div>
     </section>
@@ -340,9 +340,9 @@ function FeatureGrid() {
     <section id="features" className="border-t border-line/60 bg-surface/30">
       <div className="mx-auto max-w-[1100px] px-6 py-20">
         <SectionHeader
-          eyebrow="What it does"
-          title="One list. Six ways it helps."
-          subtitle="Built for operators who live in their inbox, their calendar, and their meeting notes all at once."
+          eyebrow="What gets autocompleted"
+          title="Six places taskbash already does the work."
+          subtitle="Built for operators who live in their inbox, their calendar, and their meeting notes at the same time."
         />
         <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <FeatureCard
@@ -420,20 +420,18 @@ function SlopLoopSection() {
             Adapts to you
           </span>
           <h2 className="mt-5 m-0 text-[36px] font-semibold leading-tight tracking-tight text-ink md:text-[40px]">
-            Most apps make you fit them.
-            <br />
-            <span className="text-ink-muted">taskbash fits you.</span>
+            The autocomplete gets sharper every week.
           </h2>
           <p className="mt-5 max-w-[460px] text-[15px] leading-relaxed text-ink-muted">
-            Most task apps need rules, tags, and projects set up before they
-            work. taskbash works on day one and gets sharper from there.
-            Dismiss what isn't yours. Skip a category you don't care about.
-            The agent picks up the pattern and stops surfacing similar items.
+            Most task apps need rules, tags, and projects before they work.
+            taskbash works on day one and gets sharper from there. Dismiss
+            what isn't yours. Skip a category you don't care about. The agent
+            picks up the pattern and stops surfacing similar items, so the
+            autocomplete keeps improving.
           </p>
           <p className="mt-3 max-w-[460px] text-[14px] leading-relaxed text-ink-faint">
-            Two weeks in, your list is mostly things you want to do. A month
-            in, taskbash knows your priorities better than any todo app
-            you've used.
+            Week one: 20% more shipped. Week four: the agent knows your
+            priorities better than the todo app you stopped using.
           </p>
         </div>
 
@@ -449,11 +447,11 @@ function SlopLoopSection() {
 
 function LoopDiagram() {
   const steps = [
-    { n: '1', label: 'Reads', sub: 'Pulls fresh commitments from every connected tool overnight' },
-    { n: '2', label: 'Surfaces', sub: 'One ranked list, ready when you open the app' },
-    { n: '3', label: 'Notices', sub: 'Watches what you keep, dismiss, or correct' },
-    { n: '4', label: 'Learns', sub: "Figures out what's yours and what isn't" },
-    { n: '5', label: 'Adapts', sub: 'Next week the list is sharper. The week after, sharper still.' },
+    { n: '1', label: 'Reads', sub: 'Pulls every fresh commitment from your connected tools overnight' },
+    { n: '2', label: 'Drafts', sub: 'Autocompletes replies, prep briefs, and follow-ups before you log in' },
+    { n: '3', label: 'Surfaces', sub: 'One ranked list of what actually needs your brain today' },
+    { n: '4', label: 'Notices', sub: 'Watches what you keep, send, dismiss, or rewrite' },
+    { n: '5', label: 'Improves', sub: 'Next week the autocomplete is sharper. Operators ship 20% more.' },
   ]
   return (
     <ol className="m-0 list-none space-y-3 p-0">
@@ -482,26 +480,26 @@ function LoopDiagram() {
 
 function StackSection() {
   const stack = [
-    { name: 'Next.js', sub: 'App Router, RSC' },
-    { name: 'Supabase', sub: 'Postgres + Auth + RLS' },
-    { name: 'Inngest', sub: 'Crons + event functions' },
-    { name: 'Anthropic', sub: 'Claude Opus + Haiku' },
-    { name: 'Nebius', sub: 'Token Factory for cheap classification' },
-    { name: 'Tavily', sub: 'Live web context on meeting briefs' },
-    { name: 'Nango', sub: 'OAuth for Gmail, Calendar, Granola, Linear' },
-    { name: 'Composio', sub: 'Slack tools via hosted OAuth' },
+    { name: 'Composio', sub: 'Hosted OAuth + tool registry for every connected source' },
+    { name: 'Nebius', sub: 'Token Factory: Llama 3.3 70B for cheap classification' },
+    { name: 'Tavily', sub: 'Live web context on every meeting prep brief' },
+    { name: 'mem0', sub: 'Long-term memory that learns from every slop click' },
+    { name: 'Anthropic', sub: 'Claude Sonnet for synthesis, Haiku for extraction' },
+    { name: 'Inngest', sub: 'Crons, event functions, retries' },
+    { name: 'Supabase', sub: 'Postgres, Auth, RLS' },
     { name: 'Langfuse', sub: 'LLM trace + slop scoring' },
+    { name: 'Next.js', sub: 'App Router, React Server Components' },
     { name: 'Sentry', sub: 'Production error capture' },
-    { name: 'Twilio', sub: 'WhatsApp digest + reminders' },
-    { name: 'TypeScript', sub: 'Strict, end-to-end typed' },
+    { name: 'Twilio', sub: 'WhatsApp morning digest + reminders' },
+    { name: 'Vercel', sub: 'Edge deploys, preview branches' },
   ]
   return (
     <section className="border-y border-line/60 bg-surface/30">
       <div className="mx-auto max-w-[1100px] px-6 py-16">
         <SectionHeader
           eyebrow="Under the hood"
-          title="Built on the boring, reliable stack."
-          subtitle="Every component picked because it works in production, not because it's trendy."
+          title="The stack that makes the autocomplete work."
+          subtitle="Composio handles tool calling and OAuth. Nebius runs the cheap classifier. Tavily fetches live context. mem0 keeps the agent learning. Anthropic synthesizes. Each piece picked because it works in production."
         />
         <div className="mt-10 grid gap-3 md:grid-cols-4">
           {stack.map(s => (
@@ -527,11 +525,11 @@ function FinalCTA() {
       <Card className="border-line bg-surface">
         <CardContent className="px-6 py-12 text-center md:px-10 md:py-16">
           <h2 className="m-0 text-[34px] font-semibold leading-tight tracking-tight text-ink md:text-[40px]">
-            Stop tracking. Start finishing.
+            Get back 20% of your week.
           </h2>
           <p className="mx-auto mt-3 max-w-[460px] text-[15px] leading-relaxed text-ink-muted">
-            Connect Gmail and Calendar in 60 seconds. See your first list in
-            under five minutes. Cancel anytime.
+            Connect Gmail and Calendar in 60 seconds. Your first autocompleted
+            list lands in under five minutes. Cancel anytime.
           </p>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             <Link
@@ -569,7 +567,7 @@ function Footer() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo-new.png" alt="taskbash" width={16} height={16} />
           <span className="font-medium text-ink-muted">taskbash</span>
-          <span>· Never miss a task. Never track one either.</span>
+          <span>Autocomplete your tasks. Ship 20% more per week.</span>
         </div>
         <div className="flex items-center gap-4">
           <a href="/privacy" className="hover:text-ink">Privacy</a>
