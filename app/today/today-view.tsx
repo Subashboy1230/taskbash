@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import {
   Check,
   ChevronDown,
@@ -331,25 +331,11 @@ export function TodayView({
         })
       })
   }
-  // ─── Demo cap ────────────────────────────────────────────────────────
-  // For pitch demos, cap the Open tab at 198 items so the Re-run animation
-  // can dramatically reveal the rest. Pass ?live=true on the URL to disable.
-  // setDemoRevealed flips to true 55s after Re-run is clicked so the new
-  // items appear right as the Agent Activity panel finishes its sequence.
-  const searchParams = useSearchParams()
-  const isLive = searchParams?.get('live') === 'true'
-  const [demoRevealed, setDemoRevealed] = useState(false)
-  const DEMO_CAP = 198
-
   function handleRefresh() {
     // Demo mode: play the scripted Agent Activity mockup (see mock-run.ts).
     // This intentionally does NOT run the real digest.
     startRefresh(() => {
       onRunStarted?.('mock')
-      // Reveal the held-back items right as the 60s mock animation finishes.
-      // 55s gives a beat where the count badge jumps from 198 to full before
-      // the panel auto-closes, selling the "agent just found new work" moment.
-      window.setTimeout(() => setDemoRevealed(true), 55_000)
     })
   }
 
@@ -378,10 +364,7 @@ export function TodayView({
     setOrderedPrep(allVisible.filter(isPrep))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [digest.open_items])
-  // Apply the demo cap: hold back items past the cap until Re-run reveals
-  // them (or until ?live=true is set, which bypasses the cap entirely).
-  const visibleOpen =
-    isLive || demoRevealed ? orderedOpen : orderedOpen.slice(0, DEMO_CAP)
+  const visibleOpen = orderedOpen
 
   // Split prep into upcoming vs past-their-end-time.
   // A meeting is "past" when its due_at (= meeting start) is more than
