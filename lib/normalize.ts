@@ -231,14 +231,13 @@ export function computeAnchorKey(
   })
   if (anchors.length === 0) return null
 
-  // Require at least one MULTI-WORD proper noun ("Eric Lavin", "IIT Bombay",
-  // "Andy Bermeo") — a single capitalized word is usually just a project or
-  // vendor name that we'd rather see as a hash match, not an anchor collapse.
-  // This prevents anchors like `follow::follow` or `send::aarav` from
-  // clustering genuinely-different commitments (e.g. "Send offer to Aarav"
-  // and "Send demo to Aarav" both have anchor "Aarav" alone).
-  const hasMultiWord = anchors.some(a => a.includes(' '))
-  if (!hasMultiWord) return null
+  // NOTE: we used to require a multi-word proper noun here ("Eric Lavin",
+  // not just "Eric") but that dropped dedup for common patterns like
+  // "Reconnect with Andy on ASCA 2026" where every anchor is single-word.
+  // The content-word disambiguator below is a strong enough safety net
+  // against genuine-non-dupe collisions like
+  // "Send offer to Aarav" vs "Send demo to Aarav" (offer vs demo differ,
+  // so their anchor keys differ despite same person).
 
   // First stemmed verb we can find in the title (usually word 0)
   const firstWord = title.split(/\s+/)[0]?.toLowerCase() ?? ''
