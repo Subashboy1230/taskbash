@@ -16,10 +16,11 @@ export const MODELS = {
   // on email/Granola/calendar. Optimized for throughput + cost, not for
   // adversarial judgment.
   classifier: 'claude-haiku-4-5-20251001',
-  // Judge model — Sonnet. Second-pass adversarial reviewer over every
+  // Judge model — Opus 4.7. Second-pass adversarial reviewer over every
   // extractor output: decides keep / drop / merge / demote-to-subtask and
-  // fixes tag / priority / draft_confidence. Trades cost for accuracy.
-  judge: 'claude-sonnet-4-6',
+  // fixes tag / priority / draft_confidence. Max-out on reasoning quality
+  // since judge accuracy directly gates every task the user sees.
+  judge: 'claude-opus-4-7',
   // Synthesis model — Opus 4.7. Used for briefs and meeting prep.
   synthesis: 'claude-opus-4-7',
 } as const
