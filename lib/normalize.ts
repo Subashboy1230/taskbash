@@ -30,13 +30,152 @@ export function normalizeText(input: string): string {
  * computeSemanticHash — NOT in the general normalizeText — to keep the blast
  * radius on the dedupe key, where the diff engine's source_ref fallback still
  * protects existing rows whose stored hash predates this map.
+ *
+ * Groups (canonical stem in parens):
+ *   send    : write, draft, deliver, share, provide, forward, dispatch
+ *   meet    : schedule, reschedule, coordinate, set up, book, arrange
+ *   confirm : verify, validate, check, double-check, ensure, ack
+ *   reply   : respond, answer, get back, follow up (to a message)
+ *   review  : evaluate, look at, look over, read, assess, audit, examine
+ *   decide  : approve, sign off, choose, finalize
+ *   followup: chase, ping, nudge, circle back, touch base
+ *   discuss : talk about, chat with, sync with, cover, walk through
+ *   connect : reach out, ping (as first-touch), reconnect, get in touch
+ *   update  : refresh, edit, revise, adjust, change (a doc/record)
+ *   add     : append, include, insert (to a doc/list)
+ *   build   : create, make, put together, spin up, stand up
  */
 const VERB_STEMS: Record<string, string> = {
-  send: 'send', sent: 'send', sending: 'send', draft: 'send', drafted: 'send', drafting: 'send',
-  connect: 'meet', call: 'meet', meeting: 'meet', meet: 'meet', schedule: 'meet', scheduling: 'meet',
+  // send group
+  send: 'send', sent: 'send', sending: 'send',
+  draft: 'send', drafted: 'send', drafting: 'send',
+  write: 'send', writing: 'send', wrote: 'send',
+  deliver: 'send', delivering: 'send',
+  share: 'send', sharing: 'send', shared: 'send',
+  provide: 'send', providing: 'send', provided: 'send',
+  forward: 'send', forwarding: 'send',
+  dispatch: 'send', dispatching: 'send',
+
+  // meet / schedule group
+  connect: 'meet',
+  call: 'meet', calling: 'meet',
+  meeting: 'meet', meet: 'meet',
+  schedule: 'meet', scheduling: 'meet', scheduled: 'meet',
+  reschedule: 'meet', rescheduling: 'meet',
+  coordinate: 'meet', coordinating: 'meet',
+  book: 'meet', booking: 'meet',
+  arrange: 'meet', arranging: 'meet',
+  setup: 'meet',
+
+  // confirm group
+  confirm: 'confirm', confirming: 'confirm', confirmed: 'confirm',
+  verify: 'confirm', verifying: 'confirm',
+  validate: 'confirm', validating: 'confirm',
+  check: 'confirm', checking: 'confirm',
+  ensure: 'confirm', ensuring: 'confirm',
+  ack: 'confirm', acknowledge: 'confirm',
+
+  // reply group
+  reply: 'reply', replying: 'reply', replied: 'reply',
+  respond: 'reply', responding: 'reply', responded: 'reply',
+  answer: 'reply', answering: 'reply', answered: 'reply',
+
+  // review group
+  review: 'review', reviewing: 'review', reviewed: 'review',
+  evaluate: 'review', evaluating: 'review',
+  look: 'review', looking: 'review',
+  read: 'review', reading: 'review',
+  assess: 'review', assessing: 'review',
+  audit: 'review', auditing: 'review',
+  examine: 'review', examining: 'review',
+
+  // decide group
+  decide: 'decide', deciding: 'decide',
+  approve: 'decide', approving: 'decide',
+  finalize: 'decide', finalizing: 'decide',
+  choose: 'decide', choosing: 'decide',
+
+  // followup group
+  followup: 'followup', 'follow-up': 'followup',
+  chase: 'followup', chasing: 'followup',
+  ping: 'followup', pinging: 'followup',
+  nudge: 'followup', nudging: 'followup',
+
+  // discuss group
+  discuss: 'discuss', discussing: 'discuss', discussed: 'discuss',
+  chat: 'discuss', chatting: 'discuss',
+  sync: 'discuss', syncing: 'discuss',
+  cover: 'discuss', covering: 'discuss',
+
+  // connect / reach group
+  reach: 'connect', reaching: 'connect',
+  reconnect: 'connect', reconnecting: 'connect',
+  contact: 'connect', contacting: 'connect',
+
+  // update group
+  update: 'update', updating: 'update', updated: 'update',
+  edit: 'update', editing: 'update',
+  revise: 'update', revising: 'update',
+  adjust: 'update', adjusting: 'update',
+  change: 'update', changing: 'update',
+  refresh: 'update', refreshing: 'update',
+
+  // add group
+  add: 'add', adding: 'add', added: 'add',
+  append: 'add', appending: 'add',
+  include: 'add', including: 'add',
+  insert: 'add', inserting: 'add',
+
+  // build group
+  build: 'build', building: 'build', built: 'build',
+  create: 'build', creating: 'build',
+  make: 'build', making: 'build',
+
+  // design group (kept from original)
   design: 'design', redesign: 'design', designing: 'design',
-  reply: 'reply', respond: 'reply', responding: 'reply', answer: 'reply', answering: 'reply',
-  review: 'review', evaluate: 'review', evaluating: 'review', look: 'review',
+}
+
+// Stopwords stripped from the dedupe key. Kept minimal so the meaningful
+// object of the task (person names, projects, deliverables) survives.
+const STOPWORDS = new Set([
+  'the', 'a', 'an',
+  'to', 'for', 'with', 'on', 'in', 'from', 'via', 'by', 'at', 'of', 'about',
+  'and', 'or',
+  'our', 'your', 'my', 'their', 'his', 'her',
+  'this', 'that', 'these', 'those',
+  'is', 'are', 'be',
+  'new', 'next',
+])
+
+// Noise tokens that add color but not identity. "Confirm meeting time with X"
+// and "Confirm meeting with X" describe the same commitment.
+const NOISE_TAIL = new Set([
+  'time', 'times', 'day', 'date',
+  'now', 'today', 'tomorrow', 'week', 'weekly', 'monthly',
+  'details', 'info', 'information', 'stuff',
+  'thread', 'email', 'message',
+  'follow-up', 'followup',
+])
+
+// Time-of-day tokens and periods. "Confirm 12:00 PM ET meeting" collapses to
+// "confirm meeting" once these are dropped.
+const TIME_MARKERS = /\b(\d{1,2}(:\d{2})?\s?(am|pm)|est|edt|pst|pdt|cet|utc|gmt|et|pt|ct|mt)\b/gi
+const NUMBER_TOKEN = /\b\d+(st|nd|rd|th)?\b/g
+
+/**
+ * Aggressive normalization used ONLY inside the dedupe hash. Strips stopwords,
+ * noise tails, time markers, and standalone numbers so titles that describe
+ * the same commitment with different color hash to the same key.
+ */
+function hashNormalize(text: string): string {
+  let s = normalizeText(text)
+  s = s.replace(TIME_MARKERS, ' ')
+  s = s.replace(NUMBER_TOKEN, ' ')
+  const tokens = s
+    .split(/\s+/)
+    .map(w => VERB_STEMS[w] ?? w)
+    .filter(w => w && !STOPWORDS.has(w) && !NOISE_TAIL.has(w))
+  return tokens.join(' ').trim()
 }
 
 function stemVerbs(text: string): string {
@@ -49,16 +188,74 @@ function stemVerbs(text: string): string {
 /**
  * Stable dedupe key. Same (source + normalized parent + normalized title) for
  * the same user maps to the same hash, so re-extracting the same item never
- * creates a duplicate row. Verbs are canonicalized (see VERB_STEMS) so verb-
- * substituted near-dupes ("Send proposal" / "Draft proposal") collapse.
- *
- * 16-char prefix is plenty for collision avoidance at this scale (~100k items).
+ * creates a duplicate row. Titles are aggressively normalized (verbs stemmed,
+ * stopwords + noise tails + time markers dropped) so near-duplicate phrasings
+ * collapse. 16-char prefix is plenty at ~100k items.
  */
 export function computeSemanticHash(
   source: Source,
   parentContext: string,
   title: string
 ): string {
-  const normalized = `${source}::${stemVerbs(normalizeText(parentContext))}::${stemVerbs(normalizeText(title))}`
+  const normalized = `${source}::${stemVerbs(normalizeText(parentContext))}::${hashNormalize(title)}`
   return createHash('sha256').update(normalized).digest('hex').slice(0, 16)
+}
+
+/**
+ * Anchor key — a secondary dedupe signal that catches cross-source or cross-
+ * thread duplicates the semantic hash misses. Pulls capitalized proper nouns
+ * (people, companies, projects) from the title, sorts them, joins. Two titles
+ * that share the same anchor + same stemmed verb are almost always the same
+ * commitment even when the wording drifts wildly.
+ *
+ *   "Confirm meeting with Eric Lavin"          → "confirm|Eric Lavin"
+ *   "Confirm 12pm meeting time with Eric Lavin" → "confirm|Eric Lavin"
+ *   "Update Andy Bermeo's EverTutor credentials"          → "update|Andy Bermeo EverTutor"
+ *   "Update Andy Bermeo's EverTutor account credentials"  → "update|Andy Bermeo EverTutor"
+ *
+ * Returns null when no proper noun anchor exists (task is too generic to
+ * safely dedupe on a verb alone).
+ */
+export function computeAnchorKey(
+  source: Source,
+  title: string
+): string | null {
+  if (!title) return null
+  // Grab EVERY capitalized run of 1-N words. We use the raw list to detect
+  // proper-noun quality, not just the sentence-initial title case.
+  const rawAnchors = title.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) ?? []
+  // Strip sentence-initial verbs ("Send X to Y" → drop "Send", keep "Y").
+  const anchors = rawAnchors.filter((a, i) => {
+    if (i === 0 && VERB_STEMS[a.toLowerCase()]) return false
+    return a.length > 2
+  })
+  if (anchors.length === 0) return null
+
+  // Require at least one MULTI-WORD proper noun ("Eric Lavin", "IIT Bombay",
+  // "Andy Bermeo") — a single capitalized word is usually just a project or
+  // vendor name that we'd rather see as a hash match, not an anchor collapse.
+  // This prevents anchors like `follow::follow` or `send::aarav` from
+  // clustering genuinely-different commitments (e.g. "Send offer to Aarav"
+  // and "Send demo to Aarav" both have anchor "Aarav" alone).
+  const hasMultiWord = anchors.some(a => a.includes(' '))
+  if (!hasMultiWord) return null
+
+  // First stemmed verb we can find in the title (usually word 0)
+  const firstWord = title.split(/\s+/)[0]?.toLowerCase() ?? ''
+  const verb = VERB_STEMS[firstWord] ?? firstWord
+  if (!verb) return null
+
+  // Include the LONGEST anchor (usually the person's full name) as the object.
+  // Adding a length-normalized object token guards against "same verb + same
+  // person" collapsing genuinely different tasks — "Send offer to Aarav Kalra"
+  // vs "Send demo to Aarav Kalra" still share the anchor, so we also drop in
+  // the FIRST content noun (first lowercase word after the verb) to keep them
+  // apart.
+  const words = title.split(/\s+/).map(w => w.toLowerCase())
+  const contentWord = words
+    .slice(1)
+    .find(w => w && !STOPWORDS.has(w) && !NOISE_TAIL.has(w) && !/^\d/.test(w))
+    ?? ''
+  const anchorList = Array.from(new Set(anchors)).sort().join(' ').toLowerCase()
+  return `${source}::${verb}::${anchorList}::${contentWord}`
 }

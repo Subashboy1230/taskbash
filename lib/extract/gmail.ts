@@ -30,7 +30,7 @@ import { supabase } from '../supabase'
 
 // Bump when you change SYSTEM_PROMPT or buildExtractionPrompt — used by
 // the observability page to bucket slop-rate per prompt revision.
-const PROMPT_VERSION = 2
+const PROMPT_VERSION = 3
 
 const GMAIL_API = '/gmail/v1/users/me'
 
@@ -431,7 +431,7 @@ Schema:
 {
   "items": [
     {
-      "title": "string. Imperative form, max 8 words, MUST include the specific topic. Example: 'Reply on EverTutor pilot next steps' NOT 'Reply to email' or 'Reply to Megan'.",
+      "title": "string. Imperative form, max 8 words, MUST include the specific topic. Example: 'Reply on EverTutor pilot next steps' NOT 'Reply to email' or 'Reply to Megan'. See TITLE FORMAT below for the canonical structure.",
       "subtitle": "string. 1-2 sentences, max 30 words. Explain who triggered this, what they are asking, and what context the user needs to act. Reference specific names, topics, dollar amounts. No em-dashes.",
       "entities": [
         { "kind": "person" | "project" | "thread", "label": "Display Name", "ref": "optional email or id" }
@@ -455,6 +455,19 @@ Rules:
 - Skip vague items with no concrete action.
 - ONLY extract tasks explicitly supported by the email text. Do not infer or invent tasks. An empty list is a correct, expected answer for a thread with nothing actionable.
 - If no qualifying items, return { "items": [] }.
+
+ONE ITEM PER COMMITMENT (dedup rule — read carefully):
+- A thread can span many messages. If the SAME underlying commitment appears across multiple messages ("confirm the meeting", then someone re-asks in a follow-up), emit it ONCE, not once per message.
+- Do not emit a "confirm time" AND a separate "confirm availability" item for the same meeting. Pick one canonical action.
+- Do not emit a "reply on X" AND a separate "follow up on X" for the same open question. Pick the sharper of the two.
+- When in doubt, fewer items is better. The digest already merges what it can; extras just clutter.
+
+TITLE FORMAT (canonical structure — makes dedup work across runs):
+- Use "<verb> <object> <person or entity>" or "<verb> <object>". Example: "Confirm meeting with Eric Lavin", "Send NDA to Karim", "Review Dalmonta Givens application".
+- Do NOT include specific times, dates, or numbers unless the deadline itself is the meaningful part of the task. "Confirm meeting with Eric Lavin" is preferred over "Confirm 12:00 PM ET meeting with Eric Lavin". The due_at field carries the time; the title does not need to.
+- Do NOT include phone numbers, IDs, or URLs in the title.
+- Use the person or company's canonical name. Prefer "Eric Lavin" over "Eric" and over "Mr. Lavin".
+- Prefer "meeting" over "meeting time", "call time", "scheduled call" — they all mean the same thing to dedup.
 
 Deadlines (due_at):
 - Set due_at when the email states or clearly implies one ("by EOD", "before Friday", "need this today", "by the 20th").
