@@ -95,7 +95,11 @@ const VERB_STEMS: Record<string, string> = {
   finalize: 'decide', finalizing: 'decide',
   choose: 'decide', choosing: 'decide',
 
-  // followup group
+  // followup group. "Follow" alone is the head of "follow up", so it
+  // stems to followup too — otherwise "Follow up with X" doesn't get a
+  // verb match and the anchor logic wrongly treats "Follow" as a proper
+  // noun.
+  follow: 'followup', following: 'followup', followed: 'followup',
   followup: 'followup', 'follow-up': 'followup',
   chase: 'followup', chasing: 'followup',
   ping: 'followup', pinging: 'followup',
@@ -145,6 +149,10 @@ const STOPWORDS = new Set([
   'this', 'that', 'these', 'those',
   'is', 'are', 'be',
   'new', 'next',
+  // Verb-particle tokens. "Follow up on X" and "Follow up with Y" both
+  // start with "Follow" which we stem to "followup"; the trailing "up"
+  // is noise for dedup once the verb has been canonicalized.
+  'up', 'out', 'back', 'over',
 ])
 
 // Noise tokens that add color but not identity. "Confirm meeting time with X"
