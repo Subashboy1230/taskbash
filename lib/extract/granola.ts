@@ -25,6 +25,7 @@ import type { ExtractedItem } from '../types'
 import { subDays, formatISO } from 'date-fns'
 import { WORK_ONLY_RULE } from './filters'
 import { extractJsonObject } from './parse'
+import { judgeExtractedItems, isJudgeEnabled, type OpenItemHint } from './judge'
 
 const GRANOLA_API_BASE = 'https://public-api.granola.ai/v1'
 
@@ -70,6 +71,11 @@ interface ExtractActionItemsArgs {
   days: number
   /** Granola meeting IDs that already have a proposed_action in the DB — skip draftFollowup for these. */
   meetingIdsWithDraft?: Set<string>
+  /**
+   * Currently-open items for dedup context, passed to the judge.
+   * Optional — when omitted, the judge sees empty open-set.
+   */
+  openItemsHint?: OpenItemHint[]
 }
 
 export async function extractGranolaActionItems(
@@ -122,7 +128,9 @@ export async function extractGranolaActionItems(
     const noteItems = await extractItemsFromNote(
       note,
       args.userEmail,
-      args.meetingIdsWithDraft
+      args.meetingIdsWithDraft,
+      args.openItemsHint ?? [],
+      args.userId
     )
     items.push(...noteItems)
   }
@@ -150,7 +158,9 @@ export async function fetchNoteDetail(
 async function extractItemsFromNote(
   note: GranolaNoteDetail,
   userEmail: string,
-  meetingIdsWithDraft?: Set<string>
+  meetingIdsWithDraft?: Set<string>,
+  openItemsHint: OpenItemHint[] = [],
+  userId?: string,
 ): Promise<ExtractedItem[]> {
   const sourceText = note.summary_markdown || note.summary_text || ''
   if (!sourceText.trim()) return []
@@ -188,10 +198,28 @@ async function extractItemsFromNote(
     .map(b => b.text)
     .join('\n')
 
-  const items = parseExtractionResponse(text, note)
+  let items = parseExtractionResponse(text, note)
   // Tag every produced item with its source LLM call (for slop-rate
   // joins on /observability).
   for (const it of items) it._llm_call_id = response._llmCallId
+
+  // ─── Judge pass ──────────────────────────────────────────────────
+  // Second-pass reviewer (Sonnet). Same flow as gmail — decides
+  // keep / drop / merge / demote-to-subtask and corrects tag / urgent.
+  // Feature-flagged via TASKBASH_JUDGE_ENABLED.
+  if (isJudgeEnabled() && items.length > 0) {
+    const judged = await judgeExtractedItems({
+      source: 'granola',
+      batchLabel: inputContent.meetingTitle,
+      sourceText,
+      candidates: items,
+      openItems: openItemsHint,
+      userId: userId ?? process.env.APP_USER_ID ?? null,
+      parentRunId: response._llmCallId,
+      sourceRef: { granola_meeting_id: note.id },
+    })
+    items = judged.keep
+  }
 
   // Capture the meeting summary as Context Trail source_excerpt and
   // optionally pre-draft a follow-up for items where we can confidently

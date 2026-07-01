@@ -27,6 +27,7 @@ import { WORK_ONLY_RULE } from './filters'
 import { extractJsonObject } from './parse'
 import { decodeEntities } from '../html'
 import { supabase } from '../supabase'
+import { judgeExtractedItems, isJudgeEnabled, type OpenItemHint } from './judge'
 
 // Bump when you change SYSTEM_PROMPT or buildExtractionPrompt — used by
 // the observability page to bucket slop-rate per prompt revision.
@@ -98,6 +99,12 @@ interface ExtractActionItemsArgs {
   userEmail: string
   userId?: string
   days: number
+  /**
+   * Currently-open items across all sources (id, title, parent_context).
+   * Passed through to the judge for dedup. Optional — when omitted, the
+   * judge sees an empty open-set (safe: it won't emit false merges).
+   */
+  openItemsHint?: OpenItemHint[]
 }
 
 export async function extractGmailActionItems(
@@ -147,7 +154,8 @@ export async function extractGmailActionItems(
     const threadItems = await extractItemsFromThread(
       thread,
       args.userEmail,
-      args.userId ? { userId: args.userId, autoDraftEnabled, autoDraftBorderline } : undefined
+      args.userId ? { userId: args.userId, autoDraftEnabled, autoDraftBorderline } : undefined,
+      args.openItemsHint ?? []
     )
     items.push(...threadItems)
   }
@@ -185,7 +193,8 @@ interface DraftOptions {
 async function extractItemsFromThread(
   thread: GmailThreadDetail,
   userEmail: string,
-  draftOpts?: DraftOptions
+  draftOpts?: DraftOptions,
+  openItemsHint: OpenItemHint[] = []
 ): Promise<ExtractedItem[]> {
   const messages = thread.messages ?? []
   if (messages.length === 0) return []
@@ -241,11 +250,33 @@ async function extractItemsFromThread(
     .map(b => b.text)
     .join('\n')
 
-  const items = parseExtractionResponse(text, thread, subject)
+  let items = parseExtractionResponse(text, thread, subject)
   // Tag every produced item with the call that made it — the digest
   // insert path uses this to populate llm_calls.produced_item_ids so
   // slop_rate per prompt-version actually shows non-zero.
   for (const it of items) it._llm_call_id = response._llmCallId
+
+  // ─── Judge pass ──────────────────────────────────────────────────
+  // Second-pass adversarial reviewer (Sonnet). Decides keep / drop /
+  // merge-into-existing / demote-to-subtask for each candidate, and
+  // corrects tag / urgent / draft_confidence when the extractor got
+  // them wrong. Feature-flagged via TASKBASH_JUDGE_ENABLED.
+  if (isJudgeEnabled() && items.length > 0) {
+    const judged = await judgeExtractedItems({
+      source: 'gmail',
+      batchLabel: subject,
+      sourceText: transcript,
+      candidates: items,
+      openItems: openItemsHint,
+      userId: draftOpts?.userId ?? process.env.APP_USER_ID ?? null,
+      parentRunId: response._llmCallId,
+      sourceRef: { gmail_thread_id: thread.id },
+    })
+    // Only keep what the judge accepted. Merged/demoted candidates are
+    // handled by the judge itself (merge → skipped, demote → sub_items
+    // attached to the parent candidate).
+    items = judged.keep
+  }
 
   // Attach Context Trail source_excerpt to every item from this thread.
   // The latest message is the most likely thing the user wants to see when

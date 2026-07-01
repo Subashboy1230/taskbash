@@ -156,6 +156,23 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     ...((clearedRows ?? []) as Item[]),
   ]
 
+  // Compact open-item list for the judge. Only OPEN items — cleared
+  // ones would surface false-merge suggestions. Capped at 150 to keep
+  // the judge's token budget bounded; sorted newest-first so the freshest
+  // (most likely to be duplicated) commitments always make it in.
+  const JUDGE_OPEN_LIMIT = 150
+  const openItemsHint = ((openRows ?? []) as Item[])
+    .filter(i => !i.parent_id)  // parents only — subtasks aren't dedup targets
+    .sort((a, b) => (b.first_seen_at ?? b.created_at).localeCompare(
+                     a.first_seen_at ?? a.created_at))
+    .slice(0, JUDGE_OPEN_LIMIT)
+    .map(i => ({
+      id: i.id,
+      title: i.title,
+      parent_context: i.parent_context,
+      source: i.source,
+    }))
+
   // ─── Run every connected source extractor ────────────────────────────
   // Gate each source on connection state so a disconnected source neither
   // throws nor causes the diff to auto-complete its items.
@@ -184,7 +201,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
         .map(r => (r.source_ref as { granola_meeting_id?: string } | null)?.granola_meeting_id)
         .filter((id): id is string => typeof id === 'string')
     )
-    const items = await extractGranolaActionItems({ userEmail, userId, days, meetingIdsWithDraft })
+    const items = await extractGranolaActionItems({ userEmail, userId, days, meetingIdsWithDraft, openItemsHint })
     return items
   })
 
@@ -192,7 +209,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     const conn = await getActiveConnection('gmail', userId)
     if (!conn?.nango_connection_id) return null
     const [inbox, sent] = await Promise.all([
-      extractGmailActionItems({ userEmail, userId, days }),
+      extractGmailActionItems({ userEmail, userId, days, openItemsHint }),
       extractGmailSentCommitments({ userEmail, userId, days }),
     ])
     return [...inbox, ...sent]
