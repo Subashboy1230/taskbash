@@ -37,7 +37,8 @@ import { getLangfuse } from './langfuse'
 // Used to compute cost_usd at log time so dashboards don't have to do
 // the conversion. Unknown models fall back to 0 cost (logged, ignored).
 const PRICING: Record<string, { input: number; output: number; cache_read?: number; cache_write?: number }> = {
-  // Claude 4.5 / 4.6 family — May 2026 pricing
+  // Claude 4.5 / 4.6 / 4.7 family — 2026 pricing
+  'claude-opus-4-7':                  { input: 15,    output: 75,   cache_read: 1.5,  cache_write: 18.75 },
   'claude-opus-4-6':                  { input: 15,    output: 75,   cache_read: 1.5,  cache_write: 18.75 },
   'claude-sonnet-4-6':                { input: 3,     output: 15,   cache_read: 0.30, cache_write: 3.75 },
   'claude-haiku-4-5':                 { input: 0.80,  output: 4,    cache_read: 0.08, cache_write: 1.00 },

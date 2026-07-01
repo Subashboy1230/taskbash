@@ -22,7 +22,7 @@
 // when it disappears from its SOURCE, not when the UI checkbox is ticked.
 
 import type { ExtractedItem, Item, Source, SourceRef } from './types'
-import { computeSemanticHash } from './normalize'
+import { computeAnchorKey, computeSemanticHash } from './normalize'
 
 export interface DiffResult {
   newItems: ExtractedItem[]
@@ -81,6 +81,12 @@ export function diff(currentItems: Item[], freshItems: ExtractedItem[]): DiffRes
   // onto whichever row happened to be last in the build loop.
   const currentByRef = new Map<string, Item[]>()
   const currentByHash = new Map<string, Item>()
+  // Anchor lookup: catches near-duplicates whose semantic hash drifted
+  // ("Confirm meeting time with Eric Lavin" vs "Confirm 12pm meeting with
+  // Eric Lavin"). Only OPEN items are indexed here — anchor matching a
+  // cleared row would suppress a genuinely new commitment sharing the same
+  // person + verb. The semantic hash path still handles cleared suppression.
+  const currentByAnchor = new Map<string, Item[]>()
   for (const item of currentItems) {
     const refKey = sourceRefKey(item.source, item.source_ref as SourceRef | null)
     if (refKey) {
@@ -89,6 +95,14 @@ export function diff(currentItems: Item[], freshItems: ExtractedItem[]): DiffRes
       currentByRef.set(refKey, bucket)
     }
     currentByHash.set(item.semantic_hash, item)
+    if (OPEN_STATUSES.has(item.status)) {
+      const anchor = computeAnchorKey(item.source, item.title)
+      if (anchor) {
+        const bucket = currentByAnchor.get(anchor) ?? []
+        bucket.push(item)
+        currentByAnchor.set(anchor, bucket)
+      }
+    }
   }
 
   // Walk fresh items, classify each by lookup result + existing status.
@@ -104,6 +118,7 @@ export function diff(currentItems: Item[], freshItems: ExtractedItem[]): DiffRes
   // same container (e.g., the same meeting) from both matching the same
   // existing row.
   const consumedByRef = new Set<string>()
+  const consumedByAnchor = new Set<string>()
 
   for (const fresh of freshItems) {
     const refKey = sourceRefKey(fresh.source, fresh.source_ref as SourceRef | null)
@@ -112,20 +127,31 @@ export function diff(currentItems: Item[], freshItems: ExtractedItem[]): DiffRes
       fresh.parent_context,
       fresh.title
     )
+    const freshAnchor = computeAnchorKey(fresh.source, fresh.title)
 
     // Lookup precedence:
     //   1. semantic_hash — most specific (per-item identity)
     //   2. source_ref   — fallback for LLM title variation across runs.
     //      Uses the first unconsumed candidate in the bucket so each fresh
     //      item from a multi-item container claims a distinct existing row.
+    //   3. anchor key   — last-resort dedup on person + stemmed verb, only
+    //      against OPEN items so cleared rows can't suppress genuinely new
+    //      commitments that share the same person.
     const existingByRef = refKey
       ? (currentByRef.get(refKey) ?? []).find(c => !consumedByRef.has(c.id))
       : undefined
-    const existing = currentByHash.get(freshHash) ?? existingByRef
+    const existingByAnchor = freshAnchor
+      ? (currentByAnchor.get(freshAnchor) ?? []).find(c => !consumedByAnchor.has(c.id))
+      : undefined
+    const existing =
+      currentByHash.get(freshHash) ?? existingByRef ?? existingByAnchor
     // Mark the matched row consumed so later fresh items from the same
     // container don't also claim it.
     if (existing && refKey && existingByRef?.id === existing.id) {
       consumedByRef.add(existing.id)
+    }
+    if (existing && freshAnchor && existingByAnchor?.id === existing.id) {
+      consumedByAnchor.add(existing.id)
     }
 
     if (!existing) {

@@ -25,6 +25,7 @@ import type { ExtractedItem } from '../types'
 import { subDays, formatISO } from 'date-fns'
 import { WORK_ONLY_RULE } from './filters'
 import { extractJsonObject } from './parse'
+import { judgeExtractedItems, isJudgeEnabled, type OpenItemHint } from './judge'
 
 const GRANOLA_API_BASE = 'https://public-api.granola.ai/v1'
 
@@ -70,6 +71,11 @@ interface ExtractActionItemsArgs {
   days: number
   /** Granola meeting IDs that already have a proposed_action in the DB — skip draftFollowup for these. */
   meetingIdsWithDraft?: Set<string>
+  /**
+   * Currently-open items for dedup context, passed to the judge.
+   * Optional — when omitted, the judge sees empty open-set.
+   */
+  openItemsHint?: OpenItemHint[]
 }
 
 export async function extractGranolaActionItems(
@@ -122,7 +128,9 @@ export async function extractGranolaActionItems(
     const noteItems = await extractItemsFromNote(
       note,
       args.userEmail,
-      args.meetingIdsWithDraft
+      args.meetingIdsWithDraft,
+      args.openItemsHint ?? [],
+      args.userId
     )
     items.push(...noteItems)
   }
@@ -150,7 +158,9 @@ export async function fetchNoteDetail(
 async function extractItemsFromNote(
   note: GranolaNoteDetail,
   userEmail: string,
-  meetingIdsWithDraft?: Set<string>
+  meetingIdsWithDraft?: Set<string>,
+  openItemsHint: OpenItemHint[] = [],
+  userId?: string,
 ): Promise<ExtractedItem[]> {
   const sourceText = note.summary_markdown || note.summary_text || ''
   if (!sourceText.trim()) return []
@@ -170,7 +180,7 @@ async function extractItemsFromNote(
       prompt_id: 'extract.granola',
       // v2: added explicit OWNERSHIP block to drop engineering-execution
       // items routed to the user (2026-06-10 slop analysis, cluster 2).
-      prompt_version: 2,
+      prompt_version: 3,
       user_id: process.env.APP_USER_ID ?? null,
       source_ref: { granola_meeting_id: note.id },
       input_content: inputContent,
@@ -188,10 +198,28 @@ async function extractItemsFromNote(
     .map(b => b.text)
     .join('\n')
 
-  const items = parseExtractionResponse(text, note)
+  let items = parseExtractionResponse(text, note)
   // Tag every produced item with its source LLM call (for slop-rate
   // joins on /observability).
   for (const it of items) it._llm_call_id = response._llmCallId
+
+  // ─── Judge pass ──────────────────────────────────────────────────
+  // Second-pass reviewer (Sonnet). Same flow as gmail — decides
+  // keep / drop / merge / demote-to-subtask and corrects tag / urgent.
+  // Feature-flagged via TASKBASH_JUDGE_ENABLED.
+  if (isJudgeEnabled() && items.length > 0) {
+    const judged = await judgeExtractedItems({
+      source: 'granola',
+      batchLabel: inputContent.meetingTitle,
+      sourceText,
+      candidates: items,
+      openItems: openItemsHint,
+      userId: userId ?? process.env.APP_USER_ID ?? null,
+      parentRunId: response._llmCallId,
+      sourceRef: { granola_meeting_id: note.id },
+    })
+    items = judged.keep
+  }
 
   // Capture the meeting summary as Context Trail source_excerpt and
   // optionally pre-draft a follow-up for items where we can confidently
@@ -282,6 +310,17 @@ Rules:
 - Apply the WORK ONLY scope above. Drop personal-life items even if the user owns them.
 - ONLY extract tasks that are explicitly supported by the text. Do not infer, assume, or invent tasks that "should" exist. If the summary is terse and has no clear action items, return an empty list. An empty list is a correct, expected answer.
 - If no qualifying items, return { "items": [] }.
+
+ONE ITEM PER COMMITMENT (dedup rule):
+- A meeting summary can restate the same commitment multiple times (in the recap, then in the action-items list, then in the wrap-up). Emit each unique commitment ONCE.
+- If the same person + same object appears twice with slightly different verbs ("discuss pipeline with Karim" and "sync with Karim on pipeline"), pick ONE canonical version.
+- When in doubt, fewer items is better.
+
+TITLE FORMAT (canonical structure — critical for cross-meeting dedup):
+- Use "<verb> <object> <person or entity>" or "<verb> <object>". Example: "Send pain points doc to Matthew", "Review Q3 OKRs for Anna", "Build cost-of-attrition case".
+- Do NOT include specific times, dates, or numbers unless they ARE the task. "Send deck" is better than "Send deck by Friday" (the deadline goes in due_at, not the title).
+- Do NOT include phone numbers, IDs, links, or filenames unless they're the only identifier.
+- Prefer canonical person names ("Karim" not "K"; "Eric Lavin" not "Eric").
 
 Deadlines (due_at):
 - Set due_at when the text states or clearly implies a deadline ("by Friday", "before the board call", "end of week", "tomorrow", "next Tuesday").
