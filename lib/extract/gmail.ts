@@ -238,7 +238,7 @@ async function extractItemsFromThread(
       input_content: inputContent,
     },
     {
-      model: MODELS.classifier,
+      model: MODELS.judge,
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
@@ -737,8 +737,10 @@ Extract any explicit commitments the user made in their most recent sent message
       input_content: { subject, userEmail, transcript },
     },
     {
-      model: MODELS.classifier,
+      model: MODELS.judge,
       max_tokens: 512,
+      // COMMITMENT extraction on Opus 4.7 too — matches inbox extractor
+      // so the whole extraction surface uses one model tier.
       system: COMMITMENT_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
     }
@@ -813,7 +815,7 @@ export async function replayGmailExtraction(
     transcript: i.transcript,
   })
   const response = await client.messages.create({
-    model: MODELS.classifier,
+    model: MODELS.judge,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],

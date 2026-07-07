@@ -1252,7 +1252,7 @@ export async function extractTasksFromText(args: {
     })
 
     const response = await anthropic.messages.create({
-      model: MODELS.classifier,
+      model: MODELS.judge,
       max_tokens: 1024,
       system: `You extract action items from freeform text, screenshots, or images — brain dumps, voice transcripts, meeting notes, task boards, whiteboards, or any unstructured input.
 
