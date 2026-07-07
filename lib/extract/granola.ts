@@ -186,7 +186,7 @@ async function extractItemsFromNote(
       input_content: inputContent,
     },
     {
-      model: MODELS.classifier,
+      model: MODELS.judge,
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
@@ -487,7 +487,7 @@ export async function replayGranolaExtraction(
     attendeeEmails: Array.isArray(i.attendeeEmails) ? i.attendeeEmails : [],
   })
   const response = await client.messages.create({
-    model: MODELS.classifier,
+    model: MODELS.judge,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],

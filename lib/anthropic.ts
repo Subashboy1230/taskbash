@@ -12,15 +12,17 @@ export const anthropic = new Anthropic({
 })
 
 export const MODELS = {
-  // Cheap classifier model — Haiku. Used for the initial extraction pass
-  // on email/Granola/calendar. Optimized for throughput + cost, not for
-  // adversarial judgment.
+  // Cheap classifier model — Haiku. NOT currently used in the pipeline;
+  // every LLM call was migrated to Opus 4.7 for maximum quality. Kept as
+  // an escape hatch if we ever want to route a high-volume path through
+  // a cheaper model again (e.g. bulk backfills).
   classifier: 'claude-haiku-4-5-20251001',
-  // Judge model — Opus 4.7. Second-pass adversarial reviewer over every
-  // extractor output: decides keep / drop / merge / demote-to-subtask and
-  // fixes tag / priority / draft_confidence. Max-out on reasoning quality
-  // since judge accuracy directly gates every task the user sees.
+  // Judge / primary model — Opus 4.7. Used for EVERY LLM call in the
+  // pipeline today: extractors (Gmail/Granola), judge, function classifier,
+  // task details, draft reply/followup, voice analysis, freeform text
+  // extraction. Max reasoning quality across the board since the whole
+  // surface is what the user reads.
   judge: 'claude-opus-4-7',
-  // Synthesis model — Opus 4.7. Used for briefs and meeting prep.
+  // Synthesis model — Opus 4.7. Alias for briefs + meeting prep.
   synthesis: 'claude-opus-4-7',
 } as const

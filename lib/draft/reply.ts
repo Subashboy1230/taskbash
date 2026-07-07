@@ -80,7 +80,7 @@ Draft the reply.`
       user_id: args.userId ?? null,
     },
     {
-      model: MODELS.classifier,
+      model: MODELS.judge,
       max_tokens: 600,
       system,
       messages: [{ role: 'user', content: userMsg }],

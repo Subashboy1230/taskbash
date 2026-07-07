@@ -129,8 +129,9 @@ export async function judgeExtractedItems(
       {
         model: MODELS.judge,
         max_tokens: 2048,
-        // Deterministic. The judge is a classifier, not a generator.
-        temperature: 0,
+        // NOTE: Opus 4.7 rejects the temperature parameter (deprecated).
+        // Default sampling is fine — the judge prompt is strict enough
+        // to constrain behavior without a temperature knob.
         system: JUDGE_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: prompt }],
       }

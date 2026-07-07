@@ -68,7 +68,7 @@ export async function generateTaskDetails(args: {
       user_id: args.userId ?? null,
     },
     {
-      model: MODELS.classifier,
+      model: MODELS.judge,
       max_tokens: 400,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],

@@ -167,7 +167,7 @@ export async function classifyAndTagFunctions(args: {
         anthropic,
         traceCtx,
         {
-          model: MODELS.classifier,
+          model: MODELS.judge,
           max_tokens: 1024,
           system: augmentedSystemPrompt,
           messages: [{ role: 'user', content: prompt }],
@@ -235,7 +235,7 @@ export async function replayClassifyFunctions(
   }
   const prompt = buildUserPrompt(i.functions, i.tasks)
   const response = await client.messages.create({
-    model: MODELS.classifier,
+    model: MODELS.judge,
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],

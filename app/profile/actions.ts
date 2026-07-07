@@ -78,7 +78,7 @@ RULES:
       anthropic,
       { prompt_id: 'analyze.voice', prompt_version: 1, user_id: userId },
       {
-        model: MODELS.classifier,
+        model: MODELS.judge,
         max_tokens: 600,
         system: voicePrompt,
         messages: [{ role: 'user', content: `Sent emails:\n\n${transcript}\n\nGenerate the voice profile.` }],
