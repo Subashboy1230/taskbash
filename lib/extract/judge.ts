@@ -50,6 +50,20 @@ export interface OpenItemHint {
   source: Source
 }
 
+/**
+ * Recently-cleared items (completed / dismissed / snoozed). Passed to the
+ * judge so it can drop candidates that resurrect tasks the user already
+ * dealt with — critical for the "if I clear it, don't bring it back"
+ * behavior. Judge is instructed to verdict='drop' when a candidate matches.
+ */
+export interface ClearedItemHint {
+  id: string
+  title: string
+  status: 'completed' | 'dismissed' | 'snoozed'
+  source: Source
+  cleared_at: string
+}
+
 export interface JudgeInput {
   source: Source
   /**
@@ -70,6 +84,12 @@ export interface JudgeInput {
    * (~150) by the caller.
    */
   openItems: OpenItemHint[]
+  /**
+   * Recently-cleared items (last ~30 days of completed/dismissed/snoozed).
+   * Prefiltered by the caller to ~100 most recent. Judge uses these to
+   * drop candidates that duplicate work the user already resolved.
+   */
+  clearedItems?: ClearedItemHint[]
   userId?: string | null
   /**
    * Passed through to the trace so judge calls join to the extraction
@@ -152,9 +172,11 @@ export async function judgeExtractedItems(
 
 // ─── Prompt ──────────────────────────────────────────────────────────
 
-const JUDGE_VERSION = 1
+const JUDGE_VERSION = 2
 
-const JUDGE_SYSTEM_PROMPT = `You are a strict reviewer of extracted action items. A first-pass extractor read a source (email thread or meeting summary) and produced candidate items for the user's task list. Your job is to decide, for each candidate, whether it should be kept, dropped, merged into an existing open task, or demoted to a subtask of another candidate.
+const JUDGE_SYSTEM_PROMPT = `You are a strict reviewer of extracted action items. A first-pass extractor read a source (email thread or meeting summary) and produced candidate items for the user's task list. Your job is to decide, for each candidate, whether it should be kept, dropped, merged into an existing open task, or demoted to a subtask of an existing open task or another candidate.
+
+Your PRIME DIRECTIVE: minimize task count. The user's stated preference is to see AS FEW top-level tasks as possible, high focus, high signal. Every "keep" you emit is a promise that this task deserves a top-level slot. If it can plausibly nest under an existing task, it MUST become a subtask, not a new top-level.
 
 Your output is STRICT JSON. No prose. No markdown fences. No explanation outside the JSON.
 
@@ -166,7 +188,8 @@ Output schema:
       "verdict": "keep" | "drop" | "merge" | "subtask",
       "reason": "<one short sentence>",
       "merge_target_id": "<uuid>",      // REQUIRED if verdict = "merge". Must be one of the open_items ids.
-      "parent_idx": <int>,              // REQUIRED if verdict = "subtask". Must be a different candidate idx that IS being kept.
+      "subtask_target_id": "<uuid>",    // OPTIONAL if verdict = "subtask" AND the parent is an existing OPEN item. Cite the open_items id.
+      "parent_idx": <int>,              // OPTIONAL if verdict = "subtask" AND the parent is another CANDIDATE in this batch. Cite the sibling idx.
       "corrected_tag": "action" | "reply" | "commit" | "fyi",   // OPTIONAL. Only set when the extractor's tag is wrong.
       "corrected_urgent": true | false,                          // OPTIONAL. Only set when the extractor's urgency is wrong.
       "corrected_draft_confidence": "high" | "medium" | "low" | "skip"  // OPTIONAL. Only for reply items.
@@ -174,34 +197,47 @@ Output schema:
   ]
 }
 
-You MUST emit one decision for every candidate. Order does not matter, but every idx must appear exactly once.
+You MUST emit one decision for every candidate. Order does not matter, but every idx must appear exactly once. For verdict="subtask", set EXACTLY ONE of subtask_target_id (nest under an existing OPEN task) or parent_idx (nest under another candidate). Prefer subtask_target_id whenever an existing open task fits — the user does not want new top-level tasks when an existing one is the natural parent.
 
-VERDICT RUBRIC (apply in order):
+VERDICT RUBRIC (apply in strict order, top to bottom):
 
 1) drop — the candidate is not a real task the user owns:
    - Vague, no concrete action ("follow up", "think about it")
    - Owned by someone else in the source (someone else committed to do it)
    - Already completed within the source itself
-   - Duplicates another kept candidate in this same batch (drop, don't merge — merge is only for existing open tasks)
    - Restatement of a fact / status update, not an action ("The team is on track for launch")
+   - RESURRECTS a task in the CLEARED items list — the user already resolved (completed / dismissed / snoozed) something matching this. Never bring back tasks the user already dealt with. This is a HARD rule.
+   - For GMAIL specifically:
+     * COLD OUTREACH from a sender the user does not know. If the sender doesn't appear in the user's known contacts and there's no evidence of an ongoing thread, drop it. Cold sales, cold recruiting, cold sponsorship pitches, "quick intro" emails, event invites from strangers.
+     * MARKETING or newsletter content, even if it appears to include a personal ask.
+     * A "reply" candidate where the user has NOT explicitly committed in writing to reply. Emails do not auto-generate reply tasks. If the extractor emitted a reply-tagged candidate but the user never wrote "I'll reply", "I'll get back", "will respond", drop it.
 
 2) merge — the candidate is the same commitment as an existing OPEN task:
    - Look at open_items. If any of them describes the same person + same object + same underlying action, use "merge" and set merge_target_id.
    - Small verb differences ("Confirm meeting" vs "Verify meeting") are the same commitment.
    - Small object differences ("send deck" vs "send deck and demo") are the same commitment when the intent is one deliverable.
-   - Include time markers, phone numbers, or IDs in the CANDIDATE title only when they distinguish two different commitments; otherwise treat as duplicate.
+   - Time markers, phone numbers, or IDs in the CANDIDATE title distinguish two different commitments only rarely; usually they are noise and the candidate is a merge.
 
-3) subtask — the candidate is a piece of another candidate in this batch:
-   - "Attach the Q3 spreadsheet" is a subtask of "Send Q3 update to team"
-   - "CC Anna" is a subtask of "Reply to Bob about Q3 pricing"
-   - Only demote when the parent_idx candidate you cite is clearly the container action.
+3) subtask (SUBTASK-FIRST — this is the default for related work, not a rarity):
+   - Whenever the candidate is a smaller piece / sub-action of an existing open task, use verdict="subtask" with subtask_target_id set to the open item's id. Do NOT emit a new keep.
+   - Whenever the candidate is a smaller piece of another candidate in this batch, use verdict="subtask" with parent_idx set to the sibling's idx.
+   - Examples that MUST become subtasks:
+     * Existing task: "Send Nummo pain-points deck to Matthew". Candidate: "Attach the competitive matrix". → subtask of existing.
+     * Existing task: "Confirm meeting with Eric Lavin". Candidate: "Send Eric the pre-read". → subtask of existing.
+     * Existing task: "Reconnect with Andy Werner about ASCA". Candidate: "Call Andy Werner at 2pm PST". → subtask (same commitment, more specific).
+   - Prefer subtask over keep aggressively. The user wants a small number of high-focus top-level tasks with nested detail underneath.
 
-4) keep — real, non-duplicate, top-level task. Optionally correct its tag / urgent / draft_confidence if the extractor got it wrong.
+4) keep — ONLY when the candidate is:
+   - A genuinely new, distinct commitment that does not nest under any existing task
+   - NOT a duplicate of an existing open or cleared task
+   - Concrete, owned by the user, worth showing at the top level right now
+
+Optionally correct tag / urgent / draft_confidence when the extractor got them wrong.
 
 CORRECTION GUIDANCE:
 
 tag:
-- "reply" : owes a response to someone specific (email, DM)
+- "reply" : ONLY when the user has explicitly committed to reply in writing. Rarely emitted. Do not tag as "reply" just because someone asked a question.
 - "action": concrete work beyond replying (draft a doc, decide, ship)
 - "commit": explicit promise the user made ("I'll send Friday")
 - "fyi"   : informational, no action required
@@ -212,11 +248,11 @@ urgent:
 
 draft_confidence (for tag = "reply" only; null for other tags):
 - "high"   : one-to-one human exchange, real person waiting on a real reply
-- "medium" : likely real but borderline (cold outreach, unclear intent)
-- "low"    : probably low-priority or automated
+- "medium" : likely real but borderline
+- "low"    : probably low-priority
 - "skip"   : clearly automated (onboarding email, receipt, no-reply)
 
-BE STRICT. When in doubt, DROP or MERGE. It is much better to lose a marginal task than to clutter the surface with duplicates and vague items. The extractor errs on the side of inclusion; you err on the side of exclusion.`
+BE STRICT. When in doubt, DROP or MERGE or SUBTASK. It is much better to lose a marginal task than to clutter the surface. The extractor errs on the side of inclusion; you err on the side of exclusion. Task count is a first-class quality metric — a good judge produces FEWER keeps than the extractor produces candidates. If you emit "keep" on every candidate, you are failing.`
 
 function buildJudgePrompt(input: JudgeInput): string {
   const candidatesJson = input.candidates.map((c, idx) => ({
@@ -239,6 +275,15 @@ function buildJudgePrompt(input: JudgeInput): string {
     source: o.source,
   }))
 
+  // Cleared items — used to drop candidates that resurrect resolved work.
+  const clearedItemsJson = (input.clearedItems ?? []).map(c => ({
+    id: c.id,
+    title: c.title,
+    status: c.status,
+    cleared_at: c.cleared_at.slice(0, 10),
+    source: c.source,
+  }))
+
   return `Source: ${input.source}
 Batch label: ${input.batchLabel}
 
@@ -248,8 +293,11 @@ ${input.sourceText.slice(0, 4000)}
 --- EXTRACTOR CANDIDATES ---
 ${JSON.stringify(candidatesJson, null, 2)}
 
---- USER'S CURRENTLY OPEN TASKS (for dedup lookup only) ---
+--- USER'S CURRENTLY OPEN TASKS (for merge + subtask lookup) ---
 ${JSON.stringify(openItemsJson, null, 2)}
+
+--- USER'S RECENTLY CLEARED TASKS (dropped, done, snoozed — never resurrect these) ---
+${JSON.stringify(clearedItemsJson, null, 2)}
 
 Return the decisions JSON. Exactly one decision per candidate.`
 }
@@ -261,6 +309,16 @@ interface Decision {
   verdict: 'keep' | 'drop' | 'merge' | 'subtask'
   reason?: string
   merge_target_id?: string
+  /**
+   * When verdict='subtask' AND the parent is an existing OPEN item.
+   * Judge picks this whenever a real parent exists in the DB — much
+   * more common than parent_idx now that the prompt is subtask-first.
+   */
+  subtask_target_id?: string
+  /**
+   * When verdict='subtask' AND the parent is another candidate in the
+   * same batch (typical for "one big task with attached micro-actions").
+   */
   parent_idx?: number
   corrected_tag?: 'action' | 'reply' | 'commit' | 'fyi'
   corrected_urgent?: boolean
@@ -347,21 +405,30 @@ function applyDecisions(
         }
         break
 
-      case 'subtask':
+      case 'subtask': {
+        // Case A — nest under an existing OPEN task in the DB.
+        // Treat this like a merge but tag the reason as subtask: the
+        // dedup-merged item stays as-is; the sub-content is recorded
+        // in the feedback trail. (Full parent_id nesting would require
+        // a separate DB write path from the digest; for now the merge
+        // path is the pragmatic minimizer the user asked for.)
+        if (d.subtask_target_id && openIds.has(d.subtask_target_id)) {
+          result.merged.push({
+            candidate: corrected,
+            targetId: d.subtask_target_id,
+            reason: d.reason ?? 'judge nested under existing open task (subtask)',
+          })
+          break
+        }
+
+        // Case B — nest under another candidate in this batch.
         if (typeof d.parent_idx === 'number' && keepIndexes.has(d.parent_idx)) {
           const parent = input.candidates[d.parent_idx]
           const parentTitle = parent?.title ?? input.batchLabel
-          // Turn the demoted candidate into a sub_item under its parent
-          // AND emit the standalone candidate as a subtask row (so the
-          // Context Trail + tag survive). The digest write path handles
-          // parent_id via the extracted sub_items array on the parent.
           const parentIdx = decisions.findIndex(
             dd => dd.idx === d.parent_idx && dd.verdict === 'keep'
           )
           if (parentIdx >= 0) {
-            // Attach as a sub_item on the parent's ExtractedItem shape.
-            // The digest writer already handles this pattern for extractor-
-            // emitted sub_items.
             parent.sub_items = parent.sub_items ?? []
             parent.sub_items.push({
               source: corrected.source,
@@ -372,14 +439,14 @@ function applyDecisions(
               tag: corrected.tag,
             })
             result.demoted.push({ candidate: corrected, parentTitle })
-          } else {
-            result.keep.push(corrected)
+            break
           }
-        } else {
-          // Bad parent_idx — safe fallback: keep as top-level.
-          result.keep.push(corrected)
         }
+
+        // Neither cited a valid target — safe fallback: keep as top-level.
+        result.keep.push(corrected)
         break
+      }
 
       case 'keep':
       default:
