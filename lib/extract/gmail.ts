@@ -27,11 +27,11 @@ import { WORK_ONLY_RULE } from './filters'
 import { extractJsonObject } from './parse'
 import { decodeEntities } from '../html'
 import { supabase } from '../supabase'
-import { judgeExtractedItems, isJudgeEnabled, type OpenItemHint } from './judge'
+import { judgeExtractedItems, isJudgeEnabled, type OpenItemHint, type ClearedItemHint } from './judge'
 
 // Bump when you change SYSTEM_PROMPT or buildExtractionPrompt — used by
 // the observability page to bucket slop-rate per prompt revision.
-const PROMPT_VERSION = 3
+const PROMPT_VERSION = 4
 
 const GMAIL_API = '/gmail/v1/users/me'
 
@@ -105,6 +105,11 @@ interface ExtractActionItemsArgs {
    * judge sees an empty open-set (safe: it won't emit false merges).
    */
   openItemsHint?: OpenItemHint[]
+  /**
+   * Recently-cleared items so the judge can drop candidates that would
+   * resurrect resolved work. Prefiltered to ~100 most-recent by caller.
+   */
+  clearedItemsHint?: ClearedItemHint[]
 }
 
 export async function extractGmailActionItems(
@@ -155,7 +160,8 @@ export async function extractGmailActionItems(
       thread,
       args.userEmail,
       args.userId ? { userId: args.userId, autoDraftEnabled, autoDraftBorderline } : undefined,
-      args.openItemsHint ?? []
+      args.openItemsHint ?? [],
+      args.clearedItemsHint ?? []
     )
     items.push(...threadItems)
   }
@@ -194,7 +200,8 @@ async function extractItemsFromThread(
   thread: GmailThreadDetail,
   userEmail: string,
   draftOpts?: DraftOptions,
-  openItemsHint: OpenItemHint[] = []
+  openItemsHint: OpenItemHint[] = [],
+  clearedItemsHint: ClearedItemHint[] = []
 ): Promise<ExtractedItem[]> {
   const messages = thread.messages ?? []
   if (messages.length === 0) return []
@@ -268,6 +275,7 @@ async function extractItemsFromThread(
       sourceText: transcript,
       candidates: items,
       openItems: openItemsHint,
+      clearedItems: clearedItemsHint,
       userId: draftOpts?.userId ?? process.env.APP_USER_ID ?? null,
       parentRunId: response._llmCallId,
       sourceRef: { gmail_thread_id: thread.id },
@@ -479,13 +487,37 @@ Schema:
 ${WORK_ONLY_RULE}
 
 Rules:
-- The user is identified by their email address, given in the user message. Only extract items THEY own: a reply they owe, a task someone asked them to do, something they committed to.
+- The user is identified by their email address, given in the user message. Only extract items THEY own: a task the user explicitly committed to, or an action they promised in writing.
 - Skip items owned by other people in the thread.
 - If the most recent message in the thread is FROM the user, they have likely already responded. Only extract a task if they explicitly promised a further action in that message.
 - Skip newsletters, automated notifications, receipts, calendar invites, and marketing. These have no action item the user owns. Return an empty list for them.
 - Skip vague items with no concrete action.
 - ONLY extract tasks explicitly supported by the email text. Do not infer or invent tasks. An empty list is a correct, expected answer for a thread with nothing actionable.
 - If no qualifying items, return { "items": [] }.
+
+WHOSE EMAIL COUNTS (relationship gate — read carefully, this is the #1 source of clutter):
+- ONLY extract from threads with a real, existing relationship:
+  a) The user has previously participated in this thread (>=1 message from user in the thread history), OR
+  b) The sender is clearly someone the user knows and has communicated with before (name is used, prior familiar tone, or the sender references past interaction), OR
+  c) The sender is an internal colleague, direct report, or explicit stakeholder.
+- SKIP cold outreach and first-touch emails from strangers, EVEN IF they include a clear ask. Examples to drop:
+  - "Hi Subash, I'm founder of X, would love 15 min to introduce our product..."
+  - Recruiter first-touch emails
+  - Cold sales pitches, sponsorship pitches, event invites from strangers
+  - Any first email from a sender the user has never emailed before
+- SKIP marketing and mass-personalized email (newsletters, product announcements, dripped campaigns, "we noticed you..." emails, LinkedIn notification emails, event-marketing).
+- When in doubt about whether a sender is known, DROP. A missed cold email is fine; a cluttered task list is not.
+
+REPLY-TAG DISCIPLINE (very strict — the user does not want reply tasks by default):
+- Do NOT emit tag="reply" just because someone sent them an email or asked a question. Emails default to "no task."
+- Only emit tag="reply" when the user has EXPLICITLY committed to reply in this thread — they wrote "I'll get back to you", "will reply shortly", "will respond by Friday", etc.
+- If someone else asked a question but the user has not committed to answer, DO NOT emit a reply task. Do NOT infer a reply obligation from social norms.
+- If unsure whether the user committed to reply, DO NOT emit.
+- Prefer tag="action" or tag="commit" (which are only emitted when the user made an explicit promise) over tag="reply".
+
+ONE TASK PER THREAD (aggressive):
+- Emit AT MOST ONE top-level task per thread. If the thread has multiple things, pick the sharpest one and put the rest as sub_items.
+- If the thread has an already-committed action AND a secondary discussion point, emit only the committed action; the secondary belongs as a sub_item or is dropped.
 
 ONE ITEM PER COMMITMENT (dedup rule — read carefully):
 - A thread can span many messages. If the SAME underlying commitment appears across multiple messages ("confirm the meeting", then someone re-asks in a follow-up), emit it ONCE, not once per message.

@@ -25,7 +25,7 @@ import type { ExtractedItem } from '../types'
 import { subDays, formatISO } from 'date-fns'
 import { WORK_ONLY_RULE } from './filters'
 import { extractJsonObject } from './parse'
-import { judgeExtractedItems, isJudgeEnabled, type OpenItemHint } from './judge'
+import { judgeExtractedItems, isJudgeEnabled, type OpenItemHint, type ClearedItemHint } from './judge'
 
 const GRANOLA_API_BASE = 'https://public-api.granola.ai/v1'
 
@@ -76,6 +76,11 @@ interface ExtractActionItemsArgs {
    * Optional — when omitted, the judge sees empty open-set.
    */
   openItemsHint?: OpenItemHint[]
+  /**
+   * Recently-cleared items so the judge can drop candidates that would
+   * resurrect resolved work.
+   */
+  clearedItemsHint?: ClearedItemHint[]
 }
 
 export async function extractGranolaActionItems(
@@ -130,7 +135,8 @@ export async function extractGranolaActionItems(
       args.userEmail,
       args.meetingIdsWithDraft,
       args.openItemsHint ?? [],
-      args.userId
+      args.userId,
+      args.clearedItemsHint ?? []
     )
     items.push(...noteItems)
   }
@@ -161,8 +167,25 @@ async function extractItemsFromNote(
   meetingIdsWithDraft?: Set<string>,
   openItemsHint: OpenItemHint[] = [],
   userId?: string,
+  clearedItemsHint: ClearedItemHint[] = [],
 ): Promise<ExtractedItem[]> {
-  const sourceText = note.summary_markdown || note.summary_text || ''
+  // v4: read the raw transcript when available. Granola's summary is a
+  // compressed second-pass and often collapses commitments into vague
+  // ("discuss further", "sync on X"). The raw transcript has the actual
+  // "I'll send X by Friday" phrasing we care about. Fall back to summary
+  // when transcript is empty (Granola note without recording).
+  const transcriptSegments = (note.transcript ?? [])
+    .map(t => (t?.text ?? '').trim())
+    .filter(Boolean)
+  const transcriptText = transcriptSegments.join(' ')
+  const summaryText = note.summary_markdown || note.summary_text || ''
+  // Prefer transcript; cap at 40K chars to keep token budget bounded.
+  // Include summary as context header when transcript is present.
+  const sourceText = transcriptText
+    ? (summaryText.trim()
+        ? `MEETING SUMMARY (for context):\n${summaryText.slice(0, 4000)}\n\nRAW TRANSCRIPT (source of truth for commitments):\n${transcriptText.slice(0, 40000)}`
+        : transcriptText.slice(0, 40000))
+    : summaryText
   if (!sourceText.trim()) return []
 
   const inputContent: GranolaExtractInput = {
@@ -178,16 +201,19 @@ async function extractItemsFromNote(
     anthropic,
     {
       prompt_id: 'extract.granola',
-      // v2: added explicit OWNERSHIP block to drop engineering-execution
-      // items routed to the user (2026-06-10 slop analysis, cluster 2).
-      prompt_version: 3,
+      // v4: read transcript (not just summary) when available.
+      // v3: prompt tightened for ONE-COMMITMENT-PER-MEETING dedup.
+      // v2: OWNERSHIP block to drop engineering-execution items.
+      prompt_version: 4,
       user_id: process.env.APP_USER_ID ?? null,
       source_ref: { granola_meeting_id: note.id },
       input_content: inputContent,
     },
     {
       model: MODELS.judge,
-      max_tokens: 1024,
+      // Higher cap: transcripts + summary can produce larger candidate
+      // lists that the judge will subsequently prune.
+      max_tokens: 2048,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
     }
@@ -214,6 +240,7 @@ async function extractItemsFromNote(
       sourceText,
       candidates: items,
       openItems: openItemsHint,
+      clearedItems: clearedItemsHint,
       userId: userId ?? process.env.APP_USER_ID ?? null,
       parentRunId: response._llmCallId,
       sourceRef: { granola_meeting_id: note.id },
@@ -312,9 +339,18 @@ Rules:
 - If no qualifying items, return { "items": [] }.
 
 ONE ITEM PER COMMITMENT (dedup rule):
-- A meeting summary can restate the same commitment multiple times (in the recap, then in the action-items list, then in the wrap-up). Emit each unique commitment ONCE.
+- A meeting summary and transcript together will restate the same commitment multiple times (in the recap, in the action-items list, in the transcript itself). Emit each unique commitment ONCE.
 - If the same person + same object appears twice with slightly different verbs ("discuss pipeline with Karim" and "sync with Karim on pipeline"), pick ONE canonical version.
 - When in doubt, fewer items is better.
+
+TRANSCRIPT PRIORITY (when both provided):
+- If the source material contains both a MEETING SUMMARY and a RAW TRANSCRIPT, the transcript is the source of truth for what was actually committed. Summaries are compressed and often hallucinate action items or collapse real ones.
+- Grep the transcript for explicit user-commitment phrases: "I'll <verb>", "I can <verb>", "let me <verb>", "I'm going to <verb>", "I'll send you", "I'll follow up on".
+- If the summary lists an action item but the transcript never has the user explicitly commit to it, SKIP that item. The summarizer likely invented it.
+
+MEETING-LEVEL DISCIPLINE (aggressive minimization):
+- A meeting produces AT MOST 2-3 top-level tasks. If you find yourself extracting 5+, you are over-extracting; consolidate related items into sub_items of a canonical parent.
+- Prefer ONE anchor task per meeting with sub_items over N parallel tasks. Example: "Send Nummo pain-points deck" as the top-level, with sub_items ["Add competitive matrix", "Attach demo video", "CC Matthew's team"].
 
 TITLE FORMAT (canonical structure — critical for cross-meeting dedup):
 - Use "<verb> <object> <person or entity>" or "<verb> <object>". Example: "Send pain points doc to Matthew", "Review Q3 OKRs for Anna", "Build cost-of-attrition case".

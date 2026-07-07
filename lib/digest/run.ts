@@ -173,6 +173,22 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
       source: i.source,
     }))
 
+  // Cleared-item hint for the judge — so it can drop candidates that
+  // resurrect tasks the user already resolved. Capped at 100 most-recent
+  // cleared items so a title collision from months ago doesn't misfire.
+  const JUDGE_CLEARED_LIMIT = 100
+  const clearedItemsHint = ((clearedRows ?? []) as Item[])
+    .filter(i => !i.parent_id)
+    .filter(i => i.status === 'completed' || i.status === 'dismissed' || i.status === 'snoozed')
+    .slice(0, JUDGE_CLEARED_LIMIT)
+    .map(i => ({
+      id: i.id,
+      title: i.title,
+      status: i.status as 'completed' | 'dismissed' | 'snoozed',
+      source: i.source,
+      cleared_at: i.updated_at,
+    }))
+
   // ─── Run every connected source extractor ────────────────────────────
   // Gate each source on connection state so a disconnected source neither
   // throws nor causes the diff to auto-complete its items.
@@ -201,7 +217,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
         .map(r => (r.source_ref as { granola_meeting_id?: string } | null)?.granola_meeting_id)
         .filter((id): id is string => typeof id === 'string')
     )
-    const items = await extractGranolaActionItems({ userEmail, userId, days, meetingIdsWithDraft, openItemsHint })
+    const items = await extractGranolaActionItems({ userEmail, userId, days, meetingIdsWithDraft, openItemsHint, clearedItemsHint })
     return items
   })
 
@@ -209,7 +225,7 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     const conn = await getActiveConnection('gmail', userId)
     if (!conn?.nango_connection_id) return null
     const [inbox, sent] = await Promise.all([
-      extractGmailActionItems({ userEmail, userId, days, openItemsHint }),
+      extractGmailActionItems({ userEmail, userId, days, openItemsHint, clearedItemsHint }),
       extractGmailSentCommitments({ userEmail, userId, days }),
     ])
     return [...inbox, ...sent]
