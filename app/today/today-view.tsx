@@ -769,6 +769,14 @@ export function TodayView({
                 // Optimistic hide so the row disappears from Cleared
                 // immediately; the server action flips status back to open
                 // and a background revalidate pulls the row into Open.
+                //
+                // IMPORTANT: hiddenIds is a GLOBAL mask (see allVisible at
+                // digest.open_items.filter). If we leave the id in
+                // hiddenIds after the server action, the refetched item
+                // lands in digest.open_items but stays masked in the
+                // Open tab, so the user has to manually refresh to see it.
+                // Drop the id from the mask as soon as router.refresh
+                // finishes so the fresh Open row appears in real time.
                 setHiddenIds(prev => new Set(prev).add(item.id))
                 uncompleteItem(item.id)
                   .then(() => {
@@ -777,6 +785,21 @@ export function TodayView({
                     })
                     if (selectedItem?.id === item.id) setSelectedItem(null)
                     router.refresh()
+                    // Slight delay so the refreshed digest lands before we
+                    // remove the mask — otherwise the OLD digest re-renders
+                    // with the item visible in Cleared for a frame before
+                    // the fresh one arrives. 150ms is enough on prod, and
+                    // if the refresh takes longer, worst case the row is
+                    // temporarily invisible in both tabs (much better than
+                    // sticking around in Cleared).
+                    window.setTimeout(() => {
+                      setHiddenIds(prev => {
+                        if (!prev.has(item.id)) return prev
+                        const next = new Set(prev)
+                        next.delete(item.id)
+                        return next
+                      })
+                    }, 150)
                   })
                   .catch(err => {
                     // Restore visibility on failure so the user knows.
