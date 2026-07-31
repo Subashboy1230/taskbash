@@ -15,6 +15,13 @@ import { whatsappMorningDigest } from '@/inngest/functions/whatsapp-morning-dige
 import { whatsappMeetingScheduler } from '@/inngest/functions/whatsapp-meeting-scheduler'
 import { whatsappMeetingReminder } from '@/inngest/functions/whatsapp-meeting-reminder'
 
+// Ask Vercel for the max serverless budget on Pro (300s / 5 min). Needed
+// because morning-digest runs Gmail + Granola extractors in parallel via
+// Promise.all, and each source can spend up to SOURCE_TIMEOUT_MS (240s)
+// on LLM extract + judge over its batch. Default Vercel timeout is much
+// lower and kills the function mid-source.
+export const maxDuration = 300
+
 export const { GET, POST, PUT } = serve({
   client: inngest,
   functions: [

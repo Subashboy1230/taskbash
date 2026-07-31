@@ -49,7 +49,14 @@ export interface DigestRunOpts {
 // slow per-event prep-brief pass) must never stall the whole run. Cap each
 // source; on timeout it's marked failed ("took too long") and the run
 // finishes with whatever the other sources returned.
-const SOURCE_TIMEOUT_MS = 90_000
+//
+// 90s was too tight — real prod runs show Gmail + Granola routinely spend
+// 100-150s on the LLM extract + judge pass over 30-40 items each. Bumped to
+// 240s (4 min). Sources run in parallel via Promise.all, so wall-clock is
+// max(t_source), and the enclosing Inngest step has maxDuration=300s on
+// Vercel (see app/api/inngest/route.ts) — leaving 60s for classify + diff
+// + upsert after the slowest source finishes.
+const SOURCE_TIMEOUT_MS = 240_000
 class SourceTimeoutError extends Error {}
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
