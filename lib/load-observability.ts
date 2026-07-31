@@ -12,7 +12,14 @@ export interface PromptStat {
   output_tokens: number
   cost_usd: number
   avg_latency_ms: number
+  /** All-time error count. Kept so historical health is visible if the user
+   * scrolls further, but the table renders `errors_24h` as the primary
+   * signal because "is my pipeline healthy right now" is what the /observability
+   * page is meant to answer. */
   errors: number
+  /** Errors in the last 24h — the actionable "is this bucket broken right
+   * now" signal. Drives the red highlight in the table. */
+  errors_24h: number
   // Items this prompt produced that the user later marked as slop.
   slop_count: number
   // Items produced ÷ items slopped — quality signal.
@@ -74,10 +81,13 @@ export async function loadObservability(): Promise<ObservabilitySummary> {
   }
 
   // ─── Per-prompt aggregates (all time so the slop rate is meaningful) ─
+  // NOTE: we also compute `errors_24h` per bucket so the table can distinguish
+  // "this bucket is broken RIGHT NOW" from "this bucket has stale historical
+  // errors that were already fixed". Requires started_at on the projection.
   const { data: allCalls, error: acErr } = await supabase
     .from('llm_calls')
     .select(
-      'id, prompt_id, prompt_version, input_tokens, output_tokens, cost_usd, latency_ms, finish_reason, produced_item_ids'
+      'id, prompt_id, prompt_version, input_tokens, output_tokens, cost_usd, latency_ms, finish_reason, produced_item_ids, started_at'
     )
     .or(`user_id.eq.${userId},user_id.is.null`)
     .limit(5000)
@@ -111,6 +121,7 @@ export async function loadObservability(): Promise<ObservabilitySummary> {
       cost_usd: number
       latency_sum_ms: number
       errors: number
+      errors_24h: number
       slop_count: number
     }
   >()
@@ -127,6 +138,7 @@ export async function loadObservability(): Promise<ObservabilitySummary> {
         cost_usd: 0,
         latency_sum_ms: 0,
         errors: 0,
+        errors_24h: 0,
         slop_count: 0,
       }
     b.calls += 1
@@ -134,7 +146,12 @@ export async function loadObservability(): Promise<ObservabilitySummary> {
     b.output_tokens += c.output_tokens ?? 0
     b.cost_usd += Number(c.cost_usd ?? 0)
     b.latency_sum_ms += c.latency_ms ?? 0
-    if (c.finish_reason === 'error') b.errors += 1
+    if (c.finish_reason === 'error') {
+      b.errors += 1
+      // Only recent errors are actionable — stale ones from a shipped fix
+      // shouldn't scream red on the dashboard weeks later.
+      if (c.started_at && c.started_at >= since24h) b.errors_24h += 1
+    }
     if (slopCallIds.has(c.id)) b.slop_count += 1
     buckets.set(key, b)
   }
@@ -149,6 +166,7 @@ export async function loadObservability(): Promise<ObservabilitySummary> {
       cost_usd: Number(b.cost_usd.toFixed(4)),
       avg_latency_ms: Math.round(b.latency_sum_ms / Math.max(1, b.calls)),
       errors: b.errors,
+      errors_24h: b.errors_24h,
       slop_count: b.slop_count,
       slop_rate: b.calls > 0 ? Number((b.slop_count / b.calls).toFixed(3)) : 0,
     }))

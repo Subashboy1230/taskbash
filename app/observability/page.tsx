@@ -104,7 +104,7 @@ export default async function ObservabilityPage() {
                     <th className="px-3 py-2 text-right font-medium">Cost</th>
                     <th className="px-3 py-2 text-right font-medium">Tokens</th>
                     <th className="px-3 py-2 text-right font-medium">Avg ms</th>
-                    <th className="px-3 py-2 text-right font-medium">Errors</th>
+                    <th className="px-3 py-2 text-right font-medium">Errors 24h</th>
                     <th className="px-3 py-2 text-right font-medium">Slop rate</th>
                   </tr>
                 </thead>
@@ -123,7 +123,14 @@ export default async function ObservabilityPage() {
                       <td className="px-3 py-2 text-right tabular-nums text-ink-muted">
                         {p.avg_latency_ms}
                       </td>
-                      <td className={cellTone('errors', p.errors)}>{p.errors}</td>
+                      <td className={cellTone('errors', p.errors_24h)}>
+                        {p.errors_24h}
+                        {p.errors > p.errors_24h && (
+                          <span className="ml-1 text-ink-faint">
+                            ({p.errors} all-time)
+                          </span>
+                        )}
+                      </td>
                       <td className={cellTone('slop', p.slop_rate)}>
                         {(p.slop_rate * 100).toFixed(1)}%
                         <span className="ml-1 text-ink-faint">
