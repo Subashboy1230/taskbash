@@ -79,6 +79,7 @@ import {
   updateItemDescription,
   reorderItem,
   enrichPrepItem,
+  requestRefresh,
 } from './actions'
 
 // ─── Top-level layout ───────────────────────────────────────────────────
@@ -332,10 +333,31 @@ export function TodayView({
       })
   }
   function handleRefresh() {
-    // Demo mode: play the scripted Agent Activity mockup (see mock-run.ts).
-    // This intentionally does NOT run the real digest.
-    startRefresh(() => {
+    // Fire the real digest AND play the Agent Activity animation. The
+    // animation gives the user immediate feedback while Inngest picks up
+    // the event out-of-band; onRunStarted receives the real runId so the
+    // Agent Activity panel can watch this exact run live in the DB.
+    startRefresh(async () => {
+      // Optimistic: kick off the mock animation immediately so the panel
+      // opens without waiting on the server round-trip.
       onRunStarted?.('mock')
+      try {
+        const result = await requestRefresh()
+        if (result?.ok && result.runId) {
+          // Swap the mock runId for the real one so the panel joins the
+          // live run's steps as they stream in.
+          onRunStarted?.(result.runId)
+        } else if (!result?.ok) {
+          toast.error("Couldn't start digest", {
+            description: result?.error ?? 'Try again in a moment.',
+          })
+        }
+      } catch (err) {
+        console.error('handleRefresh: requestRefresh threw:', err)
+        toast.error("Couldn't start digest", {
+          description: err instanceof Error ? err.message : 'Unknown error',
+        })
+      }
     })
   }
 
