@@ -760,10 +760,36 @@ export function TodayView({
             />
           ) : (
             <ClearedTab
-              items={digest.completed_today}
+              items={digest.completed_today.filter(i => !hiddenIds.has(i.id))}
               totalCount={digest.completed_today_count}
               functionsById={functionsById}
               now={nowDate}
+              onSelect={setSelectedItem}
+              onUnclear={item => {
+                // Optimistic hide so the row disappears from Cleared
+                // immediately; the server action flips status back to open
+                // and a background revalidate pulls the row into Open.
+                setHiddenIds(prev => new Set(prev).add(item.id))
+                uncompleteItem(item.id)
+                  .then(() => {
+                    toast.success('Un-cleared', {
+                      description: `Moved "${item.title.slice(0, 60)}${item.title.length > 60 ? '…' : ''}" back to Open.`,
+                    })
+                    if (selectedItem?.id === item.id) setSelectedItem(null)
+                    router.refresh()
+                  })
+                  .catch(err => {
+                    // Restore visibility on failure so the user knows.
+                    setHiddenIds(prev => {
+                      const next = new Set(prev)
+                      next.delete(item.id)
+                      return next
+                    })
+                    toast.error("Couldn't un-clear", {
+                      description: err instanceof Error ? err.message : 'Try again.',
+                    })
+                  })
+              }}
             />
           )}
           </div>
@@ -1912,17 +1938,43 @@ function CompletedRow({
   item,
   functionsById,
   now,
+  onSelect,
+  onUnclear,
 }: {
   item: MockItem
   functionsById?: Map<string, UserFunction>
   now: Date
+  /** Open the DetailPanel with this item (parent state).  When absent the
+   * row renders as read-only, preserving the old behaviour. */
+  onSelect?: (item: MockItem) => void
+  /** Restore this item to the Open tab.  When absent, no button renders. */
+  onUnclear?: (item: MockItem) => void
 }) {
   const subItems = item.sub_items ?? []
   const subTotal = subItems.length
   const subCompleted = subItems.filter(s => s.completed).length
 
+  const clickable = Boolean(onSelect)
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!clickable) return
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onSelect?.(item)
+    }
+  }
+
   return (
-    <li className="relative flex items-start gap-3 pl-12 pr-2 py-4 border-b border-line/50 opacity-60 animate-fade-in-up">
+    <li
+      className={cn(
+        'group relative flex items-start gap-3 pl-12 pr-2 py-4 border-b border-line/50 opacity-60 animate-fade-in-up transition-opacity',
+        clickable && 'cursor-pointer hover:opacity-90 hover:bg-surface-muted/30',
+      )}
+      onClick={clickable ? () => onSelect?.(item) : undefined}
+      onKeyDown={handleKeyDown}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      aria-label={clickable ? `View cleared task: ${item.title}` : undefined}
+    >
       <div className="absolute left-3 top-4 flex shrink-0 items-center justify-center" style={{ width: 22, height: 22 }}>
         <BrandLogo brand={item.source} size={18} />
       </div>
@@ -1952,9 +2004,24 @@ function CompletedRow({
           {decodeHtmlEntities(item.subtitle || item.brief?.why || item.description || item.parent_context || `From ${item.source}`)}
         </p>
       </div>
-      <span className="shrink-0 rounded-full bg-success-bg px-2.5 py-0.5 text-[12px] font-medium text-success-fg">
-        Done
-      </span>
+      <div className="flex shrink-0 items-center gap-2">
+        {onUnclear && (
+          <button
+            type="button"
+            onClick={e => {
+              e.stopPropagation()
+              onUnclear(item)
+            }}
+            title="Restore to Open"
+            className="rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-ink-muted opacity-0 transition-opacity hover:border-ink-muted hover:text-ink group-hover:opacity-100 focus:opacity-100"
+          >
+            Un-clear
+          </button>
+        )}
+        <span className="rounded-full bg-success-bg px-2.5 py-0.5 text-[12px] font-medium text-success-fg">
+          Done
+        </span>
+      </div>
     </li>
   )
 }
@@ -3763,11 +3830,15 @@ function ClearedTab({
   totalCount,
   functionsById,
   now,
+  onSelect,
+  onUnclear,
 }: {
   items: MockItem[]
   totalCount: number
   functionsById?: Map<string, UserFunction>
   now: Date
+  onSelect?: (item: MockItem) => void
+  onUnclear?: (item: MockItem) => void
 }) {
   if (items.length === 0) {
     return (
@@ -3783,7 +3854,14 @@ function ClearedTab({
     <div className="mt-4">
       <ul className="stagger list-none p-0 m-0 divide-y divide-line/70">
         {items.map(item => (
-          <CompletedRow key={item.id} item={item} functionsById={functionsById} now={now} />
+          <CompletedRow
+            key={item.id}
+            item={item}
+            functionsById={functionsById}
+            now={now}
+            onSelect={onSelect}
+            onUnclear={onUnclear}
+          />
         ))}
       </ul>
       {totalCount > items.length && (
