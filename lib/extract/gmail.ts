@@ -31,7 +31,12 @@ import { judgeExtractedItems, isJudgeEnabled, type OpenItemHint, type ClearedIte
 
 // Bump when you change SYSTEM_PROMPT or buildExtractionPrompt — used by
 // the observability page to bucket slop-rate per prompt revision.
-const PROMPT_VERSION = 4
+// v5: reply example in prompt now models draft_confidence so Opus actually
+//     emits it. Previously the field was described in instructions but the
+//     example output omitted it, so the model mirrored the example and
+//     dropped the field 95% of the time → auto-draft never fired →
+//     Gmail Drafts folder stayed empty.
+const PROMPT_VERSION = 5
 
 const GMAIL_API = '/gmail/v1/users/me'
 
@@ -567,7 +572,15 @@ Example 1. Message dated 2026-05-12:
 Thread subject: "Q2 bookkeeping questions"
 From pilot@pilot.com: "Hi Subash, we have 4 open questions on the Q2 books. Can you get us answers by Friday so we can close the month?"
 Output:
-{ "items": [ { "title": "Answer Pilot's 4 Q2 bookkeeping questions", "tag": "reply", "due_at": "2026-05-16", "urgent": false, "sub_items": [] } ] }
+{ "items": [ { "title": "Answer Pilot's 4 Q2 bookkeeping questions", "tag": "reply", "due_at": "2026-05-16", "urgent": false, "draft_confidence": "high", "sub_items": [] } ] }
+(Known vendor, direct 1:1 ask with a deadline. draft_confidence is "high".)
+
+Example 1b. A cold recruiter message:
+Thread subject: "Quick intro, Staff Engineer role"
+From recruiter@unknownagency.com: "Hey Subash, saw your background. Open to chat about a Staff role?"
+Output:
+{ "items": [ { "title": "Reply to recruiter about Staff Engineer role", "tag": "reply", "due_at": null, "urgent": false, "draft_confidence": "medium", "sub_items": [] } ] }
+(Real human but cold / unknown. draft_confidence is "medium". The judge may still drop this.)
 
 Example 2. A newsletter:
 Thread subject: "This week in AI"
@@ -639,7 +652,15 @@ function parseExtractionResponse(
       gmail_message_id: latestMessageId,
     }
     const validConfidence = ['high', 'medium', 'low', 'skip']
-    const draftConfidence = (validConfidence.includes(raw.draft_confidence ?? '') ? raw.draft_confidence : null) as DraftConfidence | null
+    let draftConfidence = (validConfidence.includes(raw.draft_confidence ?? '') ? raw.draft_confidence : null) as DraftConfidence | null
+    // Safety net: if the model forgot to emit draft_confidence on a reply
+    // tag, default to "high" so auto-draft still fires. The judge already
+    // dropped cold outreach / marketing / non-committed replies by this
+    // point, so anything that survives as tag="reply" is a real 1:1 reply
+    // worth drafting. Non-reply tags stay null.
+    if (tag === 'reply' && draftConfidence === null) {
+      draftConfidence = 'high'
+    }
 
     out.push({
       source: 'gmail',
