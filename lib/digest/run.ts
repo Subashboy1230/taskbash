@@ -10,7 +10,7 @@ import { extractGmailActionItems, extractGmailSentCommitments } from '../extract
 import { extractCalendarPrepItems } from '../extract/calendar'
 import { extractLinearActionItems } from '../extract/linear'
 import { extractSlackActionItems } from '../extract/slack'
-import { composioSlackConfigured } from '../connectors/composio'
+import { composioSlackConfigured, composioSlackReady } from '../connectors/composio'
 import { diffSingleSource } from '../diff'
 import { computeSemanticHash } from '../normalize'
 import { isMechanicalNoise } from '../extract/filters'
@@ -250,11 +250,20 @@ export async function runDigestForUser(opts: DigestRunOpts): Promise<DigestRunSu
     return extractLinearActionItems({ userEmail, userId })
   })
 
-  // Slack via Composio. Gated on COMPOSIO_API_KEY + COMPOSIO_SLACK_CONNECTION_ID
-  // being set in env. composioSlackConfigured returns false when either is
-  // missing, so this is a no-op until the user pastes credentials.
+  // Slack via Composio. Gated on composioSlackReady() which requires
+  // COMPOSIO_API_KEY + COMPOSIO_SLACK_CONNECTION_ID + COMPOSIO_ENTITY_ID
+  // + COMPOSIO_SLACK_USER_HANDLE. A partial config (handle missing) used
+  // to fall through to extractSlackActionItems which returned [] and
+  // still pushed 'slack' into runs.sources_run, surfacing a daily
+  // "Synced 0 items" row on /activity. Return null here so tryRun hits
+  // its skipped branch and the source stays off the activity feed.
   const runSlack = tryRun('slack', async () => {
-    if (!composioSlackConfigured()) return null
+    if (!composioSlackReady()) {
+      if (composioSlackConfigured()) {
+        console.warn('[digest] Slack skipped: COMPOSIO_SLACK_USER_HANDLE not set')
+      }
+      return null
+    }
     return extractSlackActionItems({ userEmail, userId, days })
   })
 

@@ -52,6 +52,19 @@ export function composioSlackConfigured(): boolean {
   )
 }
 
+/**
+ * Full readiness check for the Slack extractor path specifically. The
+ * extractor's search query is `@<handle> after:<date>` so a missing
+ * handle makes every call return zero matches, which previously still
+ * pushed 'slack' into runs.sources_run and surfaced as a daily green
+ * "Slack, Synced" row on /activity with no items behind it. The digest
+ * now gates on this instead of composioSlackConfigured() so a partial
+ * config skips the source cleanly.
+ */
+export function composioSlackReady(): boolean {
+  return composioSlackConfigured() && Boolean(process.env.COMPOSIO_SLACK_USER_HANDLE)
+}
+
 // ─── Tool execution ──────────────────────────────────────────────────
 
 export interface ComposioToolExecuteResponse {
