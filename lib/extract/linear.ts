@@ -1,9 +1,20 @@
-// Linear extractor — surface open issues where the user has been
-// @-mentioned in a comment (or assigned to themselves).
+// Linear extractor. Surface open issues the user actually needs to act on.
 //
-// Per Subash: too noisy to surface every assigned issue. The signal he
-// actually cares about is "someone's asking me a question on Linear"
-// which shows up as a recent comment that mentions him by name.
+// History: v1 required a @-mention in a comment to avoid "every assigned
+// ticket" noise. In practice that filter was too narrow for owners who
+// FILE tickets themselves and work them without being pinged. Audit on
+// 2026-10-12 showed 14 straight digest runs producing 0 Linear items
+// while 20 open assigned issues sat in Todo / In PR Review.
+//
+// v2 keeps the mention path and adds three complementary signals that
+// never need a comment to be actionable:
+//   * priority 1 (Urgent) or 2 (High) assigned open issues
+//   * assigned open issues with any dueDate
+//   * assigned open issues in a review state (In PR Review, In Review,
+//     Review, Ready for Review): someone is waiting on the user to
+//     unblock a PR
+// Dedupe by issue id. The judge is strict and will drop anything that
+// turns out to be noise.
 //
 // Auth: Personal API key (NOT OAuth). Linear OAuth apps require workspace
 // admin; Personal API keys don't — any user can mint one from their account
@@ -39,6 +50,15 @@ const QA_STATE_NAMES = [
   'QA Passed',
   'QA passed',
 ]
+
+// Workflow state names that mean "someone is waiting on the user to
+// unblock a PR". Case-insensitive match. Issues assigned to the user in
+// one of these states always surface, no comment-mention needed.
+const REVIEW_STATE_NAMES = new Set(
+  ['In PR Review', 'In Review', 'Review', 'Ready for Review', 'Code Review'].map(s =>
+    s.toLowerCase()
+  )
+)
 
 // ─── GraphQL types (only fields we use) ──────────────────────────────
 
@@ -181,6 +201,9 @@ export async function extractLinearActionItems(
   const openAssigned = assignedIssues.filter(
     i => i.state?.type && OPEN_STATE_TYPES.has(i.state.type)
   )
+
+  // Signal 1: open assigned issues with a comment that mentions the user.
+  // Classic "someone is asking me a question in the thread" signal.
   const mentioned = openAssigned.filter(issue => {
     const comments = issue.comments?.nodes ?? []
     if (comments.length === 0) return false
@@ -191,6 +214,39 @@ export async function extractLinearActionItems(
     })
   })
 
+  // Signal 2: priority Urgent (1) or High (2) assigned open issues. These
+  // matter whether or not anyone has commented.
+  const highPriority = openAssigned.filter(
+    i => i.priority === 1 || i.priority === 2
+  )
+
+  // Signal 3: assigned open issues with a dueDate within the next 14 days.
+  // Overdue items also qualify. Issues with no dueDate are ignored here;
+  // they'll come through other paths if they matter.
+  const soonMs = Date.now() + 14 * 24 * 60 * 60 * 1000
+  const dueSoon = openAssigned.filter(i => {
+    if (!i.dueDate) return false
+    const t = new Date(`${i.dueDate}T23:59:00Z`).getTime()
+    return Number.isFinite(t) && t <= soonMs
+  })
+
+  // Signal 4: assigned open issues in a review state (In PR Review etc).
+  // Someone is waiting on the user to review or iterate.
+  const inReview = openAssigned.filter(i => {
+    const name = (i.state?.name ?? '').toLowerCase()
+    return REVIEW_STATE_NAMES.has(name)
+  })
+
+  // Merge all signals, dedupe by issue id.
+  const assignedBuckets = [mentioned, highPriority, dueSoon, inReview]
+  const assignedById = new Map<string, LinearIssue>()
+  for (const bucket of assignedBuckets) {
+    for (const issue of bucket) {
+      if (!assignedById.has(issue.id)) assignedById.set(issue.id, issue)
+    }
+  }
+  const assignedSurfaced = Array.from(assignedById.values())
+
   // ─── QA pipeline issues ──────────────────────────────────────────────
   // Previously EVERY QA-state issue surfaced regardless of assignment, which
   // made the entire Linear digest engineering-QA noise (100% slop in the
@@ -199,15 +255,15 @@ export async function extractLinearActionItems(
   // Being in a QA state on someone else's ticket is not the user's action.
   const qaIssues = qaResponse?.data?.issues?.nodes ?? []
 
-  // Merge: dedupe by issue id so an assigned+mentioned QA issue doesn't
-  // appear twice.
-  const seenIds = new Set(mentioned.map(i => i.id))
+  // Merge: dedupe by issue id so an issue surfaced by both the assigned
+  // signals and the QA signal doesn't appear twice.
+  const seenIds = new Set(assignedSurfaced.map(i => i.id))
   const qaAssignedToViewer = qaIssues.filter(
     i => !seenIds.has(i.id) && !!viewerId && i.assignee?.id === viewerId
   )
 
   return [
-    ...mentioned.map(i => toExtractedItem(i, false)),
+    ...assignedSurfaced.map(i => toExtractedItem(i, false)),
     ...qaAssignedToViewer.map(i => toExtractedItem(i, true)),
   ]
 }
@@ -216,7 +272,7 @@ function toExtractedItem(issue: LinearIssue, isQA: boolean): ExtractedItem {
   const teamLabel = issue.team?.name
     ? `${issue.team.name} (${issue.team.key ?? ''})`
     : 'Linear'
-  const parentContext = `${teamLabel} · ${issue.state?.name ?? 'open'}`
+  const parentContext = `${teamLabel}, ${issue.state?.name ?? 'open'}`
 
   // Title leads with the identifier so it's scannable in the digest
   // and so we don't lose track of an issue if Linear's title text changes.
