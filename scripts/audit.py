@@ -350,8 +350,15 @@ def check_connections_active_but_have_items() -> CheckResult:
     conns = sb_get("connections", {
         "user_id": f"eq.{user_id()}",
         "status": "eq.active",
-        "select": "provider,updated_at",
+        "select": "provider,last_sync_at",
     })
+    # Defensive: sb_get returns an error dict (not a list) when the query
+    # fails, and a dict iterates to its keys. Catch that explicitly so a
+    # schema drift surfaces as a real error instead of a false FAIL with
+    # [None] because .get("provider") on an error dict returns None.
+    if isinstance(conns, dict):
+        return CheckResult(FAIL, "connections producing items",
+            f"connections query failed: {conns.get('message','unknown error')}")
     if not conns:
         return CheckResult(WARN, "connections producing items",
             "No active connections found.")
